@@ -73,7 +73,7 @@ pub mod registry;
 pub mod runtime;
 
 // Re-exports
-pub use bot::{Bot, BotStatus};
+pub use bot::{BotInstance, BotStatus};
 pub use config::{AlloyConfig, BotConfig, ConfigError, ConfigLoader, ConfigResult, GlobalConfig};
 pub use error::{RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};

@@ -97,8 +97,7 @@ pub mod prelude {
     pub use alloy_core::{Adapter, BoxedAdapter};
     pub use alloy_core::{
         AlloyContext, BoxFuture, BoxedEvent, BoxedHandler, CanExtract, Dispatcher, Event,
-        FromContext, Handler, HandlerFn, Matcher, MatcherExt, MatcherGroup, Message,
-        MessageSegment, into_handler,
+        FromContext, Handler, HandlerFn, Matcher, Message, MessageSegment, into_handler,
     };
 
     // Capability system

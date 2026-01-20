@@ -165,10 +165,19 @@ pub trait Bot: Send + Sync {
     /// The message ID if successful.
     async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<i64>;
 
-    /// Returns a reference to self as `Any` for downcasting.
+    /// Returns self as an `Arc<dyn Any>` for safe downcasting.
     ///
-    /// This allows adapters to access protocol-specific bot implementations.
-    fn as_any(&self) -> &dyn Any;
+    /// This method takes `Arc<Self>` to enable safe downcasting to concrete types
+    /// using `Arc::downcast`. Implementors should simply return `self`.
+    ///
+    /// # Example Implementation
+    ///
+    /// ```rust,ignore
+    /// fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+    ///     self
+    /// }
+    /// ```
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
 
 /// A boxed Bot trait object.
@@ -192,13 +201,6 @@ pub type BoxedBot = Arc<dyn Bot>;
 /// }
 /// ```
 pub fn downcast_bot<T: Bot + 'static>(bot: BoxedBot) -> Option<Arc<T>> {
-    // Check if the bot is of type T
-    if bot.as_any().is::<T>() {
-        // SAFETY: We just checked that bot is of type T
-        // Arc::into_raw gives us a raw pointer that we can cast
-        let ptr = Arc::into_raw(bot).cast::<T>();
-        Some(unsafe { Arc::from_raw(ptr) })
-    } else {
-        None
-    }
+    let any_arc = bot.as_any();
+    Arc::downcast::<T>(any_arc).ok()
 }

@@ -1,7 +1,10 @@
-//! Managed bot instance for runtime.
+//! Runtime bot instance management.
 //!
-//! This module provides `ManagedBot` which wraps a connection and manages
-//! its lifecycle. Bots can join/leave dynamically at runtime.
+//! This module provides [`BotInstance`] which wraps a connection and manages
+//! its lifecycle. Bot instances can join/leave dynamically at runtime.
+//!
+//! Note: [`BotInstance`] is a runtime management type, different from
+//! `alloy_core::Bot` which is a trait defining bot capabilities.
 
 use std::sync::Arc;
 
@@ -9,7 +12,7 @@ use alloy_core::{ConnectionHandle, Dispatcher};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-/// Represents the current status of a managed bot instance.
+/// Represents the current status of a bot instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BotStatus {
     /// Bot is connected and running.
@@ -30,11 +33,14 @@ impl std::fmt::Display for BotStatus {
     }
 }
 
-/// A managed bot instance that represents an active connection.
+/// A runtime bot instance that represents an active connection.
 ///
-/// In the new capability-based system, bots are created dynamically
+/// In the capability-based system, bot instances are created dynamically
 /// when connections are established (server) or connected (client).
-pub struct ManagedBot {
+///
+/// This is different from `alloy_core::Bot` trait which defines bot
+/// capabilities - `BotInstance` manages the runtime lifecycle.
+pub struct BotInstance {
     /// Unique identifier (from connection handler).
     id: String,
     /// Adapter name.
@@ -47,8 +53,8 @@ pub struct ManagedBot {
     dispatcher: Option<Arc<RwLock<Dispatcher>>>,
 }
 
-impl ManagedBot {
-    /// Creates a new managed bot from a connection.
+impl BotInstance {
+    /// Creates a new bot instance from a connection.
     pub fn new(
         id: impl Into<String>,
         adapter_name: impl Into<String>,
@@ -124,14 +130,11 @@ impl ManagedBot {
     }
 }
 
-impl std::fmt::Debug for ManagedBot {
+impl std::fmt::Debug for BotInstance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ManagedBot")
+        f.debug_struct("BotInstance")
             .field("id", &self.id)
             .field("adapter_name", &self.adapter_name)
             .finish()
     }
 }
-
-// Re-export the old Bot name for compatibility
-pub type Bot = ManagedBot;

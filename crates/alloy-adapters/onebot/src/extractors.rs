@@ -18,7 +18,7 @@
 //! }
 //! ```
 
-use alloy_core::{AlloyContext, FromContext};
+use alloy_core::{AlloyContext, ExtractError, FromContext};
 
 use crate::model::event::{MessageEvent, MessageKind, OneBotEvent, OneBotEventKind};
 
@@ -63,16 +63,17 @@ fn sender_from_message(msg: &MessageEvent) -> Sender {
 }
 
 impl FromContext for Sender {
-    type Error = ExtractorError;
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         // Try OneBotEvent (which now contains raw JSON)
         if let Some(event) = ctx.event().downcast_ref::<OneBotEvent>()
             && let OneBotEventKind::Message(msg) = &event.inner
         {
             return Ok(sender_from_message(msg));
         }
-        Err(ExtractorError::TypeMismatch("Sender"))
+        Err(ExtractError::EventTypeMismatch {
+            expected: "OneBotEvent with Message",
+            got: "other event type",
+        })
     }
 }
 
@@ -88,9 +89,7 @@ pub struct GroupInfo {
 }
 
 impl FromContext for GroupInfo {
-    type Error = ExtractorError;
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         // Try OneBotEvent
         if let Some(event) = ctx.event().downcast_ref::<OneBotEvent>()
             && let OneBotEventKind::Message(msg) = &event.inner
@@ -101,30 +100,9 @@ impl FromContext for GroupInfo {
                 message_id: msg.message_id,
             });
         }
-        Err(ExtractorError::TypeMismatch("GroupInfo"))
+        Err(ExtractError::EventTypeMismatch {
+            expected: "OneBotEvent with GroupMessage",
+            got: "other event type",
+        })
     }
 }
-
-/// Error type for extractor failures.
-#[derive(Debug, Clone)]
-pub enum ExtractorError {
-    /// The event type doesn't match what the extractor expects.
-    TypeMismatch(&'static str),
-    /// The required data is missing from the event.
-    MissingData(&'static str),
-}
-
-impl std::fmt::Display for ExtractorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExtractorError::TypeMismatch(name) => {
-                write!(f, "Cannot extract {name} from this event type")
-            }
-            ExtractorError::MissingData(name) => {
-                write!(f, "Missing data for {name}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ExtractorError {}

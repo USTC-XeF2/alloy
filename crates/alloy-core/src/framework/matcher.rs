@@ -64,12 +64,12 @@ use crate::framework::handler::{BoxedHandler, Handler, into_handler};
 /// A type-erased check function.
 pub type CheckFn = Arc<dyn Fn(&AlloyContext) -> bool + Send + Sync>;
 
-/// A matcher that groups handlers with a common check rule.
+/// Internal data for a Matcher.
 ///
-/// Handlers within a matcher are executed sequentially when the check passes.
-/// The matcher can optionally block further matchers from processing the event.
+/// This is wrapped in an `Arc` to enable cheap cloning.
+/// Implements `Clone` to support `Arc::make_mut` for copy-on-write semantics.
 #[derive(Clone)]
-pub struct Matcher {
+struct MatcherInner {
     /// The check function that determines if this matcher should process the event.
     check_fn: Option<CheckFn>,
 
@@ -81,6 +81,20 @@ pub struct Matcher {
 
     /// Optional name for debugging.
     name: Option<String>,
+}
+
+/// A matcher that groups handlers with a common check rule.
+///
+/// Handlers within a matcher are executed sequentially when the check passes.
+/// The matcher can optionally block further matchers from processing the event.
+///
+/// # Cheap Cloning
+///
+/// `Matcher` uses internal `Arc` to enable cheap cloning. This is important
+/// for Tower Service integration where cloning may be required.
+#[derive(Clone)]
+pub struct Matcher {
+    inner: Arc<MatcherInner>,
 }
 
 impl Default for Matcher {
@@ -95,16 +109,24 @@ impl Matcher {
     /// By default, a matcher with no check will match all events.
     pub fn new() -> Self {
         Self {
-            check_fn: None,
-            handlers: Vec::new(),
-            block: false,
-            name: None,
+            inner: Arc::new(MatcherInner {
+                check_fn: None,
+                handlers: Vec::new(),
+                block: false,
+                name: None,
+            }),
         }
+    }
+
+    /// Internal helper to get mutable access to inner.
+    /// Creates a new Arc if there are other references.
+    fn inner_mut(&mut self) -> &mut MatcherInner {
+        Arc::make_mut(&mut self.inner)
     }
 
     /// Sets a name for this matcher (useful for debugging).
     pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
+        self.inner_mut().name = Some(name.into());
         self
     }
 
@@ -116,7 +138,7 @@ impl Matcher {
     where
         F: Fn(&AlloyContext) -> bool + Send + Sync + 'static,
     {
-        self.check_fn = Some(Arc::new(f));
+        self.inner_mut().check_fn = Some(Arc::new(f));
         self
     }
 
@@ -138,7 +160,7 @@ impl Matcher {
     /// When `block` is `true`, if this matcher's check passes and handlers
     /// are executed, no further matchers will process the event.
     pub fn block(mut self, block: bool) -> Self {
-        self.block = block;
+        self.inner_mut().block = block;
         self
     }
 
@@ -150,19 +172,19 @@ impl Matcher {
         F: Handler<T> + Send + Sync + 'static,
         T: 'static,
     {
-        self.handlers.push(into_handler(f));
+        self.inner_mut().handlers.push(into_handler(f));
         self
     }
 
     /// Adds a pre-built boxed handler.
     pub fn handler_boxed(mut self, handler: BoxedHandler) -> Self {
-        self.handlers.push(handler);
+        self.inner_mut().handlers.push(handler);
         self
     }
 
     /// Checks if this matcher should process the given event.
     pub fn matches(&self, ctx: &AlloyContext) -> bool {
-        match &self.check_fn {
+        match &self.inner.check_fn {
             Some(f) => f(ctx),
             None => true, // No check means match all
         }
@@ -170,17 +192,17 @@ impl Matcher {
 
     /// Returns whether this matcher blocks further matchers.
     pub fn is_blocking(&self) -> bool {
-        self.block
+        self.inner.block
     }
 
     /// Returns the number of handlers in this matcher.
     pub fn handler_count(&self) -> usize {
-        self.handlers.len()
+        self.inner.handlers.len()
     }
 
     /// Returns the name of this matcher, if set.
     pub fn get_name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.inner.name.as_deref()
     }
 
     /// Executes all handlers in this matcher.
@@ -189,21 +211,21 @@ impl Matcher {
     pub async fn execute(&self, ctx: Arc<AlloyContext>) -> bool {
         if !self.matches(&ctx) {
             trace!(
-                matcher = self.name.as_deref().unwrap_or("unnamed"),
+                matcher = self.inner.name.as_deref().unwrap_or("unnamed"),
                 "Matcher check failed, skipping"
             );
             return false;
         }
 
         debug!(
-            matcher = self.name.as_deref().unwrap_or("unnamed"),
-            handler_count = self.handlers.len(),
+            matcher = self.inner.name.as_deref().unwrap_or("unnamed"),
+            handler_count = self.inner.handlers.len(),
             "Matcher check passed, executing handlers"
         );
 
-        for (i, handler) in self.handlers.iter().enumerate() {
+        for (i, handler) in self.inner.handlers.iter().enumerate() {
             trace!(
-                matcher = self.name.as_deref().unwrap_or("unnamed"),
+                matcher = self.inner.name.as_deref().unwrap_or("unnamed"),
                 handler_index = i,
                 "Executing handler"
             );
@@ -275,95 +297,5 @@ impl Service<Arc<AlloyContext>> for Matcher {
                 blocking: matcher.is_blocking(),
             })
         })
-    }
-}
-
-// ============================================================================
-// MatcherExt - Extension trait for building matchers from event types
-// ============================================================================
-
-/// Extension trait for creating matchers from event types.
-pub trait MatcherExt {
-    /// Creates a matcher that checks for this event type.
-    fn matcher() -> Matcher;
-}
-
-impl<T> MatcherExt for T
-where
-    T: FromEvent + Clone + 'static,
-{
-    fn matcher() -> Matcher {
-        Matcher::new().on::<T>()
-    }
-}
-
-// ============================================================================
-// MatcherGroup - A collection of matchers
-// ============================================================================
-
-/// A collection of matchers that are checked in order.
-///
-/// When an event is dispatched, matchers are checked in the order they were added.
-/// If a matcher's check passes and it is blocking, subsequent matchers are skipped.
-#[derive(Default, Clone)]
-pub struct MatcherGroup {
-    matchers: Vec<Matcher>,
-}
-
-impl MatcherGroup {
-    /// Creates a new empty matcher group.
-    pub fn new() -> Self {
-        Self {
-            matchers: Vec::new(),
-        }
-    }
-
-    /// Adds a matcher to this group.
-    pub fn add(&mut self, matcher: Matcher) {
-        self.matchers.push(matcher);
-    }
-
-    /// Adds a matcher to this group (builder pattern).
-    pub fn with(mut self, matcher: Matcher) -> Self {
-        self.matchers.push(matcher);
-        self
-    }
-
-    /// Returns the number of matchers in this group.
-    pub fn len(&self) -> usize {
-        self.matchers.len()
-    }
-
-    /// Returns true if this group has no matchers.
-    pub fn is_empty(&self) -> bool {
-        self.matchers.is_empty()
-    }
-
-    /// Clears all matchers from this group.
-    pub fn clear(&mut self) {
-        self.matchers.clear();
-    }
-
-    /// Dispatches an event to all matchers.
-    ///
-    /// Returns `true` if any matcher processed the event.
-    pub async fn dispatch(&self, ctx: Arc<AlloyContext>) -> bool {
-        let mut any_matched = false;
-
-        for matcher in &self.matchers {
-            if matcher.execute(Arc::clone(&ctx)).await {
-                any_matched = true;
-
-                if matcher.is_blocking() {
-                    debug!(
-                        matcher = matcher.get_name().unwrap_or("unnamed"),
-                        "Blocking matcher matched, stopping propagation"
-                    );
-                    break;
-                }
-            }
-        }
-
-        any_matched
     }
 }

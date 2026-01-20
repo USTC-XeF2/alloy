@@ -1,9 +1,9 @@
-//! Bot registry for managing dynamically connected bots.
+//! Bot registry for managing dynamically connected bot instances.
 //!
-//! In the capability-based system, bots are registered dynamically when
+//! In the capability-based system, bot instances are registered dynamically when
 //! connections are established and unregistered when they disconnect.
 
-use crate::bot::{Bot, BotStatus, ManagedBot};
+use crate::bot::{BotInstance, BotStatus};
 use alloy_core::{BotManager, BoxedAdapter, BoxedEvent, ConnectionHandle, Dispatcher};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use tracing::{debug, info};
 /// Registry for managing adapters and dynamic bot instances.
 pub struct BotRegistry {
     /// Map of bot ID to bot instance.
-    bots: Arc<RwLock<HashMap<String, Arc<RwLock<Bot>>>>>,
+    bots: Arc<RwLock<HashMap<String, Arc<RwLock<BotInstance>>>>>,
     /// Map of adapter name to adapter instance.
     adapters: Arc<RwLock<HashMap<String, BoxedAdapter>>>,
     /// Shared dispatcher reference.
@@ -80,7 +80,7 @@ impl BotRegistry {
         )))
     }
 
-    /// Registers a new bot from a connection.
+    /// Registers a new bot instance from a connection.
     ///
     /// This is called by connection handlers when a new connection is established.
     pub async fn register_bot(
@@ -88,14 +88,14 @@ impl BotRegistry {
         id: String,
         adapter_name: String,
         connection: ConnectionHandle,
-    ) -> anyhow::Result<Arc<RwLock<Bot>>> {
+    ) -> anyhow::Result<Arc<RwLock<BotInstance>>> {
         let mut bots = self.bots.write().await;
 
         if bots.contains_key(&id) {
             anyhow::bail!("Bot with ID '{}' is already registered", id);
         }
 
-        let mut bot = ManagedBot::new(id.clone(), adapter_name.clone(), connection);
+        let mut bot = BotInstance::new(id.clone(), adapter_name.clone(), connection);
 
         // Set dispatcher if available
         if let Some(dispatcher) = self.get_dispatcher().await {
@@ -127,8 +127,8 @@ impl BotRegistry {
         }
     }
 
-    /// Gets a reference to a bot by ID.
-    pub async fn get(&self, id: &str) -> Option<Arc<RwLock<Bot>>> {
+    /// Gets a reference to a bot instance by ID.
+    pub async fn get(&self, id: &str) -> Option<Arc<RwLock<BotInstance>>> {
         let bots = self.bots.read().await;
         bots.get(id).cloned()
     }

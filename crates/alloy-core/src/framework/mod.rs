@@ -18,5 +18,5 @@ pub use extractor::FromContext;
 pub use handler::{
     BoxFuture, BoxedHandler, CanExtract, ErasedHandler, Handler, HandlerFn, into_handler,
 };
-pub use matcher::{CheckFn, Matcher, MatcherExt, MatcherGroup, MatcherResponse};
+pub use matcher::{CheckFn, Matcher, MatcherResponse};
 pub use service::{AlloyError, BotCommand, ServiceFuture};

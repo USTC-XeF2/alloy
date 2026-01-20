@@ -165,6 +165,33 @@ impl OneBotBot {
         }
     }
 
+    /// Clears all pending API calls.
+    ///
+    /// This should be called when the connection is lost to prevent memory leaks
+    /// and to notify waiting callers that the connection was lost.
+    ///
+    /// All pending calls will receive a channel closed error, which will be
+    /// converted to `ApiError::NotConnected`.
+    pub async fn clear_pending_calls(&self) {
+        let mut pending = self.pending_calls.write().await;
+        let count = pending.len();
+        if count > 0 {
+            debug!(
+                count = count,
+                "Clearing pending API calls due to disconnect"
+            );
+            pending.clear();
+            // Senders will be dropped, causing receivers to get an error
+        }
+    }
+
+    /// Returns the number of pending API calls.
+    ///
+    /// This can be useful for monitoring or debugging purposes.
+    pub async fn pending_call_count(&self) -> usize {
+        self.pending_calls.read().await.len()
+    }
+
     /// Returns a reference to self as Any for downcasting.
     pub fn as_any(&self) -> &dyn Any {
         self
@@ -817,7 +844,7 @@ impl Bot for OneBotBot {
         Ok(result)
     }
 
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
     }
 }

@@ -90,7 +90,7 @@ pub use bot::{
     Credentials, FriendInfo, GetMsgResponse, GroupInfo as GroupInfoResponse, GroupMemberInfo,
     LoginInfo, OneBotBot, Status, StrangerInfo, VersionInfo,
 };
-pub use extractors::{ExtractorError, GroupInfo, Sender};
+pub use extractors::{GroupInfo, Sender};
 
 // Re-export segment types
 pub use model::segment::{

@@ -4,6 +4,7 @@
 //! can be extracted from an [`AlloyContext`] for use as handler parameters.
 
 use crate::foundation::context::AlloyContext;
+use crate::foundation::error::ExtractError;
 use crate::foundation::event::{EventContext, FromEvent};
 use crate::integration::bot::BoxedBot;
 
@@ -21,7 +22,7 @@ use crate::integration::bot::BoxedBot;
 /// # Example
 ///
 /// ```rust,ignore
-/// use alloy_core::{AlloyContext, FromContext, Event};
+/// use alloy_core::{AlloyContext, FromContext, ExtractError};
 /// use std::sync::Arc;
 ///
 /// struct MyExtractor {
@@ -29,18 +30,13 @@ use crate::integration::bot::BoxedBot;
 /// }
 ///
 /// impl FromContext for MyExtractor {
-///     type Error = ();
-///     
-///     fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
+///     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
 ///         // Custom extraction logic here
 ///         Ok(MyExtractor { data: "extracted".into() })
 ///     }
 /// }
 /// ```
 pub trait FromContext: Sized {
-    /// The error type returned when extraction fails.
-    type Error;
-
     /// Attempts to extract this type from the given context.
     ///
     /// # Arguments
@@ -49,8 +45,8 @@ pub trait FromContext: Sized {
     ///
     /// # Returns
     ///
-    /// `Ok(Self)` if extraction succeeds, `Err(Self::Error)` otherwise.
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error>;
+    /// `Ok(Self)` if extraction succeeds, `Err(ExtractError)` otherwise.
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError>;
 }
 
 /// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
@@ -58,9 +54,7 @@ pub trait FromContext: Sized {
 /// This is useful when a handler needs to work with any event type
 /// without knowing the concrete type at compile time.
 impl FromContext for crate::foundation::event::BoxedEvent {
-    type Error = std::convert::Infallible;
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         Ok(ctx.event().clone())
     }
 }
@@ -70,9 +64,7 @@ impl FromContext for crate::foundation::event::BoxedEvent {
 /// This allows handlers to have optional parameters that may or may not
 /// be extractable from the context.
 impl<T: FromContext> FromContext for Option<T> {
-    type Error = std::convert::Infallible;
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         Ok(T::from_context(ctx).ok())
     }
 }
@@ -99,10 +91,13 @@ impl<T: FromContext> FromContext for Option<T> {
 /// }
 /// ```
 impl<T: FromEvent + Clone> FromContext for EventContext<T> {
-    type Error = ();
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
-        ctx.event().extract::<T>().ok_or(())
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+        ctx.event()
+            .extract::<T>()
+            .ok_or_else(|| ExtractError::EventTypeMismatch {
+                expected: std::any::type_name::<T>(),
+                got: ctx.event().event_name(),
+            })
     }
 }
 
@@ -119,10 +114,8 @@ impl<T: FromEvent + Clone> FromContext for EventContext<T> {
 /// }
 /// ```
 impl FromContext for BoxedBot {
-    type Error = ();
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
-        ctx.bot_arc().ok_or(())
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+        ctx.bot_arc().ok_or(ExtractError::BotNotAvailable)
     }
 }
 
@@ -140,15 +133,15 @@ impl FromContext for BoxedBot {
 /// }
 /// ```
 impl<T: crate::integration::bot::Bot + 'static> FromContext for std::sync::Arc<T> {
-    type Error = ();
-
-    fn from_context(ctx: &AlloyContext) -> Result<Self, Self::Error> {
+    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         use crate::integration::bot::downcast_bot;
 
         // Get the BoxedBot
-        let boxed_bot = ctx.bot_arc().ok_or(())?;
+        let boxed_bot = ctx.bot_arc().ok_or(ExtractError::BotNotAvailable)?;
 
         // Try to downcast to the concrete type
-        downcast_bot::<T>(boxed_bot).ok_or(())
+        downcast_bot::<T>(boxed_bot).ok_or_else(|| ExtractError::BotTypeMismatch {
+            expected: std::any::type_name::<T>(),
+        })
     }
 }

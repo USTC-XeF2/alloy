@@ -191,6 +191,10 @@ mod tests {
         async fn send(&self, _event: &dyn Event, _message: &str) -> ApiResult<i64> {
             Err(ApiError::NotConnected)
         }
+
+        fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+            self
+        }
     }
 
     fn mock_bot() -> BoxedBot {

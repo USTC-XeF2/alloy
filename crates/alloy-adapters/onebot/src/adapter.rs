@@ -253,7 +253,7 @@ impl ConnectionHandler for OneBotConnectionHandler {
                 // This is an API response, forward to the bot instance
                 if let Some(bot) = self.bot_manager.get_bot(bot_id).await {
                     // Try to downcast to OneBotBot using as_any()
-                    if let Some(onebot_bot) = bot.as_any().downcast_ref::<OneBotBot>() {
+                    if let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.as_any()) {
                         onebot_bot.handle_response(&value).await;
                         trace!(bot_id = %bot_id, echo = ?value.get("echo"), "Handled API response");
                     } else {
@@ -301,6 +301,14 @@ impl ConnectionHandler for OneBotConnectionHandler {
     }
 
     async fn on_disconnect(&self, bot_id: &str) {
+        // Clear pending calls before unregistering
+        // This ensures all waiting API callers receive NotConnected errors
+        if let Some(bot) = self.bot_manager.get_bot(bot_id).await {
+            if let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.as_any()) {
+                onebot_bot.clear_pending_calls().await;
+            }
+        }
+
         // Unregister the bot
         self.bot_manager.unregister(bot_id).await;
         info!(bot_id = %bot_id, "OneBot connection closed");
