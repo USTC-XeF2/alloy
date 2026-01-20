@@ -130,16 +130,6 @@ pub trait WsServerCapability: Send + Sync {
         path: &str,
         handler: BoxedConnectionHandler,
     ) -> anyhow::Result<ListenerHandle>;
-
-    /// Returns the default listen address.
-    fn default_addr(&self) -> &str {
-        "0.0.0.0:8080"
-    }
-
-    /// Returns the default path.
-    fn default_path(&self) -> &str {
-        "/ws"
-    }
 }
 
 /// WebSocket client capability.

@@ -95,7 +95,7 @@ impl BotRegistry {
         let mut bots = self.bots.write().await;
 
         if bots.contains_key(&id) {
-            anyhow::bail!("Bot with ID '{}' is already registered", id);
+            anyhow::bail!("Bot with ID '{id}' is already registered");
         }
 
         let mut bot = BotInstance::new(id.clone(), adapter_name.clone(), connection);
@@ -126,7 +126,7 @@ impl BotRegistry {
             info!(bot_id = %id, "Unregistered bot");
             Ok(())
         } else {
-            anyhow::bail!("Bot with ID '{}' not found", id);
+            anyhow::bail!("Bot with ID '{id}' not found");
         }
     }
 

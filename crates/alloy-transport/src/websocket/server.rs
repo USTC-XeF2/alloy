@@ -62,7 +62,7 @@ impl WsServerCapability for WsServerCapabilityImpl {
         let path = if path.starts_with('/') {
             path.to_string()
         } else {
-            format!("/{}", path)
+            format!("/{path}")
         };
 
         let router = Router::new()
@@ -102,17 +102,9 @@ impl WsServerCapability for WsServerCapabilityImpl {
             }
         });
 
-        let handle = ListenerHandle::new(format!("ws-server-{}", actual_addr), shutdown_tx);
+        let handle = ListenerHandle::new(format!("ws-server-{actual_addr}"), shutdown_tx);
 
         Ok(handle)
-    }
-
-    fn default_addr(&self) -> &str {
-        "0.0.0.0:8080"
-    }
-
-    fn default_path(&self) -> &str {
-        "/ws"
     }
 }
 
@@ -127,7 +119,7 @@ async fn ws_handler(
 
     // Extract headers as metadata (convert all to lowercase for consistency)
     let mut metadata = HashMap::new();
-    for (name, value) in headers.iter() {
+    for (name, value) in &headers {
         if let Ok(value_str) = value.to_str() {
             // Store header with lowercase key for consistent lookup
             metadata.insert(name.as_str().to_lowercase(), value_str.to_string());

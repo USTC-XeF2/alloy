@@ -168,10 +168,7 @@ macro_rules! impl_handler {
             fn call(self, ctx: Arc<AlloyContext>) -> Self::Future {
                 Box::pin(async move {
                     $(
-                        let $ty = match $ty::from_context(&ctx) {
-                            Ok(value) => value,
-                            Err(_) => return, // Skip if extraction fails
-                        };
+                        let Ok($ty) = $ty::from_context(&ctx) else { return };
                     )*
 
                     (self)($($ty,)*).await;

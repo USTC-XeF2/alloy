@@ -82,7 +82,7 @@ pub enum ApiError {
     /// The API call timed out.
     Timeout,
     /// The API returned an error.
-    ApiError { retcode: i32, message: String },
+    ApiError { retcode: i64, message: String },
     /// Failed to serialize/deserialize.
     SerializationError(String),
     /// Transport error.

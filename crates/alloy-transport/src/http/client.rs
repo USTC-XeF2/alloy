@@ -5,7 +5,7 @@ use std::time::Duration;
 use alloy_core::HttpClientCapability;
 use async_trait::async_trait;
 use reqwest::{Client, ClientBuilder};
-use tracing::{debug, error};
+use tracing::trace;
 
 /// HTTP client capability implementation.
 pub struct HttpClientCapabilityImpl {

@@ -105,8 +105,8 @@ pub use foundation::{
 
 // Re-export framework types
 pub use framework::{
-    AlloyError, BotCommand, BoxFuture, BoxedHandler, CanExtract, Dispatcher, ErasedHandler,
-    FromContext, Handler, HandlerFn, Matcher, MatcherResponse, ServiceFuture, into_handler,
+    BoxFuture, BoxedHandler, CanExtract, Dispatcher, ErasedHandler, FromContext, Handler,
+    HandlerFn, Matcher, MatcherResponse, into_handler,
 };
 
 // Re-export integration types
@@ -123,7 +123,7 @@ pub use integration::{
 pub mod prelude {
     pub use super::foundation::*;
     pub use super::framework::{
-        AlloyError, BotCommand, BoxFuture, BoxedHandler, CanExtract, Dispatcher, FromContext,
-        Handler, Matcher, MatcherResponse, into_handler,
+        BoxFuture, BoxedHandler, CanExtract, Dispatcher, FromContext, Handler, Matcher,
+        MatcherResponse, into_handler,
     };
 }

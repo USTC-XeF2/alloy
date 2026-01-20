@@ -130,15 +130,15 @@ impl MessageEvent {
     pub fn as_private(&self) -> Option<&PrivateMessageEvent> {
         match &self.inner {
             MessageKind::Private(p) => Some(p),
-            _ => None,
+            MessageKind::Group(_) => None,
         }
     }
 
     /// Try to get as group message event.
     pub fn as_group(&self) -> Option<&GroupMessageEvent> {
         match &self.inner {
+            MessageKind::Private(_) => None,
             MessageKind::Group(g) => Some(g),
-            _ => None,
         }
     }
 }

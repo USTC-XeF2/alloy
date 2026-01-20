@@ -93,7 +93,7 @@ use syn::{DeriveInput, parse_macro_input};
 pub fn derive_bot_event(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match event::derive_bot_event(input) {
+    match event::derive_bot_event(&input) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

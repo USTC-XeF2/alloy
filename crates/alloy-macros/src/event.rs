@@ -45,13 +45,13 @@ pub struct VariantEventAttrs {
 }
 
 /// Generates the BotEvent derive implementation.
-pub fn derive_bot_event(input: DeriveInput) -> syn::Result<TokenStream> {
+pub fn derive_bot_event(input: &DeriveInput) -> syn::Result<TokenStream> {
     let attrs = parse_event_attrs(&input.attrs)?;
     let name = &input.ident;
 
     match &input.data {
-        Data::Enum(data) => generate_enum_impl(name, &attrs, &data.variants),
-        Data::Struct(_) => generate_struct_impl(name, &attrs),
+        Data::Enum(data) => Ok(generate_enum_impl(name, &attrs, &data.variants)),
+        Data::Struct(_) => Ok(generate_struct_impl(name, &attrs)),
         Data::Union(_) => Err(syn::Error::new(
             input.span(),
             "BotEvent cannot be derived for unions",
@@ -116,7 +116,7 @@ fn generate_enum_impl(
     name: &Ident,
     attrs: &EventAttrs,
     variants: &syn::punctuated::Punctuated<Variant, syn::token::Comma>,
-) -> syn::Result<TokenStream> {
+) -> TokenStream {
     let platform = attrs.platform.as_deref().unwrap_or("unknown");
     let platform_lit = syn::LitStr::new(platform, name.span());
 
@@ -196,7 +196,7 @@ fn generate_enum_impl(
         }
     };
 
-    Ok(quote! {
+    quote! {
         impl ::alloy_core::Event for #name {
             fn event_name(&self) -> &'static str {
                 match self {
@@ -214,11 +214,11 @@ fn generate_enum_impl(
         }
 
         #from_event_impl
-    })
+    }
 }
 
 /// Generates Event and FromEvent implementations for a struct.
-fn generate_struct_impl(name: &Ident, attrs: &EventAttrs) -> syn::Result<TokenStream> {
+fn generate_struct_impl(name: &Ident, attrs: &EventAttrs) -> TokenStream {
     let platform = attrs.platform.as_deref().unwrap_or("unknown");
 
     let full_name = attrs
@@ -274,7 +274,7 @@ fn generate_struct_impl(name: &Ident, attrs: &EventAttrs) -> syn::Result<TokenSt
         }
     };
 
-    Ok(quote! {
+    quote! {
         impl ::alloy_core::Event for #name {
             fn event_name(&self) -> &'static str {
                 #full_name_lit
@@ -290,7 +290,7 @@ fn generate_struct_impl(name: &Ident, attrs: &EventAttrs) -> syn::Result<TokenSt
         }
 
         #from_event_impl
-    })
+    }
 }
 
 // ============================================================================

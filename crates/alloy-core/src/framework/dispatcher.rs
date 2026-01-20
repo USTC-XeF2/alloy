@@ -109,8 +109,8 @@ impl Dispatcher {
     /// `true` if any matcher processed the event, `false` otherwise.
     pub async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) -> bool {
         let event_name = event.event_name();
-        let _span = span!(Level::DEBUG, "dispatch", event_name = %event_name);
-        let _enter = _span.enter();
+        let span = span!(Level::DEBUG, "dispatch", event_name = %event_name);
+        let _enter = span.enter();
 
         let ctx = Arc::new(AlloyContext::with_bot(event, bot));
         let mut any_matched = false;

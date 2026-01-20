@@ -131,10 +131,7 @@ impl OneBotBot {
                         .and_then(|v| v.as_str())
                         .unwrap_or("Unknown error")
                         .to_string();
-                    return Err(ApiError::ApiError {
-                        retcode: retcode as i32,
-                        message,
-                    });
+                    return Err(ApiError::ApiError { retcode, message });
                 }
 
                 // Return the data field if present, otherwise the whole response

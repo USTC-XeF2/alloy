@@ -15,7 +15,7 @@ use axum::{
     routing::post,
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 /// HTTP server capability implementation.
 pub struct HttpServerCapabilityImpl;
