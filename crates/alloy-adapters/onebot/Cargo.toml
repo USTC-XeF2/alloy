@@ -1,0 +1,18 @@
+[package]
+name = "alloy-adapter-onebot"
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+alloy-core = { path = "../../alloy-core" }
+alloy-macros = { path = "../../alloy-macros" }
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.49.0", features = ["sync", "time"] }
+tracing = "0.1.44"
+uuid = { version = "1.19.0", features = ["v4"] }

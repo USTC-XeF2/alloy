@@ -1,0 +1,42 @@
+# Alloy Bot Framework Configuration
+# Example configuration file for the echo_bot example
+
+# Global settings
+global:
+  log_level: info
+  timeout_ms: 30000
+  retry:
+    max_retries: 3
+    initial_delay_ms: 1000
+    max_delay_ms: 30000
+    backoff_multiplier: 2.0
+
+# Bot instances
+bots:
+  # Echo bot using WebSocket client
+  - id: echo-bot
+    name: Echo Bot
+    adapter: onebot
+    enabled: true
+    transport:
+      type: ws-client
+      url: ws://127.0.0.1:8080/ws
+      # Use environment variable for access token
+      access_token: ${BOT_ACCESS_TOKEN:-}
+      auto_reconnect: true
+      heartbeat_interval_secs: 30
+    settings:
+      # Bot-specific settings
+      prefix: "!"
+
+  # Example: HTTP webhook receiver (disabled by default)
+  # - id: webhook-bot
+  #   name: Webhook Receiver
+  #   adapter: onebot
+  #   enabled: false
+  #   transport:
+  #     type: http-server
+  #     host: 0.0.0.0
+  #     port: 9000
+  #     path: /onebot/callback
+  #     secret: ${WEBHOOK_SECRET:-}

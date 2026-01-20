@@ -1,0 +1,23 @@
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/USTC-XeF2/alloy"
+authors = ["XeF2 <contact@xef2.top>"]
+license = "MPL-2.0"
+
+[workspace]
+members = [
+    "crates/alloy",
+    "crates/alloy-adapters/*",
+    "crates/alloy-core",
+    "crates/alloy-macros",
+    "crates/alloy-runtime",
+    "crates/alloy-transport",
+    "examples/echo_bot",
+]
+resolver = "2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

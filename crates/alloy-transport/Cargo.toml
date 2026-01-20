@@ -1,0 +1,37 @@
+[package]
+name = "alloy-transport"
+version = { workspace = true }
+description = "Network transport layer for the Alloy bot framework"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[features]
+default = []
+
+# Transport types
+http-client = ["dep:reqwest"]
+http-server = ["dep:axum"]
+ws-client = ["dep:tokio-tungstenite"]
+ws-server = ["dep:axum", "dep:tokio-tungstenite"]
+
+# Convenience feature groups
+full = ["http-client", "http-server", "ws-client", "ws-server"]
+
+[dependencies]
+# Alloy core for config types
+alloy-core = { path = "../alloy-core" }
+
+# Core dependencies (always enabled)
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+futures = "0.3.31"
+serde_json = "1.0.149"
+tokio = { version = "1.49.0" }
+tracing = "0.1.44"
+
+# Optional dependencies
+axum = { version = "0.8.8", features = ["ws"], optional = true }
+reqwest = { version = "0.13.1", features = ["json"], optional = true }
+tokio-tungstenite = { version = "0.28.0", features = ["native-tls"], optional = true }

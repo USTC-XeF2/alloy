@@ -1,0 +1,29 @@
+[package]
+name = "alloy"
+version = { workspace = true }
+description = "A high-performance, highly decoupled, and type-safe bot framework for Rust"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+# Core dependencies (always required, includes Tower integration)
+alloy-core = { path = "../alloy-core" }
+alloy-runtime = { path = "../alloy-runtime" }
+
+# Optional dependencies
+alloy-macros = { path = "../alloy-macros", optional = true }
+
+[features]
+default = ["macros"]
+
+# Procedural macros for handler definition
+macros = ["dep:alloy-macros"]
+
+# Transport features (passed through to runtime)
+ws-client = ["alloy-runtime/ws-client"]
+ws-server = ["alloy-runtime/ws-server"]
+http-client = ["alloy-runtime/http-client"]
+http-server = ["alloy-runtime/http-server"]
+full-transport = ["alloy-runtime/full-transport"]

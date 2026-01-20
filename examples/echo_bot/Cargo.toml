@@ -1,0 +1,15 @@
+[package]
+name = "echo-bot"
+version = "0.1.0"
+edition = "2024"
+authors = ["XeF2 <contact@xef2.top>"]
+license = "MPL-2.0"
+description = "A simple echo bot example for the Alloy framework"
+publish = false
+
+[dependencies]
+alloy = { path = "../../crates/alloy", features = ["ws-server"] }
+alloy-adapter-onebot = { path = "../../crates/alloy-adapters/onebot" }
+anyhow = "1.0.100"
+tokio = "1.49.0"
+tracing = "0.1.44"
