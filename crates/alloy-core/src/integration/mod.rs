@@ -11,9 +11,7 @@ pub mod bot;
 pub mod capability;
 pub mod transport;
 
-#[allow(deprecated)]
-pub use adapter::AdapterCapabilities;
-pub use adapter::{Adapter, AdapterContext, AdapterFactory, AdapterRegistry, BoxedAdapter};
+pub use adapter::{Adapter, AdapterContext, BoxedAdapter, ConfigurableAdapter};
 
 pub use bot::{
     ApiError, ApiResult, Bot, BotChannels, BotMessage, BoxedBot, RuntimeChannels, RuntimeMessage,

@@ -22,24 +22,14 @@ full-transport = ["alloy-transport/full"]
 
 [dependencies]
 alloy-core = { path = "../alloy-core" }
-alloy-transport = { path = "../alloy-transport", default-features = false }
-
-# Async runtime
+alloy-transport = { path = "../alloy-transport" }
+anyhow = "1.0.100"
+dirs = "6.0.0"
+figment = { version = "0.10.19", features = ["yaml", "env"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+serde_yaml = "0.9.34"
+thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["full", "signal"] }
-
-# Logging
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-
-# Serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_yaml = "0.9.34"
-serde_json = "1.0.149"
-
-# Error handling
-thiserror = "2.0.18"
-anyhow = "1.0.100"
-
-# Utilities
-dirs = "6.0.0"
-regex-lite = "0.1.8"

@@ -1,63 +1,369 @@
-//! Configuration schema definitions.
+//! Configuration schema definitions using figment.
+//!
+//! This module defines the configuration structure for the Alloy framework.
+//! The design prioritizes:
+//!
+//! - **Extensibility**: Adapters can define their own configuration sections
+//! - **Decoupling**: Core config is separate from adapter-specific config  
+//! - **Multi-source**: Supports files, env vars, and programmatic config
+//! - **Type safety**: Strong typing with serde and figment extraction
+//!
+//! # Configuration Hierarchy
+//!
+//! ```text
+//! AlloyConfig
+//! ├── logging: LoggingConfig       # Logging settings
+//! ├── network: NetworkConfig       # Global network defaults
+//! ├── runtime: RuntimeConfig       # Runtime behavior
+//! └── adapters: Map<String, Value> # Adapter-specific configs (dynamic)
+//! ```
+//!
+//! # Example Configuration (YAML)
+//!
+//! ```yaml
+//! logging:
+//!   level: debug
+//!   format: pretty
+//!   
+//! network:
+//!   timeout_secs: 30
+//!   
+//! adapters:
+//!   onebot:
+//!     connections:
+//!       - type: ws-client
+//!         url: ws://127.0.0.1:8080
+//! ```
 
-use alloy_core::TransportType;
+use figment::value::{Tag, Value};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::time::Duration;
 
-/// Root configuration structure.
+// =============================================================================
+// Root Configuration
+// =============================================================================
+
+/// Root configuration structure for the Alloy framework.
+///
+/// This struct is designed to be extended by adapters through the `adapters` field,
+/// which holds adapter-specific configuration as dynamic values.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct AlloyConfig {
-    /// Global settings that apply to all bots.
-    #[serde(default)]
-    pub global: GlobalConfig,
+    /// Logging configuration.
+    pub logging: LoggingConfig,
 
-    /// Individual bot configurations.
+    /// Global network configuration (defaults for all connections).
+    pub network: NetworkConfig,
+
+    /// Runtime configuration.
+    pub runtime: RuntimeConfig,
+
+    /// Adapter-specific configurations.
+    ///
+    /// Each adapter registers its own configuration schema.
+    /// Example: `adapters.onebot` contains OneBot-specific settings.
     #[serde(default)]
-    pub bots: Vec<BotConfig>,
+    pub adapters: HashMap<String, Value>,
 }
 
-/// Global configuration settings.
+impl AlloyConfig {
+    /// Extracts adapter-specific configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let onebot_config: OneBotConfig = config.extract_adapter("onebot")?;
+    /// ```
+    pub fn extract_adapter<T: serde::de::DeserializeOwned>(
+        &self,
+        adapter_name: &str,
+    ) -> Result<T, figment::Error> {
+        let value = self
+            .adapters
+            .get(adapter_name)
+            .cloned()
+            .unwrap_or_else(|| Value::Dict(Tag::default(), BTreeMap::default()));
+
+        figment::Figment::from(figment::providers::Serialized::defaults(value)).extract()
+    }
+
+    /// Checks if an adapter has configuration.
+    pub fn has_adapter(&self, adapter_name: &str) -> bool {
+        self.adapters.contains_key(adapter_name)
+    }
+}
+
+// =============================================================================
+// Logging Configuration
+// =============================================================================
+
+/// Logging configuration.
+///
+/// Supports multiple output formats, targets, and filtering options.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GlobalConfig {
-    /// Log level (trace, debug, info, warn, error).
-    #[serde(default = "default_log_level")]
-    pub log_level: String,
+#[serde(default)]
+pub struct LoggingConfig {
+    /// Default log level.
+    ///
+    /// Can be: trace, debug, info, warn, error
+    pub level: LogLevel,
 
-    /// Default timeout for network operations in milliseconds.
-    #[serde(default = "default_timeout_ms")]
-    pub timeout_ms: u64,
+    /// Output format.
+    pub format: LogFormat,
 
-    /// Default retry configuration.
+    /// Output target.
+    pub output: LogOutput,
+
+    /// Whether to include timestamps.
+    pub timestamps: bool,
+
+    /// Whether to include source file location.
+    pub file_location: bool,
+
+    /// Whether to include thread IDs.
+    pub thread_ids: bool,
+
+    /// Whether to include thread names.
+    pub thread_names: bool,
+
+    /// Span event configuration for Tower Service visibility.
+    pub span_events: SpanEventConfig,
+
+    /// Module-specific log level overrides.
+    ///
+    /// Example: `{ "alloy_transport": "debug", "hyper": "warn" }`
     #[serde(default)]
-    pub retry: RetryConfig,
+    pub filters: HashMap<String, LogLevel>,
 
-    /// Enable metrics collection.
-    #[serde(default)]
-    pub enable_metrics: bool,
+    /// Log file path (only used when output is "file").
+    pub file_path: Option<PathBuf>,
+
+    /// Maximum log file size in bytes before rotation (default: 10MB).
+    #[serde(default = "default_max_file_size")]
+    pub max_file_size: u64,
+
+    /// Number of rotated log files to keep.
+    #[serde(default = "default_max_files")]
+    pub max_files: u32,
 }
 
-impl Default for GlobalConfig {
+impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
-            log_level: default_log_level(),
-            timeout_ms: default_timeout_ms(),
-            retry: RetryConfig::default(),
-            enable_metrics: false,
+            level: LogLevel::Info,
+            format: LogFormat::Pretty,
+            output: LogOutput::Stdout,
+            timestamps: true,
+            file_location: false,
+            thread_ids: false,
+            thread_names: false,
+            span_events: SpanEventConfig::default(),
+            filters: HashMap::new(),
+            file_path: None,
+            max_file_size: default_max_file_size(),
+            max_files: default_max_files(),
         }
     }
 }
 
-fn default_log_level() -> String {
-    "info".to_string()
+fn default_max_file_size() -> u64 {
+    10 * 1024 * 1024 // 10 MB
 }
 
-fn default_timeout_ms() -> u64 {
-    30000
+fn default_max_files() -> u32 {
+    5
+}
+
+/// Log level enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    #[default]
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    /// Converts to tracing::Level.
+    pub fn to_tracing_level(self) -> tracing::Level {
+        match self {
+            Self::Trace => tracing::Level::TRACE,
+            Self::Debug => tracing::Level::DEBUG,
+            Self::Info => tracing::Level::INFO,
+            Self::Warn => tracing::Level::WARN,
+            Self::Error => tracing::Level::ERROR,
+        }
+    }
+
+    /// Converts to filter directive string.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl std::fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Log output format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    /// Human-readable pretty format.
+    #[default]
+    Pretty,
+    /// Compact single-line format.
+    Compact,
+    /// JSON format for structured logging.
+    Json,
+    /// Full verbose format.
+    Full,
+}
+
+/// Log output target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LogOutput {
+    /// Output to stdout.
+    #[default]
+    Stdout,
+    /// Output to stderr.
+    Stderr,
+    /// Output to file (requires `file_path`).
+    File,
+}
+
+/// Span event configuration for Tower Service observability.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct SpanEventConfig {
+    /// Log when a span is created.
+    pub new: bool,
+    /// Log when a span is entered.
+    pub enter: bool,
+    /// Log when a span is exited.
+    pub exit: bool,
+    /// Log when a span is closed.
+    pub close: bool,
+}
+
+impl SpanEventConfig {
+    /// No span events.
+    pub const NONE: Self = Self {
+        new: false,
+        enter: false,
+        exit: false,
+        close: false,
+    };
+
+    /// Lifecycle events (new + close).
+    pub const LIFECYCLE: Self = Self {
+        new: true,
+        enter: false,
+        exit: false,
+        close: true,
+    };
+
+    /// All span events.
+    pub const FULL: Self = Self {
+        new: true,
+        enter: true,
+        exit: true,
+        close: true,
+    };
+}
+
+// =============================================================================
+// Network Configuration
+// =============================================================================
+
+/// Global network configuration defaults.
+///
+/// These settings apply to all connections unless overridden at the connection level.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NetworkConfig {
+    /// Default connection timeout in seconds.
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
+
+    /// Default retry configuration.
+    pub retry: RetryConfig,
+
+    /// Whether to auto-reconnect by default.
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
+
+    /// Heartbeat interval in seconds (0 to disable).
+    #[serde(default = "default_heartbeat_secs")]
+    pub heartbeat_secs: u64,
+
+    /// HTTP proxy URL (optional).
+    pub http_proxy: Option<String>,
+
+    /// HTTPS proxy URL (optional).
+    pub https_proxy: Option<String>,
+
+    /// Hosts to bypass proxy for.
+    #[serde(default)]
+    pub no_proxy: Vec<String>,
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            timeout_secs: default_timeout_secs(),
+            retry: RetryConfig::default(),
+            auto_reconnect: true,
+            heartbeat_secs: default_heartbeat_secs(),
+            http_proxy: None,
+            https_proxy: None,
+            no_proxy: Vec::new(),
+        }
+    }
+}
+
+impl NetworkConfig {
+    /// Returns the timeout as Duration.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+
+    /// Returns the heartbeat interval as Duration.
+    pub fn heartbeat_interval(&self) -> Duration {
+        Duration::from_secs(self.heartbeat_secs)
+    }
+}
+
+fn default_timeout_secs() -> u64 {
+    30
+}
+
+fn default_heartbeat_secs() -> u64 {
+    30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Retry configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts.
     #[serde(default = "default_max_retries")]
@@ -88,8 +394,8 @@ impl Default for RetryConfig {
 }
 
 impl RetryConfig {
-    /// Converts to core retry config.
-    pub fn to_core_retry(&self) -> alloy_core::RetryConfig {
+    /// Converts to alloy_core::RetryConfig.
+    pub fn to_core_config(&self) -> alloy_core::RetryConfig {
         alloy_core::RetryConfig {
             max_retries: self.max_retries,
             initial_delay: Duration::from_millis(self.initial_delay_ms),
@@ -115,132 +421,100 @@ fn default_backoff_multiplier() -> f64 {
     2.0
 }
 
-/// Individual bot configuration.
+// =============================================================================
+// Runtime Configuration
+// =============================================================================
+
+/// Runtime behavior configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BotConfig {
-    /// Unique identifier for this bot instance.
-    pub id: String,
+#[serde(default)]
+pub struct RuntimeConfig {
+    /// Graceful shutdown timeout in seconds.
+    #[serde(default = "default_shutdown_timeout")]
+    pub shutdown_timeout_secs: u64,
 
-    /// Human-readable name for this bot.
+    /// Enable metrics collection.
     #[serde(default)]
-    pub name: Option<String>,
+    pub enable_metrics: bool,
 
-    /// Adapter type (e.g., "onebot").
-    pub adapter: String,
+    /// Metrics server port (only when metrics enabled).
+    #[serde(default = "default_metrics_port")]
+    pub metrics_port: u16,
 
-    /// Transport configuration.
-    pub transport: TransportConfig,
-
-    /// Whether this bot is enabled.
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-
-    /// Bot-specific settings.
-    #[serde(default)]
-    pub settings: HashMap<String, serde_yaml::Value>,
+    /// Event channel buffer size.
+    #[serde(default = "default_event_buffer")]
+    pub event_buffer_size: usize,
 }
 
-fn default_enabled() -> bool {
-    true
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            shutdown_timeout_secs: default_shutdown_timeout(),
+            enable_metrics: false,
+            metrics_port: default_metrics_port(),
+            event_buffer_size: default_event_buffer(),
+        }
+    }
 }
 
-/// Transport configuration.
+impl RuntimeConfig {
+    /// Returns shutdown timeout as Duration.
+    pub fn shutdown_timeout(&self) -> Duration {
+        Duration::from_secs(self.shutdown_timeout_secs)
+    }
+}
+
+fn default_shutdown_timeout() -> u64 {
+    30
+}
+
+fn default_metrics_port() -> u16 {
+    9090
+}
+
+fn default_event_buffer() -> usize {
+    1024
+}
+
+// =============================================================================
+// Connection Configuration (for adapters to use)
+// =============================================================================
+
+/// Common connection configuration that adapters can use.
+///
+/// This is provided as a helper type for adapters to define their own
+/// connection configurations with consistent structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub enum TransportConfig {
-    /// WebSocket client configuration.
+pub enum ConnectionConfig {
+    /// WebSocket client connection.
     WsClient(WsClientConfig),
-
-    /// WebSocket server configuration.
+    /// WebSocket server listener.
     WsServer(WsServerConfig),
-
-    /// HTTP client configuration.
+    /// HTTP client (polling or webhooks).
     HttpClient(HttpClientConfig),
-
-    /// HTTP server configuration.
+    /// HTTP server (receiving webhooks).
     HttpServer(HttpServerConfig),
-}
-
-impl TransportConfig {
-    /// Returns the transport type.
-    pub fn transport_type(&self) -> TransportType {
-        match self {
-            Self::WsClient(_) => TransportType::WsClient,
-            Self::WsServer(_) => TransportType::WsServer,
-            Self::HttpClient(_) => TransportType::HttpClient,
-            Self::HttpServer(_) => TransportType::HttpServer,
-        }
-    }
-
-    /// Converts runtime config to core config.
-    pub fn to_core_config(&self) -> alloy_core::TransportConfig {
-        match self {
-            Self::WsClient(cfg) => {
-                alloy_core::TransportConfig::WsClient(alloy_core::WsClientConfig {
-                    url: cfg.url.clone(),
-                    access_token: cfg.access_token.clone(),
-                    auto_reconnect: cfg.auto_reconnect,
-                    heartbeat_interval: Duration::from_secs(cfg.heartbeat_interval_secs),
-                    retry: cfg.retry.as_ref().map(|r| r.to_core_retry()),
-                })
-            }
-            Self::WsServer(cfg) => {
-                alloy_core::TransportConfig::WsServer(alloy_core::WsServerConfig {
-                    host: cfg.host.clone(),
-                    port: cfg.port,
-                    path: cfg.path.clone(),
-                    access_token: cfg.access_token.clone(),
-                })
-            }
-            Self::HttpClient(cfg) => {
-                alloy_core::TransportConfig::HttpClient(alloy_core::HttpClientConfig {
-                    url: cfg.url.clone(),
-                    access_token: cfg.access_token.clone(),
-                    timeout: Duration::from_millis(cfg.timeout_ms),
-                    retry: cfg.retry.as_ref().map(|r| r.to_core_retry()),
-                })
-            }
-            Self::HttpServer(cfg) => {
-                alloy_core::TransportConfig::HttpServer(alloy_core::HttpServerConfig {
-                    host: cfg.host.clone(),
-                    port: cfg.port,
-                    path: cfg.path.clone(),
-                    secret: cfg.secret.clone(),
-                })
-            }
-        }
-    }
 }
 
 /// WebSocket client configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsClientConfig {
-    /// WebSocket server URL to connect to.
+    /// WebSocket server URL.
     pub url: String,
 
     /// Access token for authentication.
     #[serde(default)]
     pub access_token: Option<String>,
 
-    /// Auto-reconnect on disconnection.
-    #[serde(default = "default_auto_reconnect")]
-    pub auto_reconnect: bool,
+    /// Override auto-reconnect setting.
+    pub auto_reconnect: Option<bool>,
 
-    /// Heartbeat interval in seconds.
-    #[serde(default = "default_heartbeat_interval")]
-    pub heartbeat_interval_secs: u64,
+    /// Override heartbeat interval.
+    pub heartbeat_secs: Option<u64>,
 
-    /// Retry configuration override.
-    #[serde(default)]
+    /// Override retry configuration.
     pub retry: Option<RetryConfig>,
-}
-
-fn default_auto_reconnect() -> bool {
-    true
-}
-
-fn default_heartbeat_interval() -> u64 {
-    30
 }
 
 /// WebSocket server configuration.
@@ -262,30 +536,20 @@ pub struct WsServerConfig {
     pub access_token: Option<String>,
 }
 
-fn default_host() -> String {
-    "0.0.0.0".to_string()
-}
-
-fn default_ws_path() -> String {
-    "/ws".to_string()
-}
-
 /// HTTP client configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpClientConfig {
-    /// HTTP server URL to connect to.
+    /// HTTP server URL.
     pub url: String,
 
     /// Access token for authentication.
     #[serde(default)]
     pub access_token: Option<String>,
 
-    /// Request timeout in milliseconds.
-    #[serde(default = "default_timeout_ms")]
-    pub timeout_ms: u64,
+    /// Override timeout.
+    pub timeout_secs: Option<u64>,
 
-    /// Retry configuration override.
-    #[serde(default)]
+    /// Override retry configuration.
     pub retry: Option<RetryConfig>,
 }
 
@@ -306,6 +570,14 @@ pub struct HttpServerConfig {
     /// Secret for signature verification.
     #[serde(default)]
     pub secret: Option<String>,
+}
+
+fn default_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_ws_path() -> String {
+    "/ws".to_string()
 }
 
 fn default_http_path() -> String {

@@ -14,9 +14,9 @@ pub enum ConfigError {
     #[error("Failed to read configuration file: {0}")]
     ReadError(#[from] std::io::Error),
 
-    /// YAML parsing error.
-    #[error("Failed to parse YAML configuration: {0}")]
-    ParseError(#[from] serde_yaml::Error),
+    /// YAML/configuration parsing error.
+    #[error("Configuration parse error: {0}")]
+    ParseError(String),
 
     /// Invalid configuration value.
     #[error("Invalid configuration: {message}")]

@@ -29,7 +29,7 @@
 //!
 //! ```rust,ignore
 //! use alloy::prelude::*;
-//! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter};
+//! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter, OneBotConfig};
 //!
 //! async fn echo(ctx: EventContext<MessageEvent>) {
 //!     if let Some(content) = ctx.data().plain_text().strip_prefix("/echo ") {
@@ -40,7 +40,10 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let runtime = AlloyRuntime::new();
-//!     runtime.register_adapter(OneBotAdapter::new()).await;
+//!     
+//!     // Adapter is configured from alloy.yaml
+//!     let config: OneBotConfig = runtime.config().extract_adapter("onebot")?;
+//!     runtime.register_adapter(OneBotAdapter::from_config(config)).await;
 //!     
 //!     // Register a matcher with handlers
 //!     runtime.register_matcher(
@@ -87,32 +90,21 @@ pub use alloy_macros;
 
 /// Prelude module for convenient imports.
 ///
-/// This module provides all commonly used types and traits in one import:
+/// This module provides all commonly used types for building bot applications:
 ///
 /// ```rust,ignore
 /// use alloy::prelude::*;
 /// ```
 pub mod prelude {
-    // Core types
-    pub use alloy_core::{Adapter, BoxedAdapter};
-    pub use alloy_core::{
-        AlloyContext, BoxFuture, BoxedEvent, BoxedHandler, CanExtract, Dispatcher, Event,
-        FromContext, Handler, HandlerFn, Matcher, Message, MessageSegment, into_handler,
-    };
+    // Runtime - main entry point
+    pub use alloy_runtime::AlloyRuntime;
 
-    // Capability system
-    pub use alloy_core::{
-        AdapterContext, BotManager, ClientConfig, ConnectionHandle, ConnectionHandler,
-        ConnectionInfo, HttpClientCapability, HttpServerCapability, ListenerHandle,
-        TransportContext, WsClientCapability, WsServerCapability,
-    };
+    // Event system - for building handlers
+    pub use alloy_core::{EventContext, Handler, Matcher};
 
-    // Tower integration
-    pub use alloy_core::{AlloyError, BotCommand, MatcherResponse, ServiceFuture};
+    // Bot types - for interacting with bots in handlers
+    pub use alloy_core::Bot;
 
-    // Runtime types
-    pub use alloy_runtime::{AlloyRuntime, BotStatus};
-
-    // Logging
-    pub use alloy_runtime::logging::{LoggingBuilder, SpanEvents};
+    // Core traits for custom implementations
+    pub use alloy_core::{Event, Message};
 }

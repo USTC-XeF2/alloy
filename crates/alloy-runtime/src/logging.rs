@@ -1,26 +1,31 @@
 //! Logging utilities for the Alloy framework.
 //!
 //! This module provides a unified logging setup using `tracing` and `tracing-subscriber`.
-//! It supports Span Events for observing Service lifecycles in Tower middleware.
+//! It supports configuration-driven initialization and Span Events for observing
+//! Service lifecycles in Tower middleware.
 //!
-//! # Example
+//! # Configuration-Based Initialization
 //!
 //! ```rust,ignore
-//! use alloy_utils::logging::{LoggingBuilder, SpanEvents};
+//! use alloy_runtime::config::AlloyConfig;
+//! use alloy_runtime::logging;
 //!
-//! fn main() {
-//!     // Initialize with default settings
-//!     LoggingBuilder::new()
-//!         .init();
+//! let config = AlloyConfig::load()?;
+//! logging::init_from_config(&config.logging);
+//! ```
 //!
-//!     // Or with span events for Tower Service lifecycle visibility
-//!     LoggingBuilder::new()
-//!         .directive("alloy=debug")
-//!         .span_events(SpanEvents::FULL)
-//!         .init();
-//! }
+//! # Manual Initialization
+//!
+//! ```rust,ignore
+//! use alloy_runtime::logging::{LoggingBuilder, SpanEvents};
+//!
+//! LoggingBuilder::new()
+//!     .directive("alloy=debug")
+//!     .span_events(SpanEvents::FULL)
+//!     .init();
 //! ```
 
+use crate::config::{LogFormat, LogOutput, LoggingConfig, SpanEventConfig};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 /// Span event configuration for logging.
@@ -100,95 +105,62 @@ impl SpanEvents {
     }
 }
 
-/// Initialize logging with default settings.
-///
-/// This sets up a tracing subscriber with:
-/// - Environment-based filtering via `RUST_LOG`
-/// - Default directive: `info`
-/// - Pretty formatting with timestamps
-///
-/// # Panics
-///
-/// Panics if the subscriber has already been set.
-pub fn init() {
-    init_with_filter("info");
+impl From<&SpanEventConfig> for SpanEvents {
+    fn from(config: &SpanEventConfig) -> Self {
+        Self {
+            new: config.new,
+            enter: config.enter,
+            exit: config.exit,
+            close: config.close,
+        }
+    }
 }
 
-/// Initialize logging with a custom filter string.
+// =============================================================================
+// Configuration-Based Initialization
+// =============================================================================
+
+/// Initialize logging from a `LoggingConfig`.
 ///
-/// # Arguments
-///
-/// * `filter` - A filter string like `"alloy=debug,my_module=trace"`
+/// This is the primary way to initialize logging in Alloy. It reads all settings
+/// from the configuration and sets up the tracing subscriber accordingly.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// logging::init_with_filter("alloy_runtime=debug,alloy_transport=trace");
+/// use alloy_runtime::config::{AlloyConfig, load_config};
+/// use alloy_runtime::logging;
+///
+/// let config = load_config()?;
+/// logging::init_from_config(&config.logging);
 /// ```
-///
-/// # Panics
-///
-/// Panics if the subscriber has already been set.
-pub fn init_with_filter(filter: &str) {
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter));
+pub fn init_from_config(config: &LoggingConfig) {
+    let builder = LoggingBuilder::from_config(config);
 
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(env_filter)
-        .init();
+    // Use try_init to avoid panicking if already initialized
+    let _ = builder.try_init();
 }
 
-/// Try to initialize logging, returning an error instead of panicking.
+/// Try to initialize logging from configuration.
 ///
-/// This is useful when you're not sure if logging has already been initialized.
-pub fn try_init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    try_init_with_filter("info")
+/// Returns an error if the subscriber has already been set.
+pub fn try_init_from_config(
+    config: &LoggingConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let builder = LoggingBuilder::from_config(config);
+    builder.try_init()
 }
 
-/// Try to initialize logging with a custom filter.
-pub fn try_init_with_filter(filter: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter));
-
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(env_filter)
-        .try_init()
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-}
-
-/// Creates a default EnvFilter for Alloy components.
-///
-/// Returns a filter with sensible defaults for Alloy components:
-/// - `alloy_runtime=info`
-/// - `alloy_transport=info`
-/// - `alloy_adapter_onebot=info`
-/// - `alloy_core=debug`
-pub fn default_alloy_filter() -> EnvFilter {
-    EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("info")
-            .add_directive("alloy_runtime=info".parse().unwrap())
-            .add_directive("alloy_transport=info".parse().unwrap())
-            .add_directive("alloy_adapter_onebot=info".parse().unwrap())
-            .add_directive("alloy_core=debug".parse().unwrap())
-    })
-}
-
-/// Initialize logging with Alloy defaults.
-///
-/// This sets up logging with sensible defaults for all Alloy components.
-pub fn init_alloy() {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(default_alloy_filter())
-        .init();
-}
+// =============================================================================
+// Configuration-Based LoggingBuilder
+// =============================================================================
 
 /// A builder for configuring logging.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use alloy_utils::logging::{LoggingBuilder, SpanEvents};
+/// use alloy_runtime::logging::{LoggingBuilder, SpanEvents};
 /// use tracing::Level;
 ///
 /// // Basic setup with log level
@@ -209,31 +181,56 @@ pub struct LoggingBuilder {
     directives: Vec<String>,
     level: Option<tracing::Level>,
     span_events: SpanEvents,
+    format: LogFormat,
+    output: LogOutput,
     with_target: bool,
     with_thread_ids: bool,
     with_file: bool,
     with_line_number: bool,
-    #[cfg(feature = "json")]
-    json: bool,
 }
 
 impl LoggingBuilder {
     /// Create a new logging builder.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            format: LogFormat::Compact,
+            output: LogOutput::Stdout,
+            with_target: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create a LoggingBuilder from a LoggingConfig.
+    pub fn from_config(config: &LoggingConfig) -> Self {
+        let mut builder = Self::new();
+
+        // Set level
+        builder.level = Some(config.level.to_tracing_level());
+
+        // Set format and output
+        builder.format = config.format;
+        builder.output = config.output;
+
+        // Set span events
+        builder.span_events = SpanEvents::from(&config.span_events);
+
+        // Set display options - map schema field names to builder field names
+        builder.with_target = true; // always show target
+        builder.with_thread_ids = config.thread_ids;
+        builder.with_file = config.file_location;
+        builder.with_line_number = config.file_location;
+
+        // Add module filters
+        for (module, level) in &config.filters {
+            builder
+                .directives
+                .push(format!("{}={}", module, level.as_str()));
+        }
+
+        builder
     }
 
     /// Set the global log level.
-    ///
-    /// This sets the minimum level for all log output.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use tracing::Level;
-    ///
-    /// builder.with_level(Level::DEBUG)
-    /// ```
     pub fn with_level(mut self, level: tracing::Level) -> Self {
         self.level = Some(level);
         self
@@ -253,29 +250,26 @@ impl LoggingBuilder {
     }
 
     /// Configure span events for Service lifecycle visibility.
-    ///
-    /// This is essential for debugging Tower middleware chains.
-    /// Use `SpanEvents::LIFECYCLE` to see when Services start and complete.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // See when spans are created and closed
-    /// builder.span_events(SpanEvents::LIFECYCLE)
-    ///
-    /// // Full visibility into span enter/exit
-    /// builder.span_events(SpanEvents::FULL)
-    /// ```
     pub fn span_events(mut self, events: SpanEvents) -> Self {
         self.span_events = events;
         self
     }
 
-    /// Alias for `span_events` - configure span events.
-    ///
-    /// This is provided for API consistency with other "with_" prefixed methods.
+    /// Alias for `span_events`.
     pub fn with_span_events(mut self, events: SpanEvents) -> Self {
         self.span_events = events;
+        self
+    }
+
+    /// Set the output format.
+    pub fn format(mut self, format: LogFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// Set the output destination.
+    pub fn output(mut self, output: LogOutput) -> Self {
+        self.output = output;
         self
     }
 
@@ -303,25 +297,18 @@ impl LoggingBuilder {
         self
     }
 
-    /// Enable JSON output format.
-    #[cfg(feature = "json")]
-    pub fn json(mut self) -> Self {
-        self.json = true;
-        self
-    }
-
     /// Build the filter from directives.
     fn build_filter(&self) -> EnvFilter {
         // Start with the base level or default
         let base_filter = if let Some(level) = self.level {
-            let level_str = match level {
+            match level {
                 tracing::Level::TRACE => "trace",
                 tracing::Level::DEBUG => "debug",
                 tracing::Level::INFO => "info",
                 tracing::Level::WARN => "warn",
                 tracing::Level::ERROR => "error",
-            };
-            level_str.to_string()
+            }
+            .to_string()
         } else {
             "info".to_string()
         };
@@ -340,63 +327,174 @@ impl LoggingBuilder {
         filter
     }
 
-    /// Build the fmt layer with configured options.
-    fn build_fmt_layer<S>(&self) -> fmt::Layer<S>
-    where
-        S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
-    {
-        fmt::layer()
-            .with_span_events(self.span_events.to_fmt_span())
-            .with_target(self.with_target)
-            .with_thread_ids(self.with_thread_ids)
-            .with_file(self.with_file)
-            .with_line_number(self.with_line_number)
-    }
-
     /// Initialize the logging system.
     pub fn init(self) {
-        let filter = self.build_filter();
-
-        #[cfg(feature = "json")]
-        if self.json {
-            tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .json()
-                        .with_span_events(self.span_events.to_fmt_span()),
-                )
-                .with(filter)
-                .init();
-            return;
-        }
-
-        tracing_subscriber::registry()
-            .with(self.build_fmt_layer())
-            .with(filter)
-            .init();
+        let _ = self.try_init();
     }
 
     /// Try to initialize the logging system, returning an error on failure.
     pub fn try_init(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let filter = self.build_filter();
+        let span_events = self.span_events.to_fmt_span();
 
-        #[cfg(feature = "json")]
-        if self.json {
-            return tracing_subscriber::registry()
+        match (&self.format, &self.output) {
+            #[cfg(feature = "json")]
+            (LogFormat::Json, LogOutput::Stdout) => tracing_subscriber::registry()
                 .with(
                     fmt::layer()
                         .json()
-                        .with_span_events(self.span_events.to_fmt_span()),
+                        .with_span_events(span_events)
+                        .with_writer(std::io::stdout),
                 )
                 .with(filter)
-                .try_init()
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
+                .try_init(),
+            #[cfg(feature = "json")]
+            (LogFormat::Json, LogOutput::Stderr) => tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .json()
+                        .with_span_events(span_events)
+                        .with_writer(std::io::stderr),
+                )
+                .with(filter)
+                .try_init(),
+            #[cfg(feature = "json")]
+            (LogFormat::Json, LogOutput::File) => {
+                tracing::warn!("File logging not yet implemented, falling back to stdout");
+                tracing_subscriber::registry()
+                    .with(
+                        fmt::layer()
+                            .json()
+                            .with_span_events(span_events)
+                            .with_writer(std::io::stdout),
+                    )
+                    .with(filter)
+                    .try_init()
+            }
+            #[cfg(not(feature = "json"))]
+            (LogFormat::Json, _) => {
+                tracing::warn!(
+                    "JSON format requested but 'json' feature not enabled, using compact format"
+                );
+                self.init_compact(filter, span_events)
+            }
+            (LogFormat::Compact, LogOutput::Stdout) => self.init_compact(filter, span_events),
+            (LogFormat::Compact, LogOutput::Stderr) => tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .compact()
+                        .with_span_events(span_events)
+                        .with_target(self.with_target)
+                        .with_thread_ids(self.with_thread_ids)
+                        .with_file(self.with_file)
+                        .with_line_number(self.with_line_number)
+                        .with_writer(std::io::stderr),
+                )
+                .with(filter)
+                .try_init(),
+            (LogFormat::Compact, LogOutput::File) => {
+                tracing::warn!("File logging not yet implemented, falling back to stdout");
+                self.init_compact(filter, span_events)
+            }
+            (LogFormat::Full, LogOutput::Stdout) => tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .with_span_events(span_events)
+                        .with_target(self.with_target)
+                        .with_thread_ids(self.with_thread_ids)
+                        .with_file(self.with_file)
+                        .with_line_number(self.with_line_number)
+                        .with_writer(std::io::stdout),
+                )
+                .with(filter)
+                .try_init(),
+            (LogFormat::Full, LogOutput::Stderr) => tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .with_span_events(span_events)
+                        .with_target(self.with_target)
+                        .with_thread_ids(self.with_thread_ids)
+                        .with_file(self.with_file)
+                        .with_line_number(self.with_line_number)
+                        .with_writer(std::io::stderr),
+                )
+                .with(filter)
+                .try_init(),
+            (LogFormat::Full, LogOutput::File) => {
+                tracing::warn!("File logging not yet implemented, falling back to stdout");
+                tracing_subscriber::registry()
+                    .with(
+                        fmt::layer()
+                            .with_span_events(span_events)
+                            .with_target(self.with_target)
+                            .with_writer(std::io::stdout),
+                    )
+                    .with(filter)
+                    .try_init()
+            }
+            // Pretty format
+            (LogFormat::Pretty, LogOutput::Stdout) => tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .pretty()
+                        .with_span_events(span_events)
+                        .with_target(self.with_target)
+                        .with_thread_ids(self.with_thread_ids)
+                        .with_file(self.with_file)
+                        .with_line_number(self.with_line_number)
+                        .with_writer(std::io::stdout),
+                )
+                .with(filter)
+                .try_init(),
+            (LogFormat::Pretty, LogOutput::Stderr) => tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .pretty()
+                        .with_span_events(span_events)
+                        .with_target(self.with_target)
+                        .with_thread_ids(self.with_thread_ids)
+                        .with_file(self.with_file)
+                        .with_line_number(self.with_line_number)
+                        .with_writer(std::io::stderr),
+                )
+                .with(filter)
+                .try_init(),
+            // File output - for now, just use stdout with a warning
+            // TODO: Implement proper file logging with rotation
+            (LogFormat::Pretty, LogOutput::File) => {
+                tracing::warn!("File logging not yet implemented, falling back to stdout");
+                tracing_subscriber::registry()
+                    .with(
+                        fmt::layer()
+                            .pretty()
+                            .with_span_events(span_events)
+                            .with_target(self.with_target)
+                            .with_writer(std::io::stdout),
+                    )
+                    .with(filter)
+                    .try_init()
+            }
         }
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    }
 
+    fn init_compact(
+        &self,
+        filter: EnvFilter,
+        span_events: fmt::format::FmtSpan,
+    ) -> Result<(), tracing_subscriber::util::TryInitError> {
         tracing_subscriber::registry()
-            .with(self.build_fmt_layer())
+            .with(
+                fmt::layer()
+                    .compact()
+                    .with_span_events(span_events)
+                    .with_target(self.with_target)
+                    .with_thread_ids(self.with_thread_ids)
+                    .with_file(self.with_file)
+                    .with_line_number(self.with_line_number)
+                    .with_writer(std::io::stdout),
+            )
             .with(filter)
             .try_init()
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
     }
 }

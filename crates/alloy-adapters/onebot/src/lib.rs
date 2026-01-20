@@ -3,84 +3,64 @@
 //! This crate provides an adapter for connecting the Alloy bot framework
 //! to OneBot v11 implementations.
 //!
-//! ## Overview
+//! ## Configuration-Based Usage (Recommended)
 //!
-//! The OneBot protocol is a standard for QQ bots, and v11 is one of its
-//! widely-used versions. This adapter handles:
+//! Configure in `alloy.yaml`:
 //!
-//! - Event parsing and dispatching
-//! - Message serialization/deserialization
-//! - Integration with alloy-runtime
-//!
-//! ## Quick Start
+//! ```yaml
+//! adapters:
+//!   onebot:
+//!     connections:
+//!       - type: ws-server
+//!         host: 0.0.0.0
+//!         port: 8080
+//!         path: /onebot/v11/ws
+//!       - type: ws-client
+//!         url: ws://127.0.0.1:6700/ws
+//!         access_token: ${BOT_TOKEN:-}
+//! ```
 //!
 //! ```rust,ignore
 //! use alloy_runtime::AlloyRuntime;
-//! use alloy_adapter_onebot::OneBotAdapter;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let runtime = AlloyRuntime::load_config()?;
-//!     runtime.register_adapter(OneBotAdapter::new()).await;
+//!     // Adapter auto-registers from config
+//!     let runtime = AlloyRuntime::new();
 //!     runtime.run().await
 //! }
 //! ```
 //!
-//! ## Event Hierarchy
+//! ## Programmatic Usage
 //!
-//! Events are organized in a hierarchical structure:
+//! ```rust,ignore
+//! use alloy_adapter_onebot::{OneBotAdapter, OneBotConfig};
+//!
+//! // From config
+//! let config: OneBotConfig = runtime.config().extract_adapter("onebot")?;
+//! runtime.register_adapter(OneBotAdapter::from_config(config)).await;
+//!
+//! // Or build manually
+//! let adapter = OneBotAdapter::builder()
+//!     .ws_server("0.0.0.0:8080", "/ws")
+//!     .ws_client("ws://localhost:6700/ws", None)
+//!     .build();
+//! runtime.register_adapter(adapter).await;
+//! ```
+//!
+//! ## Event Hierarchy
 //!
 //! ```text
 //! OneBotEvent (implements Event trait)
 //! ├── Message { Private, Group }
-//! ├── Notice { GroupUpload, GroupAdmin, ... , Notify { Poke, LuckyKing, Honor } }
+//! ├── Notice { GroupUpload, GroupAdmin, ... }
 //! ├── Request { Friend, Group }
 //! └── MetaEvent { Lifecycle, Heartbeat }
-//! ```
-//!
-//! ## Event Parsing
-//!
-//! Use [`OneBotEvent`] for automatic event type detection:
-//!
-//! ```rust,ignore
-//! use alloy_adapter_onebot::OneBotEvent;
-//!
-//! let event = OneBotEvent::parse(&json_string)?;
-//! match event {
-//!     OneBotEvent::Message(MessageEvent::Group(msg)) => {
-//!         println!("Group: {}", msg.plain_text());
-//!     }
-//!     OneBotEvent::Message(MessageEvent::Private(msg)) => {
-//!         println!("Private: {}", msg.plain_text());
-//!     }
-//!     _ => {}
-//! }
-//! ```
-//!
-//! ## Extractors
-//!
-//! The `extractors` module provides convenient types for extracting data:
-//!
-//! - [`extractors::Sender`]: Extract sender information
-//! - [`extractors::GroupInfo`]: Extract group-specific info
-//!
-//! ## Bot API
-//!
-//! The [`OneBotBot`] provides strongly-typed methods for all OneBot v11 APIs:
-//!
-//! ```rust,ignore
-//! use alloy_adapter_onebot::OneBotBot;
-//!
-//! // In a handler
-//! async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
-//!     if let Some(onebot) = bot.as_any().downcast_ref::<OneBotBot>() {
-//!         onebot.send_group_msg(12345, "Hello!", false).await.ok();
-//!     }
-//! }
 //! ```
 
 mod adapter;
 pub mod bot;
+pub mod config;
 pub mod extractors;
 pub mod model;
 pub mod traits;
@@ -89,6 +69,10 @@ pub use adapter::{OneBotAdapter, OneBotAdapterBuilder};
 pub use bot::{
     Credentials, FriendInfo, GetMsgResponse, GroupInfo as GroupInfoResponse, GroupMemberInfo,
     LoginInfo, OneBotBot, Status, StrangerInfo, VersionInfo,
+};
+pub use config::{
+    ConnectionConfig, HttpClientConfig, HttpServerConfig, OneBotConfig, WsClientConfig,
+    WsServerConfig,
 };
 pub use extractors::{GroupInfo, Sender};
 

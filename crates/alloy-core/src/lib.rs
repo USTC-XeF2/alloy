@@ -110,14 +110,12 @@ pub use framework::{
 };
 
 // Re-export integration types
-#[allow(deprecated)]
-pub use integration::AdapterCapabilities;
 pub use integration::{
-    Adapter, AdapterContext, AdapterFactory, AdapterRegistry, ApiError, ApiResult, Bot,
-    BotChannels, BotManager, BotMessage, BoxedAdapter, BoxedBot, BoxedConnectionHandler,
-    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpClientCapability,
-    HttpClientConfig, HttpServerCapability, HttpServerConfig, ListenerHandle, MessageHandler,
-    RetryConfig, RuntimeChannels, RuntimeMessage, TransportConfig, TransportContext, TransportType,
+    Adapter, AdapterContext, ApiError, ApiResult, Bot, BotChannels, BotManager, BotMessage,
+    BoxedAdapter, BoxedBot, BoxedConnectionHandler, ClientConfig, ConfigurableAdapter,
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpClientCapability, HttpClientConfig,
+    HttpServerCapability, HttpServerConfig, ListenerHandle, MessageHandler, RetryConfig,
+    RuntimeChannels, RuntimeMessage, TransportConfig, TransportContext, TransportType,
     WsClientCapability, WsClientConfig, WsServerCapability, WsServerConfig, create_bot_channels,
 };
 

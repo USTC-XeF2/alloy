@@ -74,11 +74,14 @@ pub mod runtime;
 
 // Re-exports
 pub use bot::{BotInstance, BotStatus};
-pub use config::{AlloyConfig, BotConfig, ConfigError, ConfigLoader, ConfigResult, GlobalConfig};
+pub use config::{
+    AlloyConfig, ConfigError, ConfigLoader, ConfigResult, LogFormat, LogLevel, LogOutput,
+    LoggingConfig, NetworkConfig, RuntimeConfig,
+};
 pub use error::{RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};
 pub use registry::{BotRegistry, RegistryStats};
-pub use runtime::{AlloyRuntime, RuntimeStats};
+pub use runtime::{AlloyRuntime, RuntimeBuilder, RuntimeStats};
 
 // Re-export tracing for use by other crates
 pub use tracing;

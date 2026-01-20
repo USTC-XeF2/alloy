@@ -108,18 +108,39 @@ impl AdapterContext {
 /// - Creating connection handlers for incoming/outgoing connections
 /// - Parsing raw messages into events
 /// - Managing protocol-specific logic
+///
+/// # Configuration-Based Creation
+///
+/// Each adapter defines its own configuration type and provides a method to create
+/// instances from that configuration. The runtime handles all configuration loading.
+///
+/// ```rust,ignore
+/// impl Adapter for OneBotAdapter {
+///     fn adapter_name() -> &'static str { "onebot" }
+///     
+///     fn from_config_erased(config: Box<dyn Any>) -> anyhow::Result<Arc<Self>> {
+///         let config = config.downcast::<OneBotConfig>()
+///             .map_err(|_| anyhow::anyhow!("Invalid config type"))?;
+///         Ok(Arc::new(Self { config: *config }))
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait Adapter: Send + Sync {
     /// Returns the adapter name (e.g., "onebot").
-    fn name(&self) -> &'static str;
-
-    /// Called when the adapter is initialized.
     ///
-    /// The adapter should prepare internal state but not start connections yet.
-    async fn on_init(&self, ctx: &mut AdapterContext) -> anyhow::Result<()> {
-        let _ = ctx;
-        Ok(())
-    }
+    /// This name is used to:
+    /// - Identify the adapter in registry and logs
+    /// - Locate the adapter's configuration in `alloy.yaml` (via `ConfigurableAdapter`)
+    ///
+    /// ```yaml
+    /// adapters:
+    ///   onebot:  # <- returned by Adapter::name()
+    ///     connections: [...]
+    /// ```
+    fn name() -> &'static str
+    where
+        Self: Sized;
 
     /// Called when the adapter should start.
     ///
@@ -168,98 +189,18 @@ pub trait Adapter: Send + Sync {
 /// A boxed adapter trait object.
 pub type BoxedAdapter = Arc<dyn Adapter>;
 
-/// Factory for creating adapters.
+/// Trait for adapters that can be created from configuration.
 ///
-/// Each adapter implementation provides a factory that can create
-/// instances with the appropriate configuration.
-pub trait AdapterFactory: Send + Sync {
-    /// Returns the adapter name.
-    fn name(&self) -> &'static str;
+/// This is a separate trait to avoid the associated type problem with trait objects.
+/// Adapters implement both `Adapter` and `ConfigurableAdapter`.
+pub trait ConfigurableAdapter: Adapter {
+    /// The configuration type for this adapter.
+    type Config: serde::de::DeserializeOwned;
 
-    /// Creates a new adapter instance.
-    fn create(&self) -> BoxedAdapter;
-}
-
-/// Registry of available adapters.
-pub struct AdapterRegistry {
-    factories: HashMap<String, Box<dyn AdapterFactory>>,
-}
-
-impl AdapterRegistry {
-    /// Creates a new empty registry.
-    pub fn new() -> Self {
-        Self {
-            factories: HashMap::new(),
-        }
-    }
-
-    /// Registers an adapter factory.
-    pub fn register<F: AdapterFactory + 'static>(&mut self, factory: F) {
-        self.factories
-            .insert(factory.name().to_string(), Box::new(factory));
-    }
-
-    /// Gets a factory by adapter name.
-    pub fn get(&self, name: &str) -> Option<&dyn AdapterFactory> {
-        self.factories.get(name).map(AsRef::as_ref)
-    }
-
-    /// Creates an adapter by name.
-    pub fn create(&self, name: &str) -> anyhow::Result<BoxedAdapter> {
-        let factory = self
-            .factories
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown adapter: {name}"))?;
-        Ok(factory.create())
-    }
-
-    /// Returns the names of all registered adapters.
-    pub fn adapters(&self) -> Vec<&str> {
-        self.factories.keys().map(String::as_str).collect()
-    }
-}
-
-impl Default for AdapterRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// =============================================================================
-// Legacy types (for backward compatibility during migration)
-// =============================================================================
-
-/// Adapter capabilities declaration (legacy).
-///
-/// This type is kept for backward compatibility but is deprecated
-/// in favor of the capability discovery pattern.
-#[deprecated(
-    since = "0.2.0",
-    note = "Use capability discovery pattern with TransportContext instead"
-)]
-#[derive(Debug, Clone)]
-pub struct AdapterCapabilities {
-    /// List of supported transport types.
-    pub supported_transports: Vec<crate::integration::transport::TransportType>,
-    /// The recommended/default transport type.
-    pub recommended_transport: crate::integration::transport::TransportType,
-}
-
-#[allow(deprecated)]
-impl AdapterCapabilities {
-    /// Creates new capabilities.
-    pub fn new(
-        supported: Vec<crate::integration::transport::TransportType>,
-        recommended: crate::integration::transport::TransportType,
-    ) -> Self {
-        Self {
-            supported_transports: supported,
-            recommended_transport: recommended,
-        }
-    }
-
-    /// Checks if a transport type is supported.
-    pub fn supports(&self, transport_type: crate::integration::transport::TransportType) -> bool {
-        self.supported_transports.contains(&transport_type)
-    }
+    /// Creates an adapter from its configuration.
+    ///
+    /// The runtime deserializes the config from `alloy.yaml` and calls this method.
+    fn from_config(config: Self::Config) -> anyhow::Result<Arc<Self>>
+    where
+        Self: Sized;
 }

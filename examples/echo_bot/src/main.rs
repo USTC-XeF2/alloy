@@ -27,9 +27,7 @@
 //! cargo run --package echo-bot
 //! ```
 
-use alloy::EventContext;
-use alloy::alloy_runtime::AlloyRuntime;
-use alloy::{Bot, prelude::*};
+use alloy::prelude::*;
 use alloy_adapter_onebot::{MessageEvent, MessageKind, OneBotAdapter, OneBotBot};
 use anyhow::Result;
 use std::sync::Arc;
@@ -173,26 +171,15 @@ async fn group_only_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Custom logging (must be done BEFORE AlloyRuntime is created)
-    // AlloyRuntime::init_logging_custom(|| {
-    //     LoggingBuilder::new()
-    //         .with_level(Level::DEBUG)
-    //         .directive("alloy_core=info")
-    //         .directive("alloy_transport=info")
-    //         .with_span_events(SpanEvents::LIFECYCLE)
-    //         .with_target(true)
-    //         .init();
-    // });
-
-    // Create the runtime
+    // Create runtime - automatically loads config from alloy.yaml
+    // Config can be overridden via environment variables:
+    // - ALLOY_LOGGING__LEVEL=debug
+    // - ALLOY_ADAPTERS__ONEBOT__CONNECTIONS__0__URL=ws://...
     let runtime = AlloyRuntime::new();
 
-    // Register the OneBot adapter with custom settings
-    let adapter = OneBotAdapter::builder()
-        .ws_server_addr("127.0.0.1:8080")
-        .ws_server_path("/onebot/v11/ws")
-        .build();
-    runtime.register_adapter(adapter).await;
+    // Register the OneBot adapter - configuration is automatically loaded from alloy.yaml
+    // The adapter name "onebot" is defined in OneBotAdapter::adapter_name()
+    runtime.register_adapter::<OneBotAdapter>().await?;
 
     // ========================================================================
     // Register Matchers

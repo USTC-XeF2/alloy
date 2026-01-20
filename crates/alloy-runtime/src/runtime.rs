@@ -3,43 +3,66 @@
 //! The runtime initializes adapters with a TransportContext containing
 //! available transport capabilities. Adapters then use these capabilities
 //! to establish connections dynamically.
+//!
+//! # Quick Start
+//!
+//! ```rust,ignore
+//! use alloy_runtime::AlloyRuntime;
+//!
+//! // Simplest way - auto-loads config from current directory
+//! let runtime = AlloyRuntime::new();
+//!
+//! // Custom configuration path
+//! let runtime = AlloyRuntime::builder()
+//!     .config_file("config/alloy.yaml")
+//!     .build()?;
+//!
+//! // Use pre-loaded config
+//! let config = load_config()?;
+//! let runtime = AlloyRuntime::from_config(&config);
+//! ```
 
 use crate::bot::BotStatus;
-use crate::logging::{LoggingBuilder, SpanEvents};
+use crate::config::{AlloyConfig, ConfigLoader};
+use crate::logging;
 use crate::registry::{BotRegistry, RegistryStats};
-use alloy_core::{AdapterContext, BoxedAdapter, Dispatcher, Matcher, TransportContext};
+use alloy_core::{AdapterContext, Dispatcher, Matcher, TransportContext};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::signal;
 use tokio::sync::RwLock;
-use tracing::{Level, debug, error, info, warn};
-
-/// Global flag to track if logging has been initialized.
-static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
+use tracing::{debug, error, info, warn};
 
 /// The main Alloy runtime that orchestrates adapters and bots.
 ///
-/// # Capability-Based Architecture
-///
-/// The runtime provides transport capabilities to adapters during initialization:
+/// # Simple Usage
 ///
 /// ```rust,ignore
+/// use alloy_runtime::AlloyRuntime;
+///
+/// // Auto-loads config from alloy.yaml in current directory
 /// let runtime = AlloyRuntime::new();
 ///
-/// // Register adapters
-/// runtime.register_adapter(OneBotAdapter::new()).await;
-///
-/// // Register matchers with handlers
-/// runtime.register_matcher(
-///     Matcher::new()
-///         .on::<MessageEvent>()
-///         .handler(echo_handler)
-/// ).await;
-///
-/// // Run - adapters will discover transport capabilities and set up connections
+/// // Adapter is configured from alloy.yaml, no need to register manually
+/// runtime.register_matcher(my_matcher).await;
 /// runtime.run().await?;
 /// ```
+///
+/// # Custom Configuration
+///
+/// ```rust,ignore
+/// // Load from specific file
+/// let runtime = AlloyRuntime::builder()
+///     .config_file("config/production.yaml")
+///     .profile("production")
+///     .build()?;
+///
+/// // Or use pre-loaded config
+/// let config = load_config_from_file("alloy.yaml")?;
+/// let runtime = AlloyRuntime::from_config(&config);
+/// ```
 pub struct AlloyRuntime {
+    /// The configuration.
+    config: AlloyConfig,
     /// The bot registry.
     registry: Arc<BotRegistry>,
     /// The event dispatcher.
@@ -50,69 +73,89 @@ pub struct AlloyRuntime {
     adapter_contexts: Arc<RwLock<Vec<AdapterContext>>>,
     /// Whether the runtime is running.
     running: Arc<RwLock<bool>>,
-    /// Log level (for reference).
-    #[allow(dead_code)]
-    log_level: String,
 }
 
 impl AlloyRuntime {
-    /// Creates a new runtime with default settings.
+    /// Creates a new runtime with automatic configuration loading.
     ///
-    /// This automatically initializes logging with default settings (INFO level)
-    /// and creates a TransportContext with all available transport capabilities.
+    /// This will:
+    /// 1. Search for `alloy.yaml` in the current directory
+    /// 2. Initialize logging based on the configuration
+    /// 3. Create transport context with all available capabilities
+    ///
+    /// If no configuration file is found, default settings are used.
     pub fn new() -> Self {
-        Self::init_logging_default();
+        let config = ConfigLoader::new()
+            .with_current_dir()
+            .load()
+            .unwrap_or_else(|e| {
+                eprintln!("Warning: Failed to load config ({e}), using defaults");
+                AlloyConfig::default()
+            });
 
-        // Create transport context with all available capabilities
-        let transport_ctx = Self::create_default_transport_context();
-
-        Self {
-            registry: Arc::new(BotRegistry::new()),
-            dispatcher: Arc::new(RwLock::new(Dispatcher::new())),
-            transport_context: Arc::new(RwLock::new(Some(transport_ctx))),
-            adapter_contexts: Arc::new(RwLock::new(Vec::new())),
-            running: Arc::new(RwLock::new(false)),
-            log_level: "info".to_string(),
-        }
+        Self::from_config(&config)
     }
 
-    /// Creates a new runtime with a specific log level.
+    /// Creates a runtime builder for custom configuration.
     ///
-    /// This also creates a TransportContext with all available transport capabilities.
-    pub fn with_log_level(log_level: impl Into<String>) -> Self {
-        let level_str = log_level.into();
-        Self::init_logging_with_level(&level_str);
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let runtime = AlloyRuntime::builder()
+    ///     .config_file("config/production.yaml")
+    ///     .profile("production")
+    ///     .build()?;
+    /// ```
+    pub fn builder() -> RuntimeBuilder {
+        RuntimeBuilder::new()
+    }
+
+    /// Creates a new runtime from configuration.
+    ///
+    /// This initializes logging based on the configuration and creates
+    /// a TransportContext with all available transport capabilities.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use alloy_runtime::{AlloyRuntime, config::load_config};
+    ///
+    /// let config = load_config()?;
+    /// let runtime = AlloyRuntime::from_config(&config);
+    /// ```
+    pub fn from_config(config: &AlloyConfig) -> Self {
+        // Initialize logging from config (try_init won't panic if already initialized)
+        logging::init_from_config(&config.logging);
 
         // Create transport context with all available capabilities
         let transport_ctx = Self::create_default_transport_context();
 
+        info!(
+            log_level = %config.logging.level,
+            log_format = ?config.logging.format,
+            "Runtime initialized from configuration"
+        );
+
         Self {
+            config: config.clone(),
             registry: Arc::new(BotRegistry::new()),
             dispatcher: Arc::new(RwLock::new(Dispatcher::new())),
             transport_context: Arc::new(RwLock::new(Some(transport_ctx))),
             adapter_contexts: Arc::new(RwLock::new(Vec::new())),
             running: Arc::new(RwLock::new(false)),
-            log_level: level_str,
         }
     }
 
-    /// Initializes logging with default settings.
-    fn init_logging_default() {
-        if LOGGING_INITIALIZED
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            LoggingBuilder::new()
-                .with_level(Level::INFO)
-                .with_span_events(SpanEvents::NONE)
-                .init();
-        }
+    /// Returns a reference to the configuration.
+    pub fn config(&self) -> &AlloyConfig {
+        &self.config
     }
 
     /// Creates a default TransportContext with all available transport capabilities.
     ///
     /// This method automatically registers all transport implementations based on
     /// enabled cargo features.
+    #[allow(unused_mut)]
     fn create_default_transport_context() -> TransportContext {
         let mut ctx = TransportContext::new();
 
@@ -151,58 +194,6 @@ impl AlloyRuntime {
         ctx
     }
 
-    /// Initializes logging with a specific level.
-    fn init_logging_with_level(level_str: &str) {
-        if LOGGING_INITIALIZED
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            let level = match level_str.to_lowercase().as_str() {
-                "trace" => Level::TRACE,
-                "debug" => Level::DEBUG,
-                "info" => Level::INFO,
-                "warn" | "warning" => Level::WARN,
-                "error" => Level::ERROR,
-                _ => Level::INFO,
-            };
-
-            // Use lifecycle span events for debug/trace, none for others
-            let span_events = if matches!(level, Level::TRACE | Level::DEBUG) {
-                SpanEvents::LIFECYCLE
-            } else {
-                SpanEvents::NONE
-            };
-
-            LoggingBuilder::new()
-                .with_level(level)
-                .with_span_events(span_events)
-                .init();
-
-            info!(level = %level_str, "Logging initialized");
-        }
-    }
-
-    /// Returns whether logging has been initialized.
-    pub fn is_logging_initialized() -> bool {
-        LOGGING_INITIALIZED.load(Ordering::SeqCst)
-    }
-
-    /// Manually initializes logging with custom settings.
-    ///
-    /// This should be called BEFORE creating an `AlloyRuntime` if you want
-    /// custom logging configuration.
-    pub fn init_logging_custom<F>(init_fn: F)
-    where
-        F: FnOnce(),
-    {
-        if LOGGING_INITIALIZED
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            init_fn();
-        }
-    }
-
     /// Sets the transport context.
     ///
     /// This must be called before `init()` to provide transport capabilities
@@ -214,9 +205,48 @@ impl AlloyRuntime {
 
     /// Registers an adapter with the runtime.
     ///
-    /// Adapters must be registered before calling `init()` or `run()`.
-    pub async fn register_adapter(&self, adapter: BoxedAdapter) {
+    /// The adapter is automatically created from its configuration in `alloy.yaml`.
+    /// The runtime handles all configuration loading and deserialization.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// runtime.register_adapter::<OneBotAdapter>().await?;
+    /// ```
+    ///
+    /// This will:
+    /// 1. Look for configuration under `adapters.onebot` (from `OneBotAdapter::name()`)
+    /// 2. Deserialize it into `OneBotAdapter::Config` type
+    /// 3. Call `OneBotAdapter::from_config(config)` to create the adapter
+    /// 4. Register the adapter with the runtime
+    pub async fn register_adapter<A>(&self) -> anyhow::Result<()>
+    where
+        A: alloy_core::ConfigurableAdapter + 'static,
+    {
+        let adapter_name = A::name();
+
+        // Extract the config value for this adapter
+        let config_value = self.config.adapters.get(adapter_name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "No configuration found for adapter '{adapter_name}'. Add it to alloy.yaml under adapters.{adapter_name}"
+            )
+        })?;
+
+        // Deserialize into the adapter's config type
+        // The runtime handles all deserialization - adapter doesn't need to know about figment
+        let config: A::Config = config_value.clone().deserialize().map_err(|e| {
+            anyhow::anyhow!("Failed to deserialize config for adapter '{adapter_name}': {e}")
+        })?;
+
+        // Create adapter from its config
+        let adapter = A::from_config(config)?;
+
+        info!(
+            adapter = adapter_name,
+            "Registered adapter from configuration"
+        );
         self.registry.register_adapter(adapter).await;
+        Ok(())
     }
 
     /// Registers a matcher with the dispatcher.
@@ -262,20 +292,14 @@ impl AlloyRuntime {
         let mut contexts = self.adapter_contexts.write().await;
 
         for name in adapter_names {
-            if let Some(adapter) = self.registry.get_adapter(&name).await {
+            if self.registry.get_adapter(&name).await.is_some() {
                 // Create bot manager for this adapter
                 let bot_manager = self.registry.create_bot_manager();
 
                 // Create adapter context
-                let mut ctx = AdapterContext::new(transport_ctx.clone(), bot_manager);
+                let ctx = AdapterContext::new(transport_ctx.clone(), bot_manager);
 
-                // Call adapter's on_init
-                if let Err(e) = adapter.on_init(&mut ctx).await {
-                    error!(adapter = %name, error = %e, "Failed to initialize adapter");
-                    continue;
-                }
-
-                debug!(adapter = %name, "Adapter initialized");
+                debug!(adapter = %name, "Adapter context created");
                 contexts.push(ctx);
             }
         }
@@ -435,6 +459,85 @@ impl Default for AlloyRuntime {
         Self::new()
     }
 }
+
+// =============================================================================
+// RuntimeBuilder
+// =============================================================================
+
+/// Builder for creating an `AlloyRuntime` with custom configuration.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let runtime = AlloyRuntime::builder()
+///     .config_file("config/production.yaml")
+///     .profile("production")
+///     .build()?;
+/// ```
+pub struct RuntimeBuilder {
+    config_loader: ConfigLoader,
+}
+
+impl RuntimeBuilder {
+    /// Creates a new runtime builder.
+    pub fn new() -> Self {
+        Self {
+            config_loader: ConfigLoader::new().with_current_dir(),
+        }
+    }
+
+    /// Sets a specific configuration file to load.
+    pub fn config_file<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
+        self.config_loader = self.config_loader.file(path);
+        self
+    }
+
+    /// Sets the configuration profile (e.g., "development", "production").
+    pub fn profile(mut self, profile: impl Into<String>) -> Self {
+        self.config_loader = self.config_loader.profile(profile);
+        self
+    }
+
+    /// Adds a search path for configuration files.
+    pub fn search_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
+        self.config_loader = self.config_loader.search_path(path);
+        self
+    }
+
+    /// Enables loading environment variables (enabled by default).
+    pub fn with_env(mut self) -> Self {
+        self.config_loader = self.config_loader.with_env();
+        self
+    }
+
+    /// Disables loading environment variables.
+    pub fn without_env(mut self) -> Self {
+        self.config_loader = self.config_loader.without_env();
+        self
+    }
+
+    /// Merges additional configuration programmatically.
+    pub fn merge(mut self, config: AlloyConfig) -> Self {
+        self.config_loader = self.config_loader.merge(config);
+        self
+    }
+
+    /// Builds the runtime.
+    pub fn build(self) -> crate::config::ConfigResult<AlloyRuntime> {
+        let config = self.config_loader.load()?;
+        Ok(AlloyRuntime::from_config(&config))
+    }
+}
+
+impl Default for RuntimeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// =============================================================================
+// RuntimeStats
+// =============================================================================
 
 /// Statistics about the runtime.
 #[derive(Debug, Clone)]

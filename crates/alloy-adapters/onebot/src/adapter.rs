@@ -3,20 +3,41 @@
 //! This module provides the main adapter that bridges OneBot v11 implementations
 //! with the Alloy event system.
 //!
-//! # Capability-Based Design
+//! # Configuration-Based Usage (Recommended)
 //!
-//! The adapter uses capability discovery to find available transports:
+//! The adapter reads its configuration from `alloy.yaml`:
+//!
+//! ```yaml
+//! adapters:
+//!   onebot:
+//!     connections:
+//!       - type: ws-server
+//!         host: 0.0.0.0
+//!         port: 8080
+//!         path: /onebot/v11/ws
+//!       - type: ws-client
+//!         url: ws://127.0.0.1:6700/ws
+//!         access_token: ${BOT_TOKEN:-}
+//! ```
 //!
 //! ```rust,ignore
 //! use alloy_runtime::AlloyRuntime;
 //! use alloy_adapter_onebot::OneBotAdapter;
 //!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let runtime = AlloyRuntime::load_config()?;
-//!     runtime.register_adapter(OneBotAdapter::new()).await;
-//!     runtime.run().await
-//! }
+//! let runtime = AlloyRuntime::new();
+//! // Adapter auto-created from config
+//! runtime.run().await?;
+//! ```
+//!
+//! # Programmatic Usage
+//!
+//! ```rust,ignore
+//! let adapter = OneBotAdapter::from_config(config);
+//! // Or build manually
+//! let adapter = OneBotAdapter::builder()
+//!     .ws_server("0.0.0.0:8080", "/ws")
+//!     .ws_client("ws://localhost:6700/ws", Some("token"))
+//!     .build();
 //! ```
 
 use std::sync::Arc;
@@ -29,137 +50,298 @@ use async_trait::async_trait;
 use tracing::{debug, info, trace, warn};
 
 use crate::bot::OneBotBot;
+use crate::config::{ConnectionConfig, OneBotConfig, WsClientConfig, WsServerConfig};
 use crate::model::event::{MessageEvent, MessageKind, MetaEventKind, OneBotEvent, OneBotEventKind};
 use crate::traits::{GroupEvent, MemberRole, PrivateEvent};
 
 /// The OneBot v11 adapter.
 ///
-/// This adapter implements the `alloy_core::Adapter` trait and uses
-/// the capability discovery pattern to find available transports.
+/// Supports multiple simultaneous connections of different types.
+#[derive(Default)]
 pub struct OneBotAdapter {
-    /// Default WebSocket server address.
-    ws_server_addr: String,
-    /// Default WebSocket server path.
-    ws_server_path: String,
-    /// Default WebSocket client URL.
-    ws_client_url: Option<String>,
-    /// Access token for authentication.
-    access_token: Option<String>,
+    /// Adapter configuration.
+    config: OneBotConfig,
 }
 
 impl OneBotAdapter {
-    /// Creates a new OneBot adapter with default settings.
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            ws_server_addr: "0.0.0.0:8080".to_string(),
-            ws_server_path: "/onebot/v11/ws".to_string(),
-            ws_client_url: None,
-            access_token: None,
-        })
-    }
-
     /// Creates an adapter builder.
     pub fn builder() -> OneBotAdapterBuilder {
         OneBotAdapterBuilder::default()
     }
-}
 
-impl Default for OneBotAdapter {
-    fn default() -> Self {
-        Self {
-            ws_server_addr: "0.0.0.0:8080".to_string(),
-            ws_server_path: "/onebot/v11/ws".to_string(),
-            ws_client_url: None,
-            access_token: None,
-        }
+    /// Returns the adapter configuration.
+    pub fn config(&self) -> &OneBotConfig {
+        &self.config
+    }
+
+    /// Resolves the access token for a connection.
+    fn resolve_token(&self, connection_token: Option<&String>) -> Option<String> {
+        connection_token
+            .cloned()
+            .or_else(|| self.config.default_access_token.clone())
+            .filter(|t| !t.is_empty())
     }
 }
 
 /// Builder for `OneBotAdapter`.
+///
+/// Allows programmatic construction of the adapter.
 #[derive(Default)]
 pub struct OneBotAdapterBuilder {
-    ws_server_addr: Option<String>,
-    ws_server_path: Option<String>,
-    ws_client_url: Option<String>,
-    access_token: Option<String>,
+    connections: Vec<ConnectionConfig>,
+    default_access_token: Option<String>,
+    auto_reconnect: bool,
 }
 
 impl OneBotAdapterBuilder {
-    /// Sets the WebSocket server listen address.
-    pub fn ws_server_addr(mut self, addr: impl Into<String>) -> Self {
-        self.ws_server_addr = Some(addr.into());
+    /// Adds a WebSocket server connection.
+    pub fn ws_server(mut self, addr: impl Into<String>, path: impl Into<String>) -> Self {
+        let addr = addr.into();
+        let (host, port) = parse_addr(&addr);
+        self.connections
+            .push(ConnectionConfig::WsServer(WsServerConfig {
+                name: format!("ws-server-{}", self.connections.len()),
+                enabled: true,
+                host,
+                port,
+                path: path.into(),
+                access_token: None,
+            }));
         self
     }
 
-    /// Sets the WebSocket server path.
+    /// Adds a WebSocket server connection with a token.
+    pub fn ws_server_with_token(
+        mut self,
+        addr: impl Into<String>,
+        path: impl Into<String>,
+        token: impl Into<String>,
+    ) -> Self {
+        let addr = addr.into();
+        let (host, port) = parse_addr(&addr);
+        self.connections
+            .push(ConnectionConfig::WsServer(WsServerConfig {
+                name: format!("ws-server-{}", self.connections.len()),
+                enabled: true,
+                host,
+                port,
+                path: path.into(),
+                access_token: Some(token.into()),
+            }));
+        self
+    }
+
+    /// Adds a WebSocket client connection.
+    pub fn ws_client(mut self, url: impl Into<String>, token: Option<String>) -> Self {
+        self.connections
+            .push(ConnectionConfig::WsClient(WsClientConfig {
+                name: format!("ws-client-{}", self.connections.len()),
+                enabled: true,
+                url: url.into(),
+                access_token: token,
+                auto_reconnect: true,
+                reconnect_delay_ms: 5000,
+            }));
+        self
+    }
+
+    /// Sets the default access token for all connections.
+    pub fn default_access_token(mut self, token: impl Into<String>) -> Self {
+        self.default_access_token = Some(token.into());
+        self
+    }
+
+    /// Enables auto-reconnect for client connections.
+    pub fn auto_reconnect(mut self, enabled: bool) -> Self {
+        self.auto_reconnect = enabled;
+        self
+    }
+
+    /// Legacy: Sets WebSocket server address.
+    #[deprecated(since = "0.2.0", note = "Use ws_server() instead")]
+    pub fn ws_server_addr(self, addr: impl Into<String>) -> Self {
+        // This will be combined with ws_server_path
+        let addr = addr.into();
+        let (host, port) = parse_addr(&addr);
+        Self {
+            connections: vec![ConnectionConfig::WsServer(WsServerConfig {
+                name: "ws-server-legacy".to_string(),
+                enabled: true,
+                host,
+                port,
+                ..Default::default()
+            })],
+            ..self
+        }
+    }
+
+    /// Legacy: Sets WebSocket server path.
+    #[deprecated(since = "0.2.0", note = "Use ws_server() instead")]
     pub fn ws_server_path(mut self, path: impl Into<String>) -> Self {
-        self.ws_server_path = Some(path.into());
+        if let Some(ConnectionConfig::WsServer(ws)) = self.connections.first_mut() {
+            ws.path = path.into();
+        }
         self
     }
 
-    /// Sets the WebSocket client URL to connect to.
+    /// Legacy: Sets WebSocket client URL.
+    #[deprecated(since = "0.2.0", note = "Use ws_client() instead")]
     pub fn ws_client_url(mut self, url: impl Into<String>) -> Self {
-        self.ws_client_url = Some(url.into());
+        self.connections
+            .push(ConnectionConfig::WsClient(WsClientConfig {
+                name: "ws-client-legacy".to_string(),
+                enabled: true,
+                url: url.into(),
+                ..Default::default()
+            }));
         self
     }
 
-    /// Sets the access token for authentication.
+    /// Legacy: Sets access token.
+    #[deprecated(since = "0.2.0", note = "Use default_access_token() instead")]
     pub fn access_token(mut self, token: impl Into<String>) -> Self {
-        self.access_token = Some(token.into());
+        self.default_access_token = Some(token.into());
         self
     }
 
     /// Builds the adapter.
     pub fn build(self) -> Arc<OneBotAdapter> {
+        // If no connections specified, use default WsServer
+        let connections = if self.connections.is_empty() {
+            vec![ConnectionConfig::WsServer(WsServerConfig::default())]
+        } else {
+            self.connections
+        };
+
         Arc::new(OneBotAdapter {
-            ws_server_addr: self
-                .ws_server_addr
-                .unwrap_or_else(|| "0.0.0.0:8080".to_string()),
-            ws_server_path: self
-                .ws_server_path
-                .unwrap_or_else(|| "/onebot/v11/ws".to_string()),
-            ws_client_url: self.ws_client_url,
-            access_token: self.access_token,
+            config: OneBotConfig {
+                connections,
+                default_access_token: self.default_access_token,
+                auto_reconnect: self.auto_reconnect,
+                heartbeat_interval_secs: 30,
+            },
         })
+    }
+}
+
+/// Parses an address string like "0.0.0.0:8080" into (host, port).
+fn parse_addr(addr: &str) -> (String, u16) {
+    if let Some((host, port_str)) = addr.rsplit_once(':') {
+        let port = port_str.parse().unwrap_or(8080);
+        (host.to_string(), port)
+    } else {
+        (addr.to_string(), 8080)
     }
 }
 
 #[async_trait]
 impl alloy_core::Adapter for OneBotAdapter {
-    fn name(&self) -> &'static str {
+    fn name() -> &'static str {
         "onebot"
     }
 
     async fn on_start(&self, ctx: &mut AdapterContext) -> anyhow::Result<()> {
-        // Check for WebSocket server capability
-        if let Some(ws_server) = ctx.transport().ws_server() {
-            info!(addr = %self.ws_server_addr, path = %self.ws_server_path, "Starting WebSocket server");
-            let handler = Arc::new(OneBotConnectionHandler::new(Arc::clone(ctx.bot_manager())));
-            let handle = ws_server
-                .listen(&self.ws_server_addr, &self.ws_server_path, handler)
-                .await?;
-            ctx.add_listener(handle);
+        let handler: Arc<dyn ConnectionHandler> =
+            Arc::new(OneBotConnectionHandler::new(Arc::clone(ctx.bot_manager())));
+
+        let enabled_count = self.config.enabled_count();
+        if enabled_count == 0 {
+            warn!("No enabled connections in OneBot adapter configuration");
+            return Ok(());
         }
 
-        // Check for WebSocket client capability
-        if let Some(ws_client) = ctx.transport().ws_client()
-            && let Some(url) = &self.ws_client_url
-        {
-            info!(url = %url, "Connecting to WebSocket server");
-            let handler = Arc::new(OneBotConnectionHandler::new(Arc::clone(ctx.bot_manager())));
-            let config = if let Some(token) = &self.access_token {
-                ClientConfig::default().with_token(token)
-            } else {
-                ClientConfig::default()
-            };
-            let handle = ws_client.connect(url, handler, config).await?;
-            ctx.add_connection(handle);
+        info!(
+            enabled = enabled_count,
+            total = self.config.connections.len(),
+            "Starting OneBot adapter connections"
+        );
+
+        for conn_config in self.config.enabled_connections() {
+            match conn_config {
+                ConnectionConfig::WsServer(ws_config) => {
+                    if let Some(ws_server) = ctx.transport().ws_server() {
+                        let addr = ws_config.bind_addr();
+                        info!(
+                            name = %ws_config.name,
+                            addr = %addr,
+                            path = %ws_config.path,
+                            "Starting WebSocket server"
+                        );
+                        let handle = ws_server
+                            .listen(&addr, &ws_config.path, Arc::clone(&handler))
+                            .await?;
+                        ctx.add_listener(handle);
+                    } else {
+                        warn!(
+                            "WebSocket server capability not available, skipping ws-server config"
+                        );
+                    }
+                }
+
+                ConnectionConfig::WsClient(ws_config) => {
+                    if let Some(ws_client) = ctx.transport().ws_client() {
+                        let token = self.resolve_token(ws_config.access_token.as_ref());
+                        info!(
+                            name = %ws_config.name,
+                            url = %ws_config.url,
+                            has_token = token.is_some(),
+                            "Connecting to WebSocket server"
+                        );
+                        let config = if let Some(ref t) = token {
+                            ClientConfig::default().with_token(t)
+                        } else {
+                            ClientConfig::default()
+                        };
+                        let handle = ws_client
+                            .connect(&ws_config.url, Arc::clone(&handler), config)
+                            .await?;
+                        ctx.add_connection(handle);
+                    } else {
+                        warn!(
+                            "WebSocket client capability not available, skipping ws-client config"
+                        );
+                    }
+                }
+
+                ConnectionConfig::HttpServer(http_config) => {
+                    if let Some(http_server) = ctx.transport().http_server() {
+                        let addr = http_config.bind_addr();
+                        info!(
+                            name = %http_config.name,
+                            addr = %addr,
+                            path = %http_config.path,
+                            "Starting HTTP webhook server"
+                        );
+                        // TODO: Implement HTTP server handler
+                        let _ = http_server;
+                        warn!("HTTP server not yet implemented");
+                    } else {
+                        warn!("HTTP server capability not available, skipping http-server config");
+                    }
+                }
+
+                ConnectionConfig::HttpClient(http_config) => {
+                    if let Some(http_client) = ctx.transport().http_client() {
+                        info!(
+                            name = %http_config.name,
+                            url = %http_config.api_url,
+                            "Configuring HTTP API client"
+                        );
+                        // TODO: Implement HTTP client
+                        let _ = http_client;
+                        warn!("HTTP client not yet implemented");
+                    } else {
+                        warn!("HTTP client capability not available, skipping http-client config");
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 
     async fn on_shutdown(&self, _ctx: &mut AdapterContext) -> anyhow::Result<()> {
+        info!("OneBot adapter shutting down");
         Ok(())
     }
 
@@ -168,9 +350,7 @@ impl alloy_core::Adapter for OneBotAdapter {
     }
 
     fn parse_event(&self, data: &[u8]) -> anyhow::Result<Option<BoxedEvent>> {
-        let raw = str::from_utf8(data)?;
-
-        // Use OneBotEvent for automatic parsing - the whole event is boxed
+        let raw = std::str::from_utf8(data)?;
         let event = OneBotEvent::parse(raw)?;
 
         // Log meta events at appropriate level
@@ -184,7 +364,17 @@ impl alloy_core::Adapter for OneBotAdapter {
     }
 
     fn clone_adapter(&self) -> Arc<dyn alloy_core::Adapter> {
-        OneBotAdapter::new()
+        Arc::new(Self {
+            config: self.config.clone(),
+        })
+    }
+}
+
+impl alloy_core::ConfigurableAdapter for OneBotAdapter {
+    type Config = OneBotConfig;
+
+    fn from_config(config: Self::Config) -> anyhow::Result<Arc<Self>> {
+        Ok(Arc::new(Self { config }))
     }
 }
 
@@ -303,10 +493,10 @@ impl ConnectionHandler for OneBotConnectionHandler {
     async fn on_disconnect(&self, bot_id: &str) {
         // Clear pending calls before unregistering
         // This ensures all waiting API callers receive NotConnected errors
-        if let Some(bot) = self.bot_manager.get_bot(bot_id).await {
-            if let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.as_any()) {
-                onebot_bot.clear_pending_calls().await;
-            }
+        if let Some(bot) = self.bot_manager.get_bot(bot_id).await
+            && let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.as_any())
+        {
+            onebot_bot.clear_pending_calls().await;
         }
 
         // Unregister the bot

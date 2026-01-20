@@ -43,10 +43,13 @@ impl BotRegistry {
     }
 
     /// Registers an adapter.
-    pub async fn register_adapter(&self, adapter: BoxedAdapter) {
-        let name = adapter.name().to_string();
+    pub async fn register_adapter<A>(&self, adapter: Arc<A>)
+    where
+        A: alloy_core::Adapter + 'static,
+    {
+        let name = A::name();
         let mut adapters = self.adapters.write().await;
-        adapters.insert(name.clone(), adapter);
+        adapters.insert(name.to_string(), adapter);
         debug!(adapter = %name, "Registered adapter");
     }
 
