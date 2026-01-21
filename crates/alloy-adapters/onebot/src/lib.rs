@@ -61,20 +61,18 @@
 mod adapter;
 pub mod bot;
 pub mod config;
-pub mod extractors;
 pub mod model;
 pub mod traits;
 
 pub use adapter::{OneBotAdapter, OneBotAdapterBuilder};
 pub use bot::{
-    Credentials, FriendInfo, GetMsgResponse, GroupInfo as GroupInfoResponse, GroupMemberInfo,
-    LoginInfo, OneBotBot, Status, StrangerInfo, VersionInfo,
+    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, OneBotBot,
+    Status, StrangerInfo, VersionInfo,
 };
 pub use config::{
     ConnectionConfig, HttpClientConfig, HttpServerConfig, OneBotConfig, WsClientConfig,
     WsServerConfig,
 };
-pub use extractors::{GroupInfo, Sender};
 
 // Re-export segment types
 pub use model::segment::{
@@ -152,12 +150,8 @@ pub use model::event::{
     // Request types
     RequestEvent,
     RequestKind,
-    Sender as MessageSender,
+    Sender,
     UploadedFile,
 };
 
 pub use traits::{GroupEvent, GroupManagement, MemberRole, PrivateEvent};
-
-/// Legacy type alias for backward compatibility.
-#[deprecated(since = "0.2.0", note = "Use `Segment` instead")]
-pub type MessageSegment = Segment;

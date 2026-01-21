@@ -866,14 +866,6 @@ pub fn unescape_cq_value(value: &str) -> String {
 }
 
 // ============================================================================
-// Legacy type alias for compatibility
-// ============================================================================
-
-/// Legacy type alias - use [`Segment`] instead.
-#[deprecated(since = "0.2.0", note = "Use `Segment` instead")]
-pub type MessageSegment = Segment;
-
-// ============================================================================
 // Tests
 // ============================================================================
 

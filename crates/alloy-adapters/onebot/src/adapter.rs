@@ -157,53 +157,6 @@ impl OneBotAdapterBuilder {
         self
     }
 
-    /// Legacy: Sets WebSocket server address.
-    #[deprecated(since = "0.2.0", note = "Use ws_server() instead")]
-    pub fn ws_server_addr(self, addr: impl Into<String>) -> Self {
-        // This will be combined with ws_server_path
-        let addr = addr.into();
-        let (host, port) = parse_addr(&addr);
-        Self {
-            connections: vec![ConnectionConfig::WsServer(WsServerConfig {
-                name: "ws-server-legacy".to_string(),
-                enabled: true,
-                host,
-                port,
-                ..Default::default()
-            })],
-            ..self
-        }
-    }
-
-    /// Legacy: Sets WebSocket server path.
-    #[deprecated(since = "0.2.0", note = "Use ws_server() instead")]
-    pub fn ws_server_path(mut self, path: impl Into<String>) -> Self {
-        if let Some(ConnectionConfig::WsServer(ws)) = self.connections.first_mut() {
-            ws.path = path.into();
-        }
-        self
-    }
-
-    /// Legacy: Sets WebSocket client URL.
-    #[deprecated(since = "0.2.0", note = "Use ws_client() instead")]
-    pub fn ws_client_url(mut self, url: impl Into<String>) -> Self {
-        self.connections
-            .push(ConnectionConfig::WsClient(WsClientConfig {
-                name: "ws-client-legacy".to_string(),
-                enabled: true,
-                url: url.into(),
-                ..Default::default()
-            }));
-        self
-    }
-
-    /// Legacy: Sets access token.
-    #[deprecated(since = "0.2.0", note = "Use default_access_token() instead")]
-    pub fn access_token(mut self, token: impl Into<String>) -> Self {
-        self.default_access_token = Some(token.into());
-        self
-    }
-
     /// Builds the adapter.
     pub fn build(self) -> Arc<OneBotAdapter> {
         // If no connections specified, use default WsServer

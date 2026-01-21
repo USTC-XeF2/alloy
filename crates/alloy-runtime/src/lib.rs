@@ -82,18 +82,3 @@ pub use error::{RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};
 pub use registry::{BotRegistry, RegistryStats};
 pub use runtime::{AlloyRuntime, RuntimeBuilder, RuntimeStats};
-
-// Re-export tracing for use by other crates
-pub use tracing;
-pub use tracing_subscriber;
-
-/// Prelude module for convenient imports.
-///
-/// This provides all the commonly used logging macros:
-/// - `trace!`, `debug!`, `info!`, `warn!`, `error!`
-/// - `span`, `event`
-/// - `instrument` attribute
-/// - `Level` for span creation
-pub mod prelude {
-    pub use tracing::{Level, debug, error, info, instrument, span, trace, warn};
-}
