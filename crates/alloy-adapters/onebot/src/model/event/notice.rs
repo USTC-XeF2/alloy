@@ -28,7 +28,12 @@ use super::OneBotEventKind;
 ///
 /// Dispatches to specific notice types via `NoticeKind`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice", platform = "onebot", parent = "OneBotEventKind")]
+#[event(
+    name = "notice",
+    platform = "onebot",
+    parent = "OneBotEventKind",
+    type = "notice"
+)]
 pub struct NoticeEvent {
     /// The specific notice kind.
     #[serde(flatten)]
@@ -38,7 +43,12 @@ pub struct NoticeEvent {
 /// Notice kind dispatch based on `notice_type`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[serde(tag = "notice_type")]
-#[event(name = "notice", platform = "onebot", parent = "NoticeEvent")]
+#[event(
+    name = "notice",
+    platform = "onebot",
+    parent = "NoticeEvent",
+    type = "notice"
+)]
 pub enum NoticeKind {
     /// Group file upload.
     #[serde(rename = "group_upload")]

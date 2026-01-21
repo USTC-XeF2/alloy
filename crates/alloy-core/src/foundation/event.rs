@@ -3,6 +3,7 @@
 //! This module provides the core event infrastructure:
 //!
 //! - [`Event`] - Base trait for all events
+//! - [`EventType`] - Event type classification (message, notice, request, meta)
 //! - [`FromEvent`] - Trait for extracting typed events
 //! - [`EventContext<T>`] - Wrapper providing access to extracted event data
 //!
@@ -28,6 +29,41 @@
 use std::any::Any;
 use std::ops::Deref;
 use std::sync::Arc;
+
+// ============================================================================
+// Event Type Classification
+// ============================================================================
+
+/// Classification of event types.
+///
+/// This enum represents the high-level category of an event, which is useful
+/// for filtering events in matchers without knowing the specific event type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EventType {
+    /// Message events (private messages, group messages, etc.)
+    Message,
+    /// Notice events (group changes, recalls, friend adds, etc.)
+    Notice,
+    /// Request events (friend requests, group join requests, etc.)
+    Request,
+    /// Meta events (lifecycle, heartbeat, etc.)
+    Meta,
+    /// Other/unknown event types
+    Other,
+}
+
+impl EventType {
+    /// Parses an event type from a string.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "message" => EventType::Message,
+            "notice" => EventType::Notice,
+            "request" => EventType::Request,
+            "meta" | "meta_event" => EventType::Meta,
+            _ => EventType::Other,
+        }
+    }
+}
 
 // ============================================================================
 // Core Event Trait
@@ -58,6 +94,14 @@ pub trait Event: Any + Send + Sync {
     /// Returns the platform/adapter name (e.g., "onebot", "discord").
     fn platform(&self) -> &'static str;
 
+    /// Returns the high-level event type classification.
+    ///
+    /// This is used by matchers like `on_message()` to filter events
+    /// without knowing the specific event type.
+    fn event_type(&self) -> EventType {
+        EventType::Other
+    }
+
     /// Returns a reference to self as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
 
@@ -75,6 +119,14 @@ pub trait Event: Any + Send + Sync {
     /// For OneBot, this would be `self_id` from the event.
     fn bot_id(&self) -> Option<&str> {
         None
+    }
+
+    /// Extracts plain text from the event, if applicable.
+    ///
+    /// For message events, this returns the message content.
+    /// For other events, this returns an empty string by default.
+    fn plain_text(&self) -> String {
+        String::new()
     }
 }
 
@@ -188,6 +240,18 @@ impl<T: Clone + std::fmt::Debug> std::fmt::Debug for EventContext<T> {
 ///
 /// `BoxedEvent` wraps any type implementing [`Event`] in an `Arc`, allowing
 /// it to be passed through the dispatcher without knowing its concrete type.
+///
+/// # Deref to Event Trait
+///
+/// `BoxedEvent` implements `Deref<Target = dyn Event>`, allowing you to call
+/// any trait methods directly without using `.inner()`:
+///
+/// ```rust,ignore
+/// let event: BoxedEvent = /* ... */;
+/// let name = event.event_name();
+/// let text = event.plain_text();
+/// let typ = event.event_type();
+/// ```
 #[derive(Clone)]
 pub struct BoxedEvent {
     inner: Arc<dyn Event>,
@@ -201,29 +265,9 @@ impl BoxedEvent {
         }
     }
 
-    /// Creates a `BoxedEvent` from an existing `Arc<dyn Event>`.
-    pub fn from_arc(arc: Arc<dyn Event>) -> Self {
-        Self { inner: arc }
-    }
-
     /// Returns the inner `Arc<dyn Event>`.
     pub fn inner(&self) -> &Arc<dyn Event> {
         &self.inner
-    }
-
-    /// Consumes the `BoxedEvent` and returns the inner `Arc<dyn Event>`.
-    pub fn into_inner(self) -> Arc<dyn Event> {
-        self.inner
-    }
-
-    /// Returns the event name.
-    pub fn event_name(&self) -> &'static str {
-        self.inner.event_name()
-    }
-
-    /// Returns the platform name.
-    pub fn platform(&self) -> &'static str {
-        self.inner.platform()
     }
 
     /// Attempts to downcast to a concrete event type.
@@ -237,11 +281,19 @@ impl BoxedEvent {
     }
 }
 
+impl std::ops::Deref for BoxedEvent {
+    type Target = dyn Event;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
+    }
+}
+
 impl std::fmt::Debug for BoxedEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BoxedEvent")
-            .field("event_name", &self.inner.event_name())
-            .field("platform", &self.inner.platform())
+            .field("event_name", &self.event_name())
+            .field("platform", &self.platform())
             .finish()
     }
 }

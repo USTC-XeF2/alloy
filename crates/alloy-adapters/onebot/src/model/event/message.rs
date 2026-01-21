@@ -73,7 +73,12 @@ pub struct Anonymous {
 ///
 /// The `inner` field dispatches to `PrivateMessageEvent` or `GroupMessageEvent`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "message", platform = "onebot", parent = "OneBotEventKind")]
+#[event(
+    name = "message",
+    platform = "onebot",
+    parent = "OneBotEventKind",
+    type = "message"
+)]
 pub struct MessageEvent {
     /// Message ID.
     pub message_id: i32,
@@ -146,7 +151,12 @@ impl MessageEvent {
 /// Message kind dispatch based on `message_type`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[serde(tag = "message_type")]
-#[event(name = "message", platform = "onebot", parent = "MessageEvent")]
+#[event(
+    name = "message",
+    platform = "onebot",
+    parent = "MessageEvent",
+    type = "message"
+)]
 pub enum MessageKind {
     /// Private (direct) message.
     #[serde(rename = "private")]
@@ -164,7 +174,12 @@ pub enum MessageKind {
 ///
 /// Does NOT contain common fields - those are in `MessageEvent`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "message.private", platform = "onebot", parent = "MessageKind")]
+#[event(
+    name = "message.private",
+    platform = "onebot",
+    parent = "MessageKind",
+    type = "message"
+)]
 pub struct PrivateMessageEvent {
     /// Sub-type ("friend", "group", "discuss", "other").
     #[serde(default)]
@@ -182,7 +197,12 @@ pub struct PrivateMessageEvent {
 ///
 /// Does NOT contain common fields - those are in `MessageEvent`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "message.group", platform = "onebot", parent = "MessageKind")]
+#[event(
+    name = "message.group",
+    platform = "onebot",
+    parent = "MessageKind",
+    type = "message"
+)]
 pub struct GroupMessageEvent {
     /// Group ID.
     pub group_id: i64,

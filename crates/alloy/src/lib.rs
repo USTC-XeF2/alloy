@@ -102,6 +102,9 @@ pub mod prelude {
     // Event system - for building handlers
     pub use alloy_core::{EventContext, Handler, Matcher};
 
+    // Matcher convenience functions
+    pub use alloy_core::framework::{on_command, on_message, on_meta, on_notice, on_request};
+
     // Bot types - for interacting with bots in handlers
     pub use alloy_core::Bot;
 

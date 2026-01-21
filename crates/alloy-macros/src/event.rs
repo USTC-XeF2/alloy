@@ -15,6 +15,7 @@
 //! - `#[event(platform = "...")]` - Required. Specifies the platform name.
 //! - `#[event(name = "...")]` - Optional. Override the auto-generated event name.
 //! - `#[event(parent = "...")]` - Optional. Specifies parent type for hierarchical extraction.
+//! - `#[event(type = "...")]` - Optional. Event type classification (message, notice, request, meta).
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -33,6 +34,8 @@ pub struct EventAttrs {
     pub name: Option<String>,
     /// Parent event type for FromEvent chaining
     pub parent: Option<String>,
+    /// Event type classification (message, notice, request, meta)
+    pub event_type: Option<String>,
 }
 
 /// Attributes parsed from `#[event(...)]` or `#[serde(...)]` on an enum variant.
@@ -75,6 +78,9 @@ fn parse_event_attrs(attrs: &[Attribute]) -> syn::Result<EventAttrs> {
                 } else if meta.path.is_ident("parent") {
                     let value: syn::LitStr = meta.value()?.parse()?;
                     result.parent = Some(value.value());
+                } else if meta.path.is_ident("type") {
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    result.event_type = Some(value.value());
                 }
                 Ok(())
             })?;
@@ -196,6 +202,48 @@ fn generate_enum_impl(
         }
     };
 
+    // Generate event_type implementation
+    let event_type_impl = if let Some(event_type) = &attrs.event_type {
+        let event_type_variant = match event_type.to_lowercase().as_str() {
+            "message" => quote! { ::alloy_core::EventType::Message },
+            "notice" => quote! { ::alloy_core::EventType::Notice },
+            "request" => quote! { ::alloy_core::EventType::Request },
+            "meta" | "meta_event" => quote! { ::alloy_core::EventType::Meta },
+            _ => quote! { ::alloy_core::EventType::Other },
+        };
+        quote! {
+            fn event_type(&self) -> ::alloy_core::EventType {
+                #event_type_variant
+            }
+        }
+    } else {
+        // For enums, delegate to inner type
+        let event_type_arms: Vec<TokenStream> = variants
+            .iter()
+            .map(|v| {
+                let variant_name = &v.ident;
+                match &v.fields {
+                    Fields::Unnamed(_) => quote! {
+                        #name::#variant_name(inner) => <_ as ::alloy_core::Event>::event_type(inner),
+                    },
+                    Fields::Unit => quote! {
+                        #name::#variant_name => ::alloy_core::EventType::Other,
+                    },
+                    Fields::Named(_) => quote! {
+                        #name::#variant_name { .. } => ::alloy_core::EventType::Other,
+                    },
+                }
+            })
+            .collect();
+        quote! {
+            fn event_type(&self) -> ::alloy_core::EventType {
+                match self {
+                    #(#event_type_arms)*
+                }
+            }
+        }
+    };
+
     quote! {
         impl ::alloy_core::Event for #name {
             fn event_name(&self) -> &'static str {
@@ -207,6 +255,8 @@ fn generate_enum_impl(
             fn platform(&self) -> &'static str {
                 #platform_lit
             }
+
+            #event_type_impl
 
             fn as_any(&self) -> &dyn ::std::any::Any {
                 self
@@ -274,6 +324,25 @@ fn generate_struct_impl(name: &Ident, attrs: &EventAttrs) -> TokenStream {
         }
     };
 
+    // Generate event_type implementation
+    let event_type_impl = if let Some(event_type) = &attrs.event_type {
+        let event_type_variant = match event_type.to_lowercase().as_str() {
+            "message" => quote! { ::alloy_core::EventType::Message },
+            "notice" => quote! { ::alloy_core::EventType::Notice },
+            "request" => quote! { ::alloy_core::EventType::Request },
+            "meta" | "meta_event" => quote! { ::alloy_core::EventType::Meta },
+            _ => quote! { ::alloy_core::EventType::Other },
+        };
+        quote! {
+            fn event_type(&self) -> ::alloy_core::EventType {
+                #event_type_variant
+            }
+        }
+    } else {
+        // Default to Other if not specified
+        quote! {}
+    };
+
     quote! {
         impl ::alloy_core::Event for #name {
             fn event_name(&self) -> &'static str {
@@ -283,6 +352,8 @@ fn generate_struct_impl(name: &Ident, attrs: &EventAttrs) -> TokenStream {
             fn platform(&self) -> &'static str {
                 #platform_lit
             }
+
+            #event_type_impl
 
             fn as_any(&self) -> &dyn ::std::any::Any {
                 self

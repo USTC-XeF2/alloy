@@ -70,28 +70,26 @@ async fn echo_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
     let msg = ctx.data();
     let text = msg.plain_text();
 
-    if let Some(content) = text.strip_prefix("/echo ")
-        && let Err(e) = bot.send(ctx.root.as_ref(), content).await
-    {
-        error!("Failed to send echo reply: {:?}", e);
+    // Command prefix already checked by matcher, just extract the content
+    if let Some(content) = text.strip_prefix("/echo ") {
+        if let Err(e) = bot.send(ctx.root.as_ref(), content).await {
+            error!("Failed to send echo reply: {:?}", e);
+        }
     }
 }
 
 /// Ping command handler - responds with Pong!
 async fn ping_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    let msg = ctx.data();
-
-    if msg.plain_text().trim() == "/ping"
-        && let Err(e) = bot.send(ctx.root.as_ref(), "Pong! 🏓").await
-    {
+    // Command already checked by matcher
+    if let Err(e) = bot.send(ctx.root.as_ref(), "Pong! 🏓").await {
         error!("Failed to send ping reply: {:?}", e);
     }
 }
 
 /// Help command handler - sends help message.
 async fn help_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    if ctx.data().plain_text().trim() == "/help" {
-        let help_text = r"╭─────────────────────────────╮
+    // Command already checked by matcher
+    let help_text = r"╭─────────────────────────────╮
 │     Echo Bot - Commands     │
 ├─────────────────────────────┤
 │ /echo <text> - Echo text    │
@@ -101,56 +99,51 @@ async fn help_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
 │ /group       - Group only   │
 ╰─────────────────────────────╯";
 
-        if let Err(e) = bot.send(ctx.root.as_ref(), help_text).await {
-            error!("Failed to send help message: {:?}", e);
-        }
+    if let Err(e) = bot.send(ctx.root.as_ref(), help_text).await {
+        error!("Failed to send help message: {:?}", e);
     }
 }
 
 /// Info command handler - sends message info.
 async fn info_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
     let msg = ctx.data();
+    // Command already checked by matcher
+    let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
 
-    if msg.plain_text().trim() == "/info" {
-        let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
-
-        let info_text = match &msg.inner {
-            MessageKind::Private(p) => {
-                format!(
-                    "📋 Message Info\n\
-                    • Type: Private\n\
-                    • From: {} ({})\n\
-                    • Message ID: {}\n\
-                    • Sub Type: {}",
-                    nickname, msg.user_id, msg.message_id, p.sub_type
-                )
-            }
-            MessageKind::Group(g) => {
-                format!(
-                    "📋 Message Info\n\
-                    • Type: Group\n\
-                    • From: {} ({})\n\
-                    • Group: {}\n\
-                    • Message ID: {}\n\
-                    • Sub Type: {}",
-                    nickname, msg.user_id, g.group_id, msg.message_id, g.sub_type
-                )
-            }
-        };
-
-        if let Err(e) = bot.send(ctx.root.as_ref(), &info_text).await {
-            error!("Failed to send info message: {:?}", e);
+    let info_text = match &msg.inner {
+        MessageKind::Private(p) => {
+            format!(
+                "📋 Message Info\n\
+                • Type: Private\n\
+                • From: {} ({})\n\
+                • Message ID: {}\n\
+                • Sub Type: {}",
+                nickname, msg.user_id, msg.message_id, p.sub_type
+            )
         }
+        MessageKind::Group(g) => {
+            format!(
+                "📋 Message Info\n\
+                • Type: Group\n\
+                • From: {} ({})\n\
+                • Group: {}\n\
+                • Message ID: {}\n\
+                • Sub Type: {}",
+                nickname, msg.user_id, g.group_id, msg.message_id, g.sub_type
+            )
+        }
+    };
+
+    if let Err(e) = bot.send(ctx.root.as_ref(), &info_text).await {
+        error!("Failed to send info message: {:?}", e);
     }
 }
 
 /// Group-only command handler - responds only in groups.
 async fn group_only_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
     let msg = ctx.data();
-
-    if msg.plain_text().trim() == "/group"
-        && let MessageKind::Group(g) = &msg.inner
-    {
+    // Command already checked by matcher, but we still need to check group
+    if let MessageKind::Group(g) = &msg.inner {
         let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
         let response = format!(
             "✅ This is a group-only command!\n\
@@ -182,33 +175,22 @@ async fn main() -> Result<()> {
     runtime.register_adapter::<OneBotAdapter>().await?;
 
     // ========================================================================
-    // Register Matchers
+    // Register Matchers using convenience functions
     // ========================================================================
 
-    // Matcher 1: Logging - runs for all message events, does NOT block
     runtime
-        .register_matcher(
-            Matcher::new()
-                .name("logging")
-                .on::<MessageEvent>()
+        .register_matchers(vec![
+            // Logging - runs for all message events, does NOT block
+            on_message()
                 .block(false) // Don't block - let other matchers also process
                 .handler(logging_handler),
-        )
-        .await;
-
-    // Matcher 2: Commands - handles all command handlers, blocks after processing
-    runtime
-        .register_matcher(
-            Matcher::new()
-                .name("commands")
-                .on::<MessageEvent>()
-                .block(false) // Don't block - commands don't consume all messages
-                .handler(echo_handler)
-                .handler(ping_handler)
-                .handler(help_handler)
-                .handler(info_handler)
-                .handler(group_only_handler),
-        )
+            // Command handlers - these use on_command() which auto-prepends "/"
+            on_command("echo").handler(echo_handler),
+            on_command("ping").handler(ping_handler),
+            on_command("help").handler(help_handler),
+            on_command("info").handler(info_handler),
+            on_command("group").handler(group_only_handler),
+        ])
         .await;
 
     // Run the runtime

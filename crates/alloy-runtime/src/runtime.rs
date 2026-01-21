@@ -258,6 +258,28 @@ impl AlloyRuntime {
         dispatcher.add(matcher);
     }
 
+    /// Registers multiple matchers at once.
+    ///
+    /// This is a convenience method for adding multiple matchers in one call.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use alloy::prelude::*;
+    ///
+    /// runtime.register_matchers(vec![
+    ///     on_message().handler(log_handler),
+    ///     on_command("echo").handler(echo_handler),
+    ///     on_command("help").handler(help_handler),
+    /// ]).await;
+    /// ```
+    pub async fn register_matchers(&self, matchers: Vec<Matcher>) {
+        let mut dispatcher = self.dispatcher.write().await;
+        for matcher in matchers {
+            dispatcher.add(matcher);
+        }
+    }
+
     /// Returns a reference to the bot registry.
     pub fn registry(&self) -> &Arc<BotRegistry> {
         &self.registry

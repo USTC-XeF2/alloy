@@ -22,7 +22,12 @@ use super::OneBotEventKind;
 ///
 /// Dispatches to specific request types via `RequestKind`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "request", platform = "onebot", parent = "OneBotEventKind")]
+#[event(
+    name = "request",
+    platform = "onebot",
+    parent = "OneBotEventKind",
+    type = "request"
+)]
 pub struct RequestEvent {
     /// The specific request kind.
     #[serde(flatten)]
@@ -32,7 +37,12 @@ pub struct RequestEvent {
 /// Request kind dispatch based on `request_type`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[serde(tag = "request_type")]
-#[event(name = "request", platform = "onebot", parent = "RequestEvent")]
+#[event(
+    name = "request",
+    platform = "onebot",
+    parent = "RequestEvent",
+    type = "request"
+)]
 pub enum RequestKind {
     /// Friend request.
     #[serde(rename = "friend")]

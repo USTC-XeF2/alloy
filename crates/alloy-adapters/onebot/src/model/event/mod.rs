@@ -97,6 +97,10 @@ impl Event for OneBotEvent {
         "onebot"
     }
 
+    fn event_type(&self) -> alloy_core::EventType {
+        self.inner.event_type()
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -107,6 +111,10 @@ impl Event for OneBotEvent {
 
     fn bot_id(&self) -> Option<&str> {
         self.bot_id_str.as_deref()
+    }
+
+    fn plain_text(&self) -> String {
+        self.inner.plain_text()
     }
 }
 
@@ -141,4 +149,14 @@ pub enum OneBotEventKind {
     /// Meta events (lifecycle, heartbeat).
     #[serde(rename = "meta_event")]
     MetaEvent(MetaEventEvent),
+}
+
+impl OneBotEventKind {
+    /// Extracts plain text from the event.
+    pub fn plain_text(&self) -> String {
+        match self {
+            OneBotEventKind::Message(msg) => msg.plain_text(),
+            _ => String::new(),
+        }
+    }
 }

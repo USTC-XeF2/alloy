@@ -23,7 +23,12 @@ use super::OneBotEventKind;
 ///
 /// Dispatches to specific meta event types via `MetaEventKind`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "meta_event", platform = "onebot", parent = "OneBotEventKind")]
+#[event(
+    name = "meta_event",
+    platform = "onebot",
+    parent = "OneBotEventKind",
+    type = "meta"
+)]
 pub struct MetaEventEvent {
     /// The specific meta event kind.
     #[serde(flatten)]
@@ -33,7 +38,12 @@ pub struct MetaEventEvent {
 /// Meta event kind dispatch based on `meta_event_type`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[serde(tag = "meta_event_type")]
-#[event(name = "meta_event", platform = "onebot", parent = "MetaEventEvent")]
+#[event(
+    name = "meta_event",
+    platform = "onebot",
+    parent = "MetaEventEvent",
+    type = "meta"
+)]
 pub enum MetaEventKind {
     /// Lifecycle event.
     #[serde(rename = "lifecycle")]
