@@ -3,10 +3,10 @@
 //! This module provides the [`FromContext`] trait, which defines how types
 //! can be extracted from an [`AlloyContext`] for use as handler parameters.
 
-use crate::foundation::context::AlloyContext;
-use crate::foundation::error::ExtractError;
-use crate::foundation::event::{EventContext, FromEvent};
-use crate::integration::bot::BoxedBot;
+use alloy_core::foundation::context::AlloyContext;
+use alloy_core::foundation::error::ExtractError;
+use alloy_core::foundation::event::{EventContext, FromEvent};
+use alloy_core::integration::bot::BoxedBot;
 
 /// A trait for types that can be extracted from an [`AlloyContext`].
 ///
@@ -53,7 +53,7 @@ pub trait FromContext: Sized {
 ///
 /// This is useful when a handler needs to work with any event type
 /// without knowing the concrete type at compile time.
-impl FromContext for crate::foundation::event::BoxedEvent {
+impl FromContext for alloy_core::foundation::event::BoxedEvent {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         Ok(ctx.event().clone())
     }
@@ -115,7 +115,7 @@ impl<T: FromEvent + Clone> FromContext for EventContext<T> {
 /// ```
 impl FromContext for BoxedBot {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
-        ctx.bot_arc().ok_or(ExtractError::BotNotAvailable)
+        Ok(ctx.bot_arc())
     }
 }
 
@@ -132,12 +132,12 @@ impl FromContext for BoxedBot {
 ///     bot.send_private_msg(12345, "Hello!", false).await.ok();
 /// }
 /// ```
-impl<T: crate::integration::bot::Bot + 'static> FromContext for std::sync::Arc<T> {
+impl<T: alloy_core::integration::bot::Bot + 'static> FromContext for std::sync::Arc<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
-        use crate::integration::bot::downcast_bot;
+        use alloy_core::integration::bot::downcast_bot;
 
         // Get the BoxedBot
-        let boxed_bot = ctx.bot_arc().ok_or(ExtractError::BotNotAvailable)?;
+        let boxed_bot = ctx.bot_arc();
 
         // Try to downcast to the concrete type
         downcast_bot::<T>(boxed_bot).ok_or_else(|| ExtractError::BotTypeMismatch {

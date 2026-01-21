@@ -3,6 +3,9 @@
 //! This module provides [`AlloyContext`], the central context object that wraps
 //! events and manages propagation state during handler execution.
 
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::foundation::event::BoxedEvent;
@@ -31,22 +34,22 @@ use crate::integration::bot::BoxedBot;
 ///     ctx.stop_propagation();
 ///     
 ///     // Access the bot to send messages
-///     if let Some(bot) = ctx.bot() {
-///         bot.send(ctx.event().inner().as_ref(), "Hello!").await.ok();
-///     }
+///     ctx.bot().send(ctx.event().inner().as_ref(), "Hello!").await.ok();
 /// }
 /// ```
 pub struct AlloyContext {
     /// The wrapped event being processed.
     event: BoxedEvent,
-    /// The bot associated with this event (if any).
-    bot: Option<BoxedBot>,
+    /// The bot associated with this event.
+    bot: BoxedBot,
     /// Flag indicating whether the event should continue propagating to other handlers.
     is_propagating: AtomicBool,
+    /// Type-keyed state storage for passing data between matchers and handlers.
+    state: RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
 }
 
 impl AlloyContext {
-    /// Creates a new context wrapping the given event.
+    /// Creates a new context wrapping the given event and bot.
     ///
     /// The context is initialized with propagation enabled, meaning subsequent
     /// handlers will receive the event unless [`stop_propagation`](Self::stop_propagation)
@@ -55,30 +58,18 @@ impl AlloyContext {
     /// # Arguments
     ///
     /// * `event` - The boxed event to wrap.
+    /// * `bot` - The bot associated with this event.
     ///
     /// # Returns
     ///
     /// A new `AlloyContext` instance.
-    pub fn new(event: BoxedEvent) -> Self {
+    pub fn new(event: BoxedEvent, bot: BoxedBot) -> Self {
         Self {
             event,
-            bot: None,
+            bot,
             is_propagating: AtomicBool::new(true),
+            state: RwLock::new(HashMap::new()),
         }
-    }
-
-    /// Creates a new context with an associated bot.
-    pub fn with_bot(event: BoxedEvent, bot: BoxedBot) -> Self {
-        Self {
-            event,
-            bot: Some(bot),
-            is_propagating: AtomicBool::new(true),
-        }
-    }
-
-    /// Sets the bot for this context.
-    pub fn set_bot(&mut self, bot: BoxedBot) {
-        self.bot = Some(bot);
     }
 
     /// Returns a reference to the underlying boxed event.
@@ -90,13 +81,13 @@ impl AlloyContext {
         &self.event
     }
 
-    /// Returns a reference to the bot, if available.
-    pub fn bot(&self) -> Option<&BoxedBot> {
-        self.bot.as_ref()
+    /// Returns a reference to the bot.
+    pub fn bot(&self) -> &BoxedBot {
+        &self.bot
     }
 
-    /// Returns a clone of the bot Arc, if available.
-    pub fn bot_arc(&self) -> Option<BoxedBot> {
+    /// Returns a clone of the bot Arc.
+    pub fn bot_arc(&self) -> BoxedBot {
         self.bot.clone()
     }
 
@@ -121,14 +112,62 @@ impl AlloyContext {
     pub fn is_propagating(&self) -> bool {
         self.is_propagating.load(Ordering::SeqCst)
     }
+
+    /// Stores a value in the context's type-keyed state.
+    ///
+    /// This allows matchers to store parsed data that handlers can later retrieve.
+    /// Only one value per type can be stored; subsequent calls will overwrite.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // In a matcher's check function:
+    /// ctx.set_state(MyParsedCommand { ... });
+    ///
+    /// // In a handler:
+    /// if let Some(cmd) = ctx.get_state::<MyParsedCommand>() {
+    ///     // Use the parsed command
+    /// }
+    /// ```
+    pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
+        let mut state = self.state.write().unwrap();
+        state.insert(TypeId::of::<T>(), Box::new(value));
+    }
+
+    /// Retrieves a value from the context's type-keyed state.
+    ///
+    /// Returns `None` if no value of the given type has been stored.
+    pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
+        let state = self.state.read().unwrap();
+        state
+            .get(&TypeId::of::<T>())
+            .and_then(|v| v.downcast_ref::<T>())
+            .cloned()
+    }
+
+    /// Checks if a value of the given type exists in state.
+    pub fn has_state<T: 'static>(&self) -> bool {
+        let state = self.state.read().unwrap();
+        state.contains_key(&TypeId::of::<T>())
+    }
+
+    /// Removes and returns a value from state.
+    pub fn take_state<T: 'static>(&self) -> Option<T> {
+        let mut state = self.state.write().unwrap();
+        state
+            .remove(&TypeId::of::<T>())
+            .and_then(|v| v.downcast::<T>().ok())
+            .map(|v| *v)
+    }
 }
 
 impl std::fmt::Debug for AlloyContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state_count = self.state.read().map(|s| s.len()).unwrap_or(0);
         f.debug_struct("AlloyContext")
             .field("event", &self.event)
-            .field("has_bot", &self.bot.is_some())
             .field("is_propagating", &self.is_propagating())
+            .field("state_entries", &state_count)
             .finish()
     }
 }

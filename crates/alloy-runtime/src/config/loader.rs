@@ -337,7 +337,7 @@ mod tests {
         let config = ConfigLoader::new().without_env().load().unwrap();
 
         assert_eq!(config.logging.level.as_str(), "info");
-        assert_eq!(config.network.timeout_secs, 30);
+        assert_eq!(config.runtime.shutdown_timeout_secs, 30);
     }
 
     #[test]
@@ -359,12 +359,12 @@ mod tests {
 logging:
   level: debug
   format: json
-network:
-  timeout_secs: 60
+runtime:
+  shutdown_timeout_secs: 60
 "#;
 
         let config = load_config_from_str(yaml).unwrap();
         assert_eq!(config.logging.level.as_str(), "debug");
-        assert_eq!(config.network.timeout_secs, 60);
+        assert_eq!(config.runtime.shutdown_timeout_secs, 60);
     }
 }

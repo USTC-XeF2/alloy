@@ -76,7 +76,7 @@ pub mod runtime;
 pub use bot::{BotInstance, BotStatus};
 pub use config::{
     AlloyConfig, ConfigError, ConfigLoader, ConfigResult, LogFormat, LogLevel, LogOutput,
-    LoggingConfig, NetworkConfig, RuntimeConfig,
+    LoggingConfig, RuntimeConfig,
 };
 pub use error::{RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};

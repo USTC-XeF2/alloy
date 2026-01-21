@@ -69,7 +69,18 @@ pub mod schema;
 pub use error::{ConfigError, ConfigResult};
 pub use loader::{ConfigLoader, Profile, load_config, load_config_from_file, load_config_from_str};
 pub use schema::{
-    AlloyConfig, ConnectionConfig, HttpClientConfig, HttpServerConfig, LogFormat, LogLevel,
-    LogOutput, LoggingConfig, NetworkConfig, RetryConfig, RuntimeConfig, SpanEventConfig,
-    WsClientConfig, WsServerConfig,
+    AlloyConfig,
+    LogFormat,
+    LogLevel,
+    LogOutput,
+    LoggingConfig,
+    RuntimeConfig,
+    SpanEventConfig,
+    // Re-export TransportConfig from core (schema re-exports it)
+    TransportConfig,
+};
+
+// Also re-export core's transport config types for convenience
+pub use alloy_core::{
+    HttpClientConfig, HttpServerConfig, RetryConfig, TransportType, WsClientConfig, WsServerConfig,
 };

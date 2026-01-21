@@ -8,7 +8,8 @@
 
 use std::sync::Arc;
 
-use alloy_core::{ConnectionHandle, Dispatcher};
+use alloy_core::ConnectionHandle;
+use alloy_framework::Dispatcher;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 

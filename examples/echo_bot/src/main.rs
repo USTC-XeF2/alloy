@@ -30,12 +30,62 @@
 use alloy::prelude::*;
 use alloy_adapter_onebot::{MessageEvent, MessageKind, OneBotAdapter, OneBotBot};
 use anyhow::Result;
+use clap::Parser;
 use std::sync::Arc;
 use tracing::{error, info};
 
 // ============================================================================
 // Handler Functions (Axum-style - no macro needed!)
 // ============================================================================
+
+/// Example clap-based command for structured argument parsing
+///
+/// Usage:
+/// - /calc add 5 10
+/// - /calc multiply 3 4
+#[derive(Parser, Debug, Clone)]
+struct CalcCommand {
+    #[command(subcommand)]
+    operation: CalcOperation,
+}
+
+#[derive(Parser, Debug, Clone)]
+enum CalcOperation {
+    /// Add two numbers
+    Add { a: i32, b: i32 },
+    /// Multiply two numbers
+    Multiply { a: i32, b: i32 },
+}
+
+/// Handler for the "add" subcommand
+async fn add_handler(
+    ctx: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    cmd: Command<CalcCommand>,
+) {
+    if let CalcOperation::Add { a, b } = &cmd.operation {
+        let result = a + b;
+        let response = format!("➕ {a} + {b} = {result}");
+        if let Err(e) = bot.send(ctx.root.as_ref(), &response).await {
+            error!("Failed to send add result: {:?}", e);
+        }
+    }
+}
+
+/// Handler for the "multiply" subcommand
+async fn multiply_handler(
+    ctx: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    cmd: Command<CalcCommand>,
+) {
+    if let CalcOperation::Multiply { a, b } = &cmd.operation {
+        let result = a * b;
+        let response = format!("✖️ {a} × {b} = {result}");
+        if let Err(e) = bot.send(ctx.root.as_ref(), &response).await {
+            error!("Failed to send multiply result: {:?}", e);
+        }
+    }
+}
 
 /// Logging handler - logs all messages.
 ///
@@ -71,10 +121,10 @@ async fn echo_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
     let text = msg.plain_text();
 
     // Command prefix already checked by matcher, just extract the content
-    if let Some(content) = text.strip_prefix("/echo ") {
-        if let Err(e) = bot.send(ctx.root.as_ref(), content).await {
-            error!("Failed to send echo reply: {:?}", e);
-        }
+    if let Some(content) = text.strip_prefix("/echo ")
+        && let Err(e) = bot.send(ctx.root.as_ref(), content).await
+    {
+        error!("Failed to send echo reply: {:?}", e);
     }
 }
 
@@ -190,6 +240,18 @@ async fn main() -> Result<()> {
             on_command("help").handler(help_handler),
             on_command("info").handler(info_handler),
             on_command("group").handler(group_only_handler),
+            // Structured command handler using clap with subcommand routing
+            // Demonstrates automatic help (-h) and error messages
+            // Example: /calc add 5 10
+            //          /calc multiply 3 4
+            //          /calc -h (shows help)
+            on_command_struct::<CalcCommand>("/calc")
+                .reply_help(true) // Automatic help message on -h or --help
+                .reply_error(true) // Automatic error messages on parse failure
+                .router()
+                .route("add", add_handler)
+                .route("multiply", multiply_handler)
+                .build(),
         ])
         .await;
 

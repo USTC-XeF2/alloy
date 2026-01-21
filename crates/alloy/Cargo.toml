@@ -10,13 +10,17 @@ license = { workspace = true }
 [dependencies]
 # Core dependencies (always required, includes Tower integration)
 alloy-core = { path = "../alloy-core" }
+alloy-framework = { path = "../alloy-framework" }
 alloy-runtime = { path = "../alloy-runtime" }
 
 # Optional dependencies
 alloy-macros = { path = "../alloy-macros", optional = true }
 
 [features]
-default = ["macros"]
+default = ["command"]
+
+# Structured command support
+command = ["alloy-framework/command"]
 
 # Procedural macros for handler definition
 macros = ["dep:alloy-macros"]

@@ -4,7 +4,8 @@
 //! connections are established and unregistered when they disconnect.
 
 use crate::bot::{BotInstance, BotStatus};
-use alloy_core::{BotManager, BoxedAdapter, BoxedEvent, ConnectionHandle, Dispatcher};
+use alloy_core::{BotManager, BoxedAdapter, BoxedEvent, ConnectionHandle};
+use alloy_framework::Dispatcher;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

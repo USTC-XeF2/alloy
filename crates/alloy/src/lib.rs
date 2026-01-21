@@ -100,10 +100,15 @@ pub mod prelude {
     pub use alloy_runtime::AlloyRuntime;
 
     // Event system - for building handlers
-    pub use alloy_core::{EventContext, Handler, Matcher};
+    pub use alloy_core::EventContext;
+    pub use alloy_framework::{Handler, Matcher};
 
-    // Matcher convenience functions
-    pub use alloy_core::framework::{on_command, on_message, on_meta, on_notice, on_request};
+    // Matcher convenience functions (from framework layer)
+    pub use alloy_framework::{on_command, on_message, on_meta, on_notice, on_request};
+
+    // Structured command support (requires "command" feature)
+    #[cfg(feature = "command")]
+    pub use alloy_framework::{Command, on_command_struct};
 
     // Bot types - for interacting with bots in handlers
     pub use alloy_core::Bot;

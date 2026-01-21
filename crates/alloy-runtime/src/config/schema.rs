@@ -7,16 +7,26 @@
 //! - **Decoupling**: Core config is separate from adapter-specific config  
 //! - **Multi-source**: Supports files, env vars, and programmatic config
 //! - **Type safety**: Strong typing with serde and figment extraction
+//! - **No duplication**: Transport configs are defined in `alloy_core` and re-exported
 //!
 //! # Configuration Hierarchy
 //!
 //! ```text
 //! AlloyConfig
 //! ├── logging: LoggingConfig       # Logging settings
-//! ├── network: NetworkConfig       # Global network defaults
 //! ├── runtime: RuntimeConfig       # Runtime behavior
 //! └── adapters: Map<String, Value> # Adapter-specific configs (dynamic)
 //! ```
+//!
+//! # Transport Configuration
+//!
+//! Transport-specific configurations (WebSocket, HTTP) are defined in `alloy_core::integration::transport`
+//! and re-exported here to avoid duplication. Use:
+//!
+//! - `alloy_core::TransportConfig` - Enum of all transport types
+//! - `alloy_core::WsClientConfig`, `WsServerConfig` - WebSocket configs
+//! - `alloy_core::HttpClientConfig`, `HttpServerConfig` - HTTP configs
+//! - `alloy_core::RetryConfig` - Retry/backoff configuration
 //!
 //! # Example Configuration (YAML)
 //!
@@ -27,6 +37,9 @@
 //!   
 //! network:
 //!   timeout_secs: 30
+//!   retry:
+//!     max_retries: 3
+//!     initial_delay_ms: 1000
 //!   
 //! adapters:
 //!   onebot:
@@ -54,9 +67,6 @@ use std::time::Duration;
 pub struct AlloyConfig {
     /// Logging configuration.
     pub logging: LoggingConfig,
-
-    /// Global network configuration (defaults for all connections).
-    pub network: NetworkConfig,
 
     /// Runtime configuration.
     pub runtime: RuntimeConfig,
@@ -288,140 +298,6 @@ impl SpanEventConfig {
 }
 
 // =============================================================================
-// Network Configuration
-// =============================================================================
-
-/// Global network configuration defaults.
-///
-/// These settings apply to all connections unless overridden at the connection level.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct NetworkConfig {
-    /// Default connection timeout in seconds.
-    #[serde(default = "default_timeout_secs")]
-    pub timeout_secs: u64,
-
-    /// Default retry configuration.
-    pub retry: RetryConfig,
-
-    /// Whether to auto-reconnect by default.
-    #[serde(default = "default_true")]
-    pub auto_reconnect: bool,
-
-    /// Heartbeat interval in seconds (0 to disable).
-    #[serde(default = "default_heartbeat_secs")]
-    pub heartbeat_secs: u64,
-
-    /// HTTP proxy URL (optional).
-    pub http_proxy: Option<String>,
-
-    /// HTTPS proxy URL (optional).
-    pub https_proxy: Option<String>,
-
-    /// Hosts to bypass proxy for.
-    #[serde(default)]
-    pub no_proxy: Vec<String>,
-}
-
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        Self {
-            timeout_secs: default_timeout_secs(),
-            retry: RetryConfig::default(),
-            auto_reconnect: true,
-            heartbeat_secs: default_heartbeat_secs(),
-            http_proxy: None,
-            https_proxy: None,
-            no_proxy: Vec::new(),
-        }
-    }
-}
-
-impl NetworkConfig {
-    /// Returns the timeout as Duration.
-    pub fn timeout(&self) -> Duration {
-        Duration::from_secs(self.timeout_secs)
-    }
-
-    /// Returns the heartbeat interval as Duration.
-    pub fn heartbeat_interval(&self) -> Duration {
-        Duration::from_secs(self.heartbeat_secs)
-    }
-}
-
-fn default_timeout_secs() -> u64 {
-    30
-}
-
-fn default_heartbeat_secs() -> u64 {
-    30
-}
-
-fn default_true() -> bool {
-    true
-}
-
-/// Retry configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RetryConfig {
-    /// Maximum number of retry attempts.
-    #[serde(default = "default_max_retries")]
-    pub max_retries: u32,
-
-    /// Initial delay between retries in milliseconds.
-    #[serde(default = "default_initial_delay_ms")]
-    pub initial_delay_ms: u64,
-
-    /// Maximum delay between retries in milliseconds.
-    #[serde(default = "default_max_delay_ms")]
-    pub max_delay_ms: u64,
-
-    /// Exponential backoff multiplier.
-    #[serde(default = "default_backoff_multiplier")]
-    pub backoff_multiplier: f64,
-}
-
-impl Default for RetryConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: default_max_retries(),
-            initial_delay_ms: default_initial_delay_ms(),
-            max_delay_ms: default_max_delay_ms(),
-            backoff_multiplier: default_backoff_multiplier(),
-        }
-    }
-}
-
-impl RetryConfig {
-    /// Converts to alloy_core::RetryConfig.
-    pub fn to_core_config(&self) -> alloy_core::RetryConfig {
-        alloy_core::RetryConfig {
-            max_retries: self.max_retries,
-            initial_delay: Duration::from_millis(self.initial_delay_ms),
-            max_delay: Duration::from_millis(self.max_delay_ms),
-            multiplier: self.backoff_multiplier,
-        }
-    }
-}
-
-fn default_max_retries() -> u32 {
-    3
-}
-
-fn default_initial_delay_ms() -> u64 {
-    1000
-}
-
-fn default_max_delay_ms() -> u64 {
-    30000
-}
-
-fn default_backoff_multiplier() -> f64 {
-    2.0
-}
-
-// =============================================================================
 // Runtime Configuration
 // =============================================================================
 
@@ -477,109 +353,17 @@ fn default_event_buffer() -> usize {
 }
 
 // =============================================================================
-// Connection Configuration (for adapters to use)
+// Re-export Transport Configuration from Core
 // =============================================================================
 
-/// Common connection configuration that adapters can use.
+/// Transport configuration type alias.
 ///
-/// This is provided as a helper type for adapters to define their own
-/// connection configurations with consistent structure.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum ConnectionConfig {
-    /// WebSocket client connection.
-    WsClient(WsClientConfig),
-    /// WebSocket server listener.
-    WsServer(WsServerConfig),
-    /// HTTP client (polling or webhooks).
-    HttpClient(HttpClientConfig),
-    /// HTTP server (receiving webhooks).
-    HttpServer(HttpServerConfig),
-}
-
-/// WebSocket client configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsClientConfig {
-    /// WebSocket server URL.
-    pub url: String,
-
-    /// Access token for authentication.
-    #[serde(default)]
-    pub access_token: Option<String>,
-
-    /// Override auto-reconnect setting.
-    pub auto_reconnect: Option<bool>,
-
-    /// Override heartbeat interval.
-    pub heartbeat_secs: Option<u64>,
-
-    /// Override retry configuration.
-    pub retry: Option<RetryConfig>,
-}
-
-/// WebSocket server configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsServerConfig {
-    /// Host address to bind to.
-    #[serde(default = "default_host")]
-    pub host: String,
-
-    /// Port to listen on.
-    pub port: u16,
-
-    /// Path for WebSocket endpoint.
-    #[serde(default = "default_ws_path")]
-    pub path: String,
-
-    /// Access token for authentication.
-    #[serde(default)]
-    pub access_token: Option<String>,
-}
-
-/// HTTP client configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpClientConfig {
-    /// HTTP server URL.
-    pub url: String,
-
-    /// Access token for authentication.
-    #[serde(default)]
-    pub access_token: Option<String>,
-
-    /// Override timeout.
-    pub timeout_secs: Option<u64>,
-
-    /// Override retry configuration.
-    pub retry: Option<RetryConfig>,
-}
-
-/// HTTP server configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpServerConfig {
-    /// Host address to bind to.
-    #[serde(default = "default_host")]
-    pub host: String,
-
-    /// Port to listen on.
-    pub port: u16,
-
-    /// Path for callback endpoint.
-    #[serde(default = "default_http_path")]
-    pub path: String,
-
-    /// Secret for signature verification.
-    #[serde(default)]
-    pub secret: Option<String>,
-}
-
-fn default_host() -> String {
-    "0.0.0.0".to_string()
-}
-
-fn default_ws_path() -> String {
-    "/ws".to_string()
-}
-
-fn default_http_path() -> String {
-    "/".to_string()
-}
+/// This re-exports the transport configuration from `alloy_core` to avoid duplication.
+/// Adapters should use `alloy_core::TransportConfig` and its variants directly.
+///
+/// Available variants:
+/// - `TransportConfig::WsClient(WsClientConfig)`
+/// - `TransportConfig::WsServer(WsServerConfig)`  
+/// - `TransportConfig::HttpClient(HttpClientConfig)`
+/// - `TransportConfig::HttpServer(HttpServerConfig)`
+pub use alloy_core::TransportConfig;

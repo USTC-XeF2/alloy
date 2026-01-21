@@ -17,8 +17,8 @@
 //! ]).await;
 //! ```
 
-use crate::foundation::event::EventType;
-use crate::framework::matcher::Matcher;
+use crate::matcher::Matcher;
+use alloy_core::foundation::event::EventType;
 
 /// Creates a matcher that only handles message events.
 ///
@@ -60,7 +60,7 @@ pub fn on_command(cmd: impl Into<String>) -> Matcher {
     let full_cmd = if cmd.starts_with('/') {
         cmd
     } else {
-        format!("/{}", cmd)
+        format!("/{cmd}")
     };
 
     let matcher_name = format!("command:{}", full_cmd.trim_start_matches('/'));

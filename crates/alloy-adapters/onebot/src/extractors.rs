@@ -18,7 +18,8 @@
 //! }
 //! ```
 
-use alloy_core::{AlloyContext, ExtractError, FromContext};
+use alloy_core::{AlloyContext, ExtractError};
+use alloy_framework::FromContext;
 
 use crate::model::event::{MessageEvent, MessageKind, OneBotEvent, OneBotEventKind};
 

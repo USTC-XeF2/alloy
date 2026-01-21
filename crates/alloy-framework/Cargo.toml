@@ -1,0 +1,33 @@
+[package]
+name = "alloy-framework"
+version = { workspace = true }
+description = "High-level framework components for the Alloy bot framework"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[features]
+default = []
+
+command = ["dep:clap"]
+
+# Enable clap derive macros for testing
+command-test = ["command", "clap/derive"]
+
+[dependencies]
+alloy-core = { path = "../alloy-core" }
+async-trait = "0.1.89"
+tokio = { version = "1.49.0", features = ["macros"] }
+tower = "0.5.3"
+tracing = "0.1.44"
+
+[dependencies.clap]
+version = "4.5.54"
+default-features = false
+features = ["error-context", "help", "std", "usage"]
+optional = true
+
+[dev-dependencies]
+serde_json = "1.0.149"
+tokio-test = "0.4.5"

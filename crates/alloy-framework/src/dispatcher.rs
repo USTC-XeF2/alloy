@@ -14,7 +14,7 @@
 //! 3. If a matcher is blocking and its check passed, dispatch stops
 //!
 //! ```rust,ignore
-//! use alloy_core::{Dispatcher, Matcher};
+//! use alloy_framework::{Dispatcher, Matcher};
 //!
 //! let mut dispatcher = Dispatcher::new();
 //!
@@ -38,10 +38,8 @@ use std::sync::Arc;
 
 use tracing::{Level, debug, span};
 
-use crate::foundation::context::AlloyContext;
-use crate::foundation::event::BoxedEvent;
-use crate::framework::matcher::Matcher;
-use crate::integration::bot::BoxedBot;
+use crate::matcher::Matcher;
+use alloy_core::{AlloyContext, BoxedBot, BoxedEvent};
 
 /// The central event dispatcher for the Alloy framework.
 ///
@@ -112,7 +110,7 @@ impl Dispatcher {
         let span = span!(Level::DEBUG, "dispatch", event_name = %event_name);
         let _enter = span.enter();
 
-        let ctx = Arc::new(AlloyContext::with_bot(event, bot));
+        let ctx = Arc::new(AlloyContext::new(event, bot));
         let mut any_matched = false;
 
         for matcher in &self.matchers {
@@ -141,14 +139,11 @@ impl std::fmt::Debug for Dispatcher {
     }
 }
 
-// Note: Tower Service implementation removed because dispatch now requires bot.
-// Use dispatcher.dispatch(event, bot) directly instead.
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::foundation::event::Event;
-    use crate::integration::bot::{ApiError, ApiResult, Bot};
+    use alloy_core::Event;
+    use alloy_core::{ApiError, ApiResult, Bot};
     use async_trait::async_trait;
     use serde_json::Value;
     use std::any::Any;
