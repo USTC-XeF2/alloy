@@ -16,8 +16,8 @@
 //! }
 //!
 //! // Handler with extractor
-//! async fn echo_handler(ctx: EventContext<MessageEvent>) {
-//!     println!("Message: {}", ctx.plain_text());
+//! async fn echo_handler(event: EventContext<MessageEvent>) {
+//!     println!("Message: {}", event.plain_text());
 //! }
 //!
 //! // Handler with multiple extractors
@@ -60,7 +60,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// ```rust,ignore
 /// // These are all valid handlers:
 /// async fn no_params() {}
-/// async fn one_param(ctx: EventContext<MessageEvent>) {}
+/// async fn one_param(event: EventContext<MessageEvent>) {}
 /// async fn two_params(msg: EventContext<MessageEvent>, state: State<AppState>) {}
 /// ```
 pub trait Handler<T>: Clone + Send + Sync + 'static {

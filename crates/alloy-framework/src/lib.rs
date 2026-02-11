@@ -27,7 +27,7 @@ pub use handler::{
     BoxFuture, BoxedHandler, CanExtract, ErasedHandler, Handler, HandlerFn, into_handler,
 };
 pub use matcher::{CheckFn, Matcher, MatcherResponse};
-pub use matcher_builders::{on_command, on_message, on_meta, on_notice, on_request};
+pub use matcher_builders::{on_message, on_meta, on_notice, on_request};
 
 #[cfg(feature = "command")]
-pub use command::{Command, CommandRouter, get_help, on_command_struct, parse_command};
+pub use command::{Command, get_help, on_command, parse_command};

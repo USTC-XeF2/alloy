@@ -16,13 +16,13 @@
 //! use alloy_core::{Event, FromEvent, EventContext};
 //!
 //! // Extract the most specific event type
-//! async fn on_poke(ctx: EventContext<Poke>) {
-//!     println!("Target: {}", ctx.target_id);
+//! async fn on_poke(event: EventContext<Poke>) {
+//!     println!("Target: {}", event.target_id);
 //! }
 //!
 //! // Extract an intermediate event type
-//! async fn on_notice(ctx: EventContext<NoticeEvent>) {
-//!     println!("Notice: {}", ctx.event_name());
+//! async fn on_notice(event: EventContext<NoticeEvent>) {
+//!     println!("Notice: {}", event.event_name());
 //! }
 //! ```
 
@@ -175,12 +175,12 @@ pub trait FromEvent: Sized + Clone {
 ///
 /// ```rust,ignore
 /// #[handler]
-/// async fn handler(ctx: EventContext<PrivateMessage>) -> Outcome {
+/// async fn handler(event: EventContext<PrivateMessage>) -> Outcome {
 ///     // Access fields directly via Deref
-///     println!("From: {} Message: {}", ctx.user_id, ctx.plain_text());
+///     println!("From: {} Message: {}", event.user_id, event.plain_text());
 ///     
 ///     // Access root event if needed
-///     println!("Platform: {}", ctx.root.platform());
+///     println!("Platform: {}", event.root.platform());
 ///     
 ///     Outcome::Handled
 /// }

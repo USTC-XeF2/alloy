@@ -35,15 +35,44 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 // ============================================================================
-// Handler Functions (Axum-style - no macro needed!)
+// Command Definitions (using clap)
 // ============================================================================
 
-/// Example clap-based command for structured argument parsing
+/// Echo command - echoes back the given text
+#[derive(Parser, Debug, Clone)]
+#[command(name = "/echo")]
+struct EchoCommand {
+    /// Text to echo back
+    text: Vec<String>,
+}
+
+/// Ping command - responds with Pong!
+#[derive(Parser, Debug, Clone)]
+#[command(name = "/ping")]
+struct PingCommand;
+
+/// Help command - shows help message
+#[derive(Parser, Debug, Clone)]
+#[command(name = "/help")]
+struct HelpCommand;
+
+/// Info command - shows message info
+#[derive(Parser, Debug, Clone)]
+#[command(name = "/info")]
+struct InfoCommand;
+
+/// Group-only command - only works in groups
+#[derive(Parser, Debug, Clone)]
+#[command(name = "/group")]
+struct GroupCommand;
+
+/// Calculator command with subcommands
 ///
 /// Usage:
 /// - /calc add 5 10
 /// - /calc multiply 3 4
 #[derive(Parser, Debug, Clone)]
+#[command(name = "/calc")]
 struct CalcCommand {
     #[command(subcommand)]
     operation: CalcOperation,
@@ -57,41 +86,15 @@ enum CalcOperation {
     Multiply { a: i32, b: i32 },
 }
 
-/// Handler for the "add" subcommand
-async fn add_handler(
-    ctx: EventContext<MessageEvent>,
-    bot: Arc<OneBotBot>,
-    cmd: Command<CalcCommand>,
-) {
-    if let CalcOperation::Add { a, b } = &cmd.operation {
-        let result = a + b;
-        let response = format!("➕ {a} + {b} = {result}");
-        if let Err(e) = bot.send(ctx.root.as_ref(), &response).await {
-            error!("Failed to send add result: {:?}", e);
-        }
-    }
-}
-
-/// Handler for the "multiply" subcommand
-async fn multiply_handler(
-    ctx: EventContext<MessageEvent>,
-    bot: Arc<OneBotBot>,
-    cmd: Command<CalcCommand>,
-) {
-    if let CalcOperation::Multiply { a, b } = &cmd.operation {
-        let result = a * b;
-        let response = format!("✖️ {a} × {b} = {result}");
-        if let Err(e) = bot.send(ctx.root.as_ref(), &response).await {
-            error!("Failed to send multiply result: {:?}", e);
-        }
-    }
-}
+// ============================================================================
+// Handler Functions (Axum-style - no macro needed!)
+// ============================================================================
 
 /// Logging handler - logs all messages.
 ///
 /// This handler runs for every message event.
-async fn logging_handler(ctx: EventContext<MessageEvent>) {
-    let msg = ctx.data();
+async fn logging_handler(event: EventContext<MessageEvent>) {
+    let msg = event.data();
     let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
 
     match &msg.inner {
@@ -115,30 +118,37 @@ async fn logging_handler(ctx: EventContext<MessageEvent>) {
     }
 }
 
-/// Echo command handler - now sends back the message!
-async fn echo_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    let msg = ctx.data();
-    let text = msg.plain_text();
-
-    // Command prefix already checked by matcher, just extract the content
-    if let Some(content) = text.strip_prefix("/echo ")
-        && let Err(e) = bot.send(ctx.root.as_ref(), content).await
-    {
-        error!("Failed to send echo reply: {:?}", e);
+/// Echo command handler - sends back the message!
+async fn echo_handler(
+    event: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    cmd: Command<EchoCommand>,
+) {
+    let content = cmd.text.join(" ");
+    if !content.is_empty() {
+        if let Err(e) = bot.send(event.root.as_ref(), &content).await {
+            error!("Failed to send echo reply: {:?}", e);
+        }
     }
 }
 
 /// Ping command handler - responds with Pong!
-async fn ping_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    // Command already checked by matcher
-    if let Err(e) = bot.send(ctx.root.as_ref(), "Pong! 🏓").await {
+async fn ping_handler(
+    event: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    _cmd: Command<PingCommand>,
+) {
+    if let Err(e) = bot.send(event.root.as_ref(), "Pong! 🏓").await {
         error!("Failed to send ping reply: {:?}", e);
     }
 }
 
 /// Help command handler - sends help message.
-async fn help_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    // Command already checked by matcher
+async fn help_handler(
+    event: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    _cmd: Command<HelpCommand>,
+) {
     let help_text = r"╭─────────────────────────────╮
 │     Echo Bot - Commands     │
 ├─────────────────────────────┤
@@ -147,20 +157,24 @@ async fn help_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
 │ /help        - This help    │
 │ /info        - Message info │
 │ /group       - Group only   │
+│ /calc add <a> <b>           │
+│ /calc multiply <a> <b>      │
 ╰─────────────────────────────╯";
 
-    if let Err(e) = bot.send(ctx.root.as_ref(), help_text).await {
+    if let Err(e) = bot.send(event.root.as_ref(), help_text).await {
         error!("Failed to send help message: {:?}", e);
     }
 }
 
 /// Info command handler - sends message info.
-async fn info_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    let msg = ctx.data();
-    // Command already checked by matcher
-    let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
+async fn info_handler(
+    event: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    _cmd: Command<InfoCommand>,
+) {
+    let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
-    let info_text = match &msg.inner {
+    let info_text = match &event.inner {
         MessageKind::Private(p) => {
             format!(
                 "📋 Message Info\n\
@@ -168,7 +182,7 @@ async fn info_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
                 • From: {} ({})\n\
                 • Message ID: {}\n\
                 • Sub Type: {}",
-                nickname, msg.user_id, msg.message_id, p.sub_type
+                nickname, event.user_id, event.message_id, p.sub_type
             )
         }
         MessageKind::Group(g) => {
@@ -179,32 +193,56 @@ async fn info_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
                 • Group: {}\n\
                 • Message ID: {}\n\
                 • Sub Type: {}",
-                nickname, msg.user_id, g.group_id, msg.message_id, g.sub_type
+                nickname, event.user_id, g.group_id, event.message_id, g.sub_type
             )
         }
     };
 
-    if let Err(e) = bot.send(ctx.root.as_ref(), &info_text).await {
+    if let Err(e) = bot.send(event.root.as_ref(), &info_text).await {
         error!("Failed to send info message: {:?}", e);
     }
 }
 
 /// Group-only command handler - responds only in groups.
-async fn group_only_handler(ctx: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    let msg = ctx.data();
-    // Command already checked by matcher, but we still need to check group
-    if let MessageKind::Group(g) = &msg.inner {
-        let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
+async fn group_only_handler(
+    event: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    _cmd: Command<GroupCommand>,
+) {
+    if let MessageKind::Group(g) = &event.inner {
+        let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
         let response = format!(
             "✅ This is a group-only command!\n\
                 • Group ID: {}\n\
                 • User: {} ({})",
-            g.group_id, nickname, msg.user_id
+            g.group_id, nickname, event.user_id
         );
 
-        if let Err(e) = bot.send(ctx.root.as_ref(), &response).await {
+        if let Err(e) = bot.send(event.root.as_ref(), &response).await {
             error!("Failed to send group-only response: {:?}", e);
         }
+    }
+}
+
+/// Calculator command handler - handles add and multiply operations
+async fn calc_handler(
+    event: EventContext<MessageEvent>,
+    bot: Arc<OneBotBot>,
+    cmd: Command<CalcCommand>,
+) {
+    let response = match &cmd.operation {
+        CalcOperation::Add { a, b } => {
+            let result = a + b;
+            format!("➕ {a} + {b} = {result}")
+        }
+        CalcOperation::Multiply { a, b } => {
+            let result = a * b;
+            format!("✖️ {a} × {b} = {result}")
+        }
+    };
+
+    if let Err(e) = bot.send(event.root.as_ref(), &response).await {
+        error!("Failed to send calc result: {:?}", e);
     }
 }
 
@@ -225,7 +263,7 @@ async fn main() -> Result<()> {
     runtime.register_adapter::<OneBotAdapter>().await?;
 
     // ========================================================================
-    // Register Matchers using convenience functions
+    // Register Matchers
     // ========================================================================
 
     runtime
@@ -234,24 +272,21 @@ async fn main() -> Result<()> {
             on_message()
                 .block(false) // Don't block - let other matchers also process
                 .handler(logging_handler),
-            // Command handlers - these use on_command() which auto-prepends "/"
-            on_command("echo").handler(echo_handler),
-            on_command("ping").handler(ping_handler),
-            on_command("help").handler(help_handler),
-            on_command("info").handler(info_handler),
-            on_command("group").handler(group_only_handler),
-            // Structured command handler using clap with subcommand routing
-            // Demonstrates automatic help (-h) and error messages
+            // Command handlers - use on_command::<T>() with clap parsing
+            on_command::<EchoCommand>("echo").handler(echo_handler),
+            on_command::<PingCommand>("ping").handler(ping_handler),
+            on_command::<HelpCommand>("help").handler(help_handler),
+            on_command::<InfoCommand>("info").handler(info_handler),
+            on_command::<GroupCommand>("group").handler(group_only_handler),
+            // Calculator command with subcommands
+            // Automatic help (-h) and error messages
             // Example: /calc add 5 10
             //          /calc multiply 3 4
             //          /calc -h (shows help)
-            on_command_struct::<CalcCommand>("/calc")
-                .reply_help(true) // Automatic help message on -h or --help
-                .reply_error(true) // Automatic error messages on parse failure
-                .router()
-                .route("add", add_handler)
-                .route("multiply", multiply_handler)
-                .build(),
+            on_command::<CalcCommand>("calc")
+                .reply_help(true)
+                .reply_error(true)
+                .handler(calc_handler),
         ])
         .await;
 

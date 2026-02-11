@@ -270,8 +270,8 @@ impl AlloyRuntime {
     ///
     /// runtime.register_matchers(vec![
     ///     on_message().handler(log_handler),
-    ///     on_command("echo").handler(echo_handler),
-    ///     on_command("help").handler(help_handler),
+    ///     on_command::<EchoCommand>("echo").handler(echo_handler),
+    ///     on_command::<HelpCommand>("help").handler(help_handler),
     /// ]).await;
     /// ```
     pub async fn register_matchers(&self, matchers: Vec<Matcher>) {

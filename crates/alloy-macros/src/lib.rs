@@ -13,8 +13,8 @@
 //! use alloy::prelude::*;
 //!
 //! // Just write async functions - no macro needed!
-//! async fn echo_handler(ctx: EventContext<MessageEvent>) {
-//!     println!("Message: {}", ctx.plain_text());
+//! async fn echo_handler(event: EventContext<MessageEvent>) {
+//!     println!("Message: {}", event.plain_text());
 //! }
 //!
 //! // Use with Matcher

@@ -31,8 +31,8 @@
 //! use alloy::prelude::*;
 //! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter, OneBotConfig};
 //!
-//! async fn echo(ctx: EventContext<MessageEvent>) {
-//!     if let Some(content) = ctx.data().plain_text().strip_prefix("/echo ") {
+//! async fn echo(event: EventContext<MessageEvent>) {
+//!     if let Some(content) = event.data().plain_text().strip_prefix("/echo ") {
 //!         info!("Echo: {}", content);
 //!     }
 //! }
@@ -104,11 +104,11 @@ pub mod prelude {
     pub use alloy_framework::{Handler, Matcher};
 
     // Matcher convenience functions (from framework layer)
-    pub use alloy_framework::{on_command, on_message, on_meta, on_notice, on_request};
+    pub use alloy_framework::{on_message, on_meta, on_notice, on_request};
 
     // Structured command support (requires "command" feature)
     #[cfg(feature = "command")]
-    pub use alloy_framework::{Command, on_command_struct};
+    pub use alloy_framework::{Command, on_command};
 
     // Bot types - for interacting with bots in handlers
     pub use alloy_core::Bot;

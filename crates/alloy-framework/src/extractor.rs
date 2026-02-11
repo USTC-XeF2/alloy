@@ -78,13 +78,13 @@ impl<T: FromContext> FromContext for Option<T> {
 /// use alloy_core::EventContext;
 ///
 /// // Extract a specific event type
-/// async fn on_poke(ctx: EventContext<PokeNotifyEvent>) {
-///     println!("Target: {}", ctx.target_id);
+/// async fn on_poke(event: EventContext<PokeNotifyEvent>) {
+///     println!("Target: {}", event.target_id);
 /// }
 ///
 /// // Extract an intermediate event type
-/// async fn on_notice(ctx: EventContext<NoticeEvent>) {
-///     match &ctx.inner {
+/// async fn on_notice(event: EventContext<NoticeEvent>) {
+///     match &event.inner {
 ///         NoticeType::Poke(p) => println!("Poke: {}", p.target_id),
 ///         _ => {}
 ///     }
