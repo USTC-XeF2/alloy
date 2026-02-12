@@ -131,27 +131,23 @@ pub use model::event::{
     LuckyKingEvent,
     // Message types
     MessageEvent,
-    MessageKind,
     // Meta types
     MetaEventEvent,
-    MetaEventKind,
     // Notice types
     NoticeEvent,
-    NoticeKind,
     NotifyEvent,
-    NotifyKind,
     OfflineFile,
     OfflineFileEvent,
     // Root event
     OneBotEvent,
-    OneBotEventKind,
     PokeEvent,
     PrivateMessageEvent,
     // Request types
     RequestEvent,
-    RequestKind,
     Sender,
     UploadedFile,
+    // Parsing helper
+    parse_onebot_event,
 };
 
 pub use traits::{GroupEvent, GroupManagement, MemberRole, PrivateEvent};

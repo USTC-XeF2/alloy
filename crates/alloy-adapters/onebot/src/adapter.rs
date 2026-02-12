@@ -44,14 +44,14 @@ use std::sync::Arc;
 
 use alloy_core::{
     AdapterContext, BoxedConnectionHandler, BoxedEvent, ClientConfig, ConnectionHandle,
-    ConnectionHandler, ConnectionInfo, Event,
+    ConnectionHandler, ConnectionInfo,
 };
 use async_trait::async_trait;
 use tracing::{debug, info, trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig, WsClientConfig, WsServerConfig};
-use crate::model::event::{MessageEvent, MessageKind, MetaEventKind, OneBotEvent, OneBotEventKind};
+use crate::model::event::{LifecycleEvent, MessageEvent, parse_onebot_event};
 use crate::traits::{GroupEvent, MemberRole, PrivateEvent};
 
 /// The OneBot v11 adapter.
@@ -304,16 +304,14 @@ impl alloy_core::Adapter for OneBotAdapter {
 
     fn parse_event(&self, data: &[u8]) -> anyhow::Result<Option<BoxedEvent>> {
         let raw = std::str::from_utf8(data)?;
-        let event = OneBotEvent::parse(raw)?;
+        let event = parse_onebot_event(raw)?;
 
-        // Log meta events at appropriate level
-        if let OneBotEventKind::MetaEvent(meta) = &event.inner
-            && let MetaEventKind::Heartbeat(_) = &meta.inner
-        {
-            trace!("Heartbeat from bot {}", event.self_id);
+        // Log heartbeat at trace level
+        if event.event_name() == "onebot.meta_event.heartbeat" {
+            trace!("Heartbeat from bot {:?}", event.bot_id());
         }
 
-        Ok(Some(BoxedEvent::new(event)))
+        Ok(Some(event))
     }
 
     fn clone_adapter(&self) -> Arc<dyn alloy_core::Adapter> {
@@ -409,8 +407,8 @@ impl ConnectionHandler for OneBotConnectionHandler {
             }
         }
 
-        // Parse as event
-        let event = match OneBotEvent::parse(raw) {
+        // Parse as event using the central dispatcher
+        let boxed_event = match parse_onebot_event(raw) {
             Ok(e) => e,
             Err(e) => {
                 warn!(bot_id = %bot_id, error = %e, raw_data = %raw, "Failed to parse event raw data");
@@ -419,25 +417,22 @@ impl ConnectionHandler for OneBotConnectionHandler {
         };
 
         // Log at appropriate level
-        match &event.inner {
-            OneBotEventKind::MetaEvent(meta) => match &meta.inner {
-                MetaEventKind::Heartbeat(_) => {
-                    trace!(bot_id = %bot_id, "Received heartbeat");
-                }
-                MetaEventKind::Lifecycle(lc) => {
-                    debug!(bot_id = %bot_id, sub_type = ?lc.sub_type, "Received lifecycle event");
-                }
-            },
-            _ => {
-                info!(
-                    bot_id = %bot_id,
-                    event = %event.event_name(),
-                    "Received event"
-                );
+        let event_name = boxed_event.event_name();
+        if event_name == "onebot.meta_event.heartbeat" {
+            trace!(bot_id = %bot_id, "Received heartbeat");
+        } else if event_name.starts_with("onebot.meta_event.lifecycle") {
+            // Downcast to get lifecycle sub_type for logging
+            if let Some(lc) = boxed_event.downcast_ref::<LifecycleEvent>() {
+                debug!(bot_id = %bot_id, sub_type = ?lc.sub_type, "Received lifecycle event");
             }
+        } else {
+            info!(
+                bot_id = %bot_id,
+                event = %event_name,
+                "Received event"
+            );
         }
 
-        let boxed_event = BoxedEvent::new(event);
         // Dispatch event through bot manager (requires bot)
         self.bot_manager.dispatch_event(boxed_event.clone()).await;
         Some(boxed_event)
@@ -468,10 +463,9 @@ impl ConnectionHandler for OneBotConnectionHandler {
 
 impl GroupEvent for MessageEvent {
     fn get_group_id(&self) -> &str {
-        match &self.inner {
-            MessageKind::Group(g) => Box::leak(g.group_id.to_string().into_boxed_str()),
-            MessageKind::Private(_) => "",
-        }
+        // MessageEvent itself doesn't have group_id.
+        // Users should extract GroupMessageEvent for group context.
+        ""
     }
 
     fn get_sender_role(&self) -> MemberRole {

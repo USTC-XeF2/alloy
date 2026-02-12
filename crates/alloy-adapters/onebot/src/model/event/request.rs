@@ -1,71 +1,55 @@
-//! Request Events
+//! Request Events — parent-in-child design.
 //!
 //! # Hierarchy
 //!
 //! ```text
-//! RequestEvent { inner: RequestKind }
-//! └── RequestKind (request_type dispatch)
-//!     ├── Friend(FriendRequestEvent)
-//!     └── Group(GroupRequestEvent)
+//! OneBotEvent { time, self_id }
+//! └── RequestEvent {}
+//!     ├── FriendRequestEvent { user_id, comment, flag }
+//!     └── GroupRequestEvent  { group_id, user_id, comment, flag, sub_type }
 //! ```
 
 use alloy_macros::BotEvent;
 use serde::{Deserialize, Serialize};
 
-use super::OneBotEventKind;
+use super::OneBotEvent;
 
 // ============================================================================
-// RequestEvent - Container for request events
+// RequestEvent — marker for "any request"
 // ============================================================================
 
-/// Request event container.
-///
-/// Dispatches to specific request types via `RequestKind`.
+/// Request event base — matches any event with `post_type = "request"`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(
-    name = "request",
+    name = "onebot.request",
     platform = "onebot",
-    parent = "OneBotEventKind",
+    parent = "OneBotEvent",
     type = "request"
 )]
 pub struct RequestEvent {
-    /// The specific request kind.
+    #[event(parent)]
     #[serde(flatten)]
-    pub inner: RequestKind,
-}
-
-/// Request kind dispatch based on `request_type`.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[serde(tag = "request_type")]
-#[event(
-    name = "request",
-    platform = "onebot",
-    parent = "RequestEvent",
-    type = "request"
-)]
-pub enum RequestKind {
-    /// Friend request.
-    #[serde(rename = "friend")]
-    Friend(FriendRequestEvent),
-    /// Group request (join or invite).
-    #[serde(rename = "group")]
-    Group(GroupRequestEvent),
+    pub parent: OneBotEvent,
 }
 
 // ============================================================================
 // FriendRequestEvent
 // ============================================================================
 
-/// Friend request event.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "request.friend", platform = "onebot", parent = "RequestKind")]
+#[event(
+    name = "onebot.request.friend",
+    platform = "onebot",
+    parent = "OneBotEvent",
+    type = "request"
+)]
 pub struct FriendRequestEvent {
-    /// Requester's user ID.
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: OneBotEvent,
     pub user_id: i64,
-    /// Verification message.
     #[serde(default)]
     pub comment: String,
-    /// Request flag (for approval/rejection).
     pub flag: String,
 }
 
@@ -73,19 +57,21 @@ pub struct FriendRequestEvent {
 // GroupRequestEvent
 // ============================================================================
 
-/// Group request event.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "request.group", platform = "onebot", parent = "RequestKind")]
+#[event(
+    name = "onebot.request.group",
+    platform = "onebot",
+    parent = "OneBotEvent",
+    type = "request"
+)]
 pub struct GroupRequestEvent {
-    /// Group ID.
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: OneBotEvent,
     pub group_id: i64,
-    /// Requester's user ID.
     pub user_id: i64,
-    /// Verification message.
     #[serde(default)]
     pub comment: String,
-    /// Request flag (for approval/rejection).
     pub flag: String,
-    /// Sub-type ("add" or "invite").
     pub sub_type: String,
 }

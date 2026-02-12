@@ -95,10 +95,12 @@ impl<T: Clone + Send + Sync + 'static> FromContext for Command<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         ctx.get_state::<ParsedCommand<T>>()
             .map(|parsed| Command(parsed.0.clone()))
-            .ok_or_else(|| ExtractError::custom(format!(
-                "Command<{}> not found in context. Make sure to use on_command::<T>() matcher.",
-                std::any::type_name::<T>()
-            )))
+            .ok_or_else(|| {
+                ExtractError::custom(format!(
+                    "Command<{}> not found in context. Make sure to use on_command::<T>() matcher.",
+                    std::any::type_name::<T>()
+                ))
+            })
     }
 }
 

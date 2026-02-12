@@ -2,41 +2,56 @@
 //!
 //! This crate provides:
 //!
-//! - `#[derive(BotEvent)]` - Generates event methods and FromEvent implementations
+//! - `#[derive(BotEvent)]` - Generates Event, FromEvent, Deref/DerefMut implementations
 //!
-//! # Handler System
+//! # Parent-in-Child Event Design
 //!
-//! Note: The `#[handler]` macro has been removed. Handlers are now implemented
-//! via blanket implementations for async functions, similar to Axum's approach.
-//!
-//! ```rust,ignore
-//! use alloy::prelude::*;
-//!
-//! // Just write async functions - no macro needed!
-//! async fn echo_handler(event: EventContext<MessageEvent>) {
-//!     println!("Message: {}", event.plain_text());
-//! }
-//!
-//! // Use with Matcher
-//! let matcher = Matcher::new()
-//!     .on::<MessageEvent>()
-//!     .handler(echo_handler);
-//! ```
-//!
-//! # BotEvent Derive Macro
-//!
-//! The `BotEvent` derive macro generates methods and `FromEvent` implementations:
+//! Events use a **parent-in-child** pattern where child events contain their
+//! parent as a flattened field. The macro auto-generates `Deref`/`DerefMut`
+//! so child events can transparently access all ancestor fields.
 //!
 //! ```rust,ignore
 //! use alloy_macros::BotEvent;
 //!
-//! #[derive(Clone, BotEvent)]
-//! #[event(platform = "onebot", parent = "MessageEvent")]
-//! pub struct PrivateMessage {
+//! // Root event — no parent
+//! #[derive(Clone, Serialize, Deserialize, BotEvent)]
+//! #[event(name = "onebot", platform = "onebot")]
+//! pub struct OneBotEvent {
 //!     pub time: i64,
 //!     pub self_id: i64,
+//!     #[serde(skip)]
+//!     #[event(raw_json)]
+//!     raw: Option<Arc<str>>,
+//! }
+//!
+//! // Child event — contains parent, auto Deref to OneBotEvent
+//! #[derive(Clone, Serialize, Deserialize, BotEvent)]
+//! #[event(
+//!     name = "onebot.message", platform = "onebot",
+//!     parent = "OneBotEvent", type = "message",
+//!     validate(post_type = "message"),
+//!     plain_text = "compute_plain_text",
+//! )]
+//! pub struct MessageEvent {
+//!     #[event(parent)]
+//!     #[serde(flatten)]
+//!     pub parent: OneBotEvent,
+//!     pub message_id: i32,
 //!     pub user_id: i64,
-//!     pub raw_message: String,
+//! }
+//!
+//! // Leaf event — Deref chain: PrivateMessageEvent → MessageEvent → OneBotEvent
+//! #[derive(Clone, Serialize, Deserialize, BotEvent)]
+//! #[event(
+//!     name = "onebot.message.private", platform = "onebot",
+//!     parent = "MessageEvent", type = "message",
+//!     validate(post_type = "message", message_type = "private"),
+//! )]
+//! pub struct PrivateMessageEvent {
+//!     #[event(parent)]
+//!     #[serde(flatten)]
+//!     pub parent: MessageEvent,
+//!     pub sub_type: String,
 //! }
 //! ```
 
@@ -45,50 +60,28 @@ mod event;
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
-/// Derives event-related implementations for structs and enums.
+/// Derives event-related implementations for structs.
 ///
-/// For **enums**, this generates:
-/// - `event_name(&self) -> &'static str` - Returns the event name
-/// - `self_id(&self) -> i64` - Returns the bot's ID (delegates to inner type)
-/// - `time(&self) -> i64` - Returns the timestamp (delegates to inner type)
-/// - `platform(&self) -> &'static str` - Returns the platform name
-/// - `FromEvent` implementation for extraction
+/// Generates:
+/// - `impl Event` — `event_name()`, `platform()`, `event_type()`, `as_any()`,
+///   and optionally `raw_json()`, `bot_id()`, `plain_text()`.
+/// - `impl FromEvent` — with optional JSON field validation.
+/// - `impl Deref<Target = Parent>` + `DerefMut` — when `parent = "…"` is set.
 ///
-/// For **structs**, this generates:
-/// - `event_name(&self) -> &'static str` - Returns the event name
-/// - `platform(&self) -> &'static str` - Returns the platform name
-/// - `FromEvent` implementation for extraction
+/// # Struct-level attributes `#[event(…)]`
 ///
-/// # Attributes
+/// - `platform = "…"` — Platform name (default `"unknown"`)
+/// - `name = "…"` — Full event name override
+/// - `parent = "Type"` — Parent type (triggers Deref generation)
+/// - `type = "message|notice|request|meta"` — EventType classification
+/// - `plain_text = "method"` — Inherent method name for `plain_text()`
+/// - `validate(key = "val", …)` — JSON field checks in `FromEvent`
 ///
-/// - `#[event(platform = "...")]` - Set the platform name (default: "onebot")
-/// - `#[event(name = "...")]` - Override the event name
-/// - `#[event(parent = "...")]` - Parent event type for FromEvent chaining
+/// # Field-level attributes `#[event(…)]`
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy_macros::BotEvent;
-///
-/// // Enum with delegating methods
-/// #[derive(Clone, BotEvent)]
-/// #[event(platform = "onebot")]
-/// pub enum MessageEvent {
-///     #[serde(rename = "private")]
-///     Private(PrivateMessage),
-///     #[serde(rename = "group")]
-///     Group(GroupMessage),
-/// }
-///
-/// // Struct with parent for extraction chaining
-/// #[derive(Clone, BotEvent)]
-/// #[event(platform = "onebot", parent = "MessageEvent")]
-/// pub struct PrivateMessage {
-///     pub time: i64,
-///     pub self_id: i64,
-///     // ...
-/// }
-/// ```
+/// - `parent` — Marks the parent field
+/// - `raw_json` — `Option<Arc<str>>` field providing raw JSON
+/// - `bot_id` — `Option<Arc<str>>` field providing bot ID
 #[proc_macro_derive(BotEvent, attributes(event))]
 pub fn derive_bot_event(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

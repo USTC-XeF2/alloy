@@ -33,8 +33,7 @@ use alloy_core::foundation::event::EventType;
 ///     .handler(log_handler);
 /// ```
 pub fn on_message() -> Matcher {
-    Matcher::new()
-        .check(|ctx| ctx.event().event_type() == EventType::Message)
+    Matcher::new().check(|ctx| ctx.event().event_type() == EventType::Message)
 }
 
 /// Creates a matcher that only handles notice events.
@@ -50,8 +49,7 @@ pub fn on_message() -> Matcher {
 ///     .handler(notice_handler);
 /// ```
 pub fn on_notice() -> Matcher {
-    Matcher::new()
-        .check(|ctx| ctx.event().event_type() == EventType::Notice)
+    Matcher::new().check(|ctx| ctx.event().event_type() == EventType::Notice)
 }
 
 /// Creates a matcher that only handles request events.
@@ -67,8 +65,7 @@ pub fn on_notice() -> Matcher {
 ///     .handler(request_handler);
 /// ```
 pub fn on_request() -> Matcher {
-    Matcher::new()
-        .check(|ctx| ctx.event().event_type() == EventType::Request)
+    Matcher::new().check(|ctx| ctx.event().event_type() == EventType::Request)
 }
 
 /// Creates a matcher that only handles meta events.
@@ -84,6 +81,5 @@ pub fn on_request() -> Matcher {
 ///     .handler(meta_handler);
 /// ```
 pub fn on_meta() -> Matcher {
-    Matcher::new()
-        .check(|ctx| ctx.event().event_type() == EventType::Meta)
+    Matcher::new().check(|ctx| ctx.event().event_type() == EventType::Meta)
 }

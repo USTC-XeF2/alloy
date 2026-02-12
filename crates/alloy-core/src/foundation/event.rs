@@ -179,43 +179,31 @@ pub trait FromEvent: Sized + Clone {
 ///     // Access fields directly via Deref
 ///     println!("From: {} Message: {}", event.user_id, event.plain_text());
 ///     
-///     // Access root event if needed
-///     println!("Platform: {}", event.root.platform());
+///     // The event can be passed directly to APIs
+///     bot.send(&event, "reply").await.ok();
 ///     
 ///     Outcome::Handled
 /// }
 /// ```
 #[derive(Clone)]
-pub struct EventContext<T: Clone> {
+pub struct EventContext<T: Event + Clone> {
     /// The extracted event data.
     data: T,
-    /// Reference to the original root event.
-    pub root: Arc<dyn Event>,
 }
 
-impl<T: Clone> EventContext<T> {
-    /// Creates a new EventContext with the given data and root event.
-    pub fn new(data: T, root: Arc<dyn Event>) -> Self {
-        Self { data, root }
+impl<T: Event + Clone> EventContext<T> {
+    /// Creates a new EventContext with the given data.
+    pub fn new(data: T) -> Self {
+        Self { data }
     }
 
-    /// Returns a reference to the extracted data.
-    pub fn data(&self) -> &T {
-        &self.data
-    }
-
-    /// Consumes the context and returns the extracted data.
-    pub fn into_data(self) -> T {
-        self.data
-    }
-
-    /// Returns the raw JSON of the root event, if available.
-    pub fn raw_json(&self) -> Option<&str> {
-        self.root.raw_json()
+    /// Returns a reference to the event as a trait object.
+    pub fn as_event(&self) -> &dyn Event {
+        &self.data as &dyn Event
     }
 }
 
-impl<T: Clone> Deref for EventContext<T> {
+impl<T: Event + Clone> Deref for EventContext<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -223,12 +211,17 @@ impl<T: Clone> Deref for EventContext<T> {
     }
 }
 
-impl<T: Clone + std::fmt::Debug> std::fmt::Debug for EventContext<T> {
+impl<T: Event + Clone + std::fmt::Debug> std::fmt::Debug for EventContext<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EventContext")
             .field("data", &self.data)
-            .field("root_event", &self.root.event_name())
             .finish()
+    }
+}
+
+impl<T: Event + Clone> AsRef<dyn Event> for EventContext<T> {
+    fn as_ref(&self) -> &dyn Event {
+        &self.data
     }
 }
 
@@ -276,8 +269,8 @@ impl BoxedEvent {
     }
 
     /// Attempts to extract a typed event using `FromEvent`.
-    pub fn extract<E: FromEvent>(&self) -> Option<EventContext<E>> {
-        E::from_event(self.inner.as_ref()).map(|data| EventContext::new(data, self.inner.clone()))
+    pub fn extract<E: FromEvent + Event>(&self) -> Option<EventContext<E>> {
+        E::from_event(self.inner.as_ref()).map(EventContext::new)
     }
 }
 

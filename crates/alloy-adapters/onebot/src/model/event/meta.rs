@@ -1,70 +1,53 @@
-//! Meta Events
+//! Meta Events — parent-in-child design.
 //!
 //! # Hierarchy
 //!
 //! ```text
-//! MetaEventEvent { inner: MetaEventKind }
-//! └── MetaEventKind (meta_event_type dispatch)
-//!     ├── Lifecycle(LifecycleEvent)
-//!     └── Heartbeat(HeartbeatEvent)
+//! OneBotEvent { time, self_id }
+//! └── MetaEventEvent {}
+//!     ├── LifecycleEvent { sub_type }
+//!     └── HeartbeatEvent { status, interval }
 //! ```
 
 use alloy_macros::BotEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::OneBotEventKind;
+use super::OneBotEvent;
 
 // ============================================================================
-// MetaEventEvent - Container for meta events
+// MetaEventEvent — marker for "any meta event"
 // ============================================================================
 
-/// Meta event container.
-///
-/// Dispatches to specific meta event types via `MetaEventKind`.
+/// Meta event base — matches any event with `post_type = "meta_event"`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(
-    name = "meta_event",
+    name = "onebot.meta_event",
     platform = "onebot",
-    parent = "OneBotEventKind",
+    parent = "OneBotEvent",
     type = "meta"
 )]
 pub struct MetaEventEvent {
-    /// The specific meta event kind.
+    #[event(parent)]
     #[serde(flatten)]
-    pub inner: MetaEventKind,
-}
-
-/// Meta event kind dispatch based on `meta_event_type`.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[serde(tag = "meta_event_type")]
-#[event(
-    name = "meta_event",
-    platform = "onebot",
-    parent = "MetaEventEvent",
-    type = "meta"
-)]
-pub enum MetaEventKind {
-    /// Lifecycle event.
-    #[serde(rename = "lifecycle")]
-    Lifecycle(LifecycleEvent),
-    /// Heartbeat event.
-    #[serde(rename = "heartbeat")]
-    Heartbeat(HeartbeatEvent),
+    pub parent: OneBotEvent,
 }
 
 // ============================================================================
 // LifecycleEvent
 // ============================================================================
 
-/// Lifecycle event (connect/disconnect).
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(
-    name = "meta_event.lifecycle",
+    name = "onebot.meta_event.lifecycle",
     platform = "onebot",
-    parent = "MetaEventKind"
+    parent = "OneBotEvent",
+    type = "meta"
 )]
 pub struct LifecycleEvent {
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: OneBotEvent,
     /// Sub-type ("enable", "disable", "connect").
     pub sub_type: String,
 }
@@ -76,38 +59,33 @@ pub struct LifecycleEvent {
 /// Heartbeat status info.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HeartbeatStatus {
-    /// App initialized.
     #[serde(default)]
     pub app_initialized: Option<bool>,
-    /// App enabled.
     #[serde(default)]
     pub app_enabled: Option<bool>,
-    /// App good.
     #[serde(default)]
     pub app_good: Option<bool>,
-    /// Online status.
     #[serde(default)]
     pub online: Option<bool>,
-    /// Good status.
     #[serde(default)]
     pub good: Option<bool>,
-    /// Additional status fields.
     #[serde(flatten)]
     pub extra: Value,
 }
 
-/// Heartbeat event.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(
-    name = "meta_event.heartbeat",
+    name = "onebot.meta_event.heartbeat",
     platform = "onebot",
-    parent = "MetaEventKind"
+    parent = "OneBotEvent",
+    type = "meta"
 )]
 pub struct HeartbeatEvent {
-    /// Status information.
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: OneBotEvent,
     #[serde(default)]
     pub status: HeartbeatStatus,
-    /// Heartbeat interval in milliseconds.
     #[serde(default)]
     pub interval: i64,
 }

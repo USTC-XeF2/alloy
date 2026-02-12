@@ -1,19 +1,22 @@
-//! Message Events
+//! Message Events — parent-in-child design.
 //!
 //! # Hierarchy
 //!
 //! ```text
-//! MessageEvent { message_id, user_id, message, raw_message, font, sender }
-//! └── MessageKind (message_type dispatch)
-//!     ├── Private(PrivateMessageEvent { sub_type, temp_source })
-//!     └── Group(GroupMessageEvent { group_id, anonymous, sub_type })
+//! OneBotEvent { time, self_id }
+//! └── MessageEvent { message_id, user_id, message, raw_message, font, sender }
+//!     ├── PrivateMessageEvent { sub_type, temp_source }
+//!     └── GroupMessageEvent   { group_id, anonymous, sub_type }
 //! ```
+//!
+//! Each child `Deref`s to its parent, so `private_event.user_id` and
+//! `private_event.time` both work transparently.
 
 use alloy_macros::BotEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::OneBotEventKind;
+use super::OneBotEvent;
 
 // ============================================================================
 // Shared Types
@@ -63,23 +66,25 @@ pub struct Anonymous {
 }
 
 // ============================================================================
-// MessageEvent - Contains common message fields
+// MessageEvent — common message fields + parent OneBotEvent
 // ============================================================================
 
 /// Message event with common fields.
 ///
-/// Contains fields shared by all message types:
-/// - `message_id`, `user_id`, `message`, `raw_message`, `font`, `sender`
-///
-/// The `inner` field dispatches to `PrivateMessageEvent` or `GroupMessageEvent`.
+/// `Deref` → [`OneBotEvent`], so `msg.time` and `msg.self_id` work directly.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(
-    name = "message",
+    name = "onebot.message",
     platform = "onebot",
-    parent = "OneBotEventKind",
+    parent = "OneBotEvent",
     type = "message"
 )]
 pub struct MessageEvent {
+    /// Embedded parent fields (time, self_id, …).
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: OneBotEvent,
+
     /// Message ID.
     pub message_id: i32,
     /// Sender's user ID.
@@ -94,93 +99,38 @@ pub struct MessageEvent {
     /// Sender information.
     #[serde(default)]
     pub sender: Sender,
-    /// The specific message kind.
-    #[serde(flatten)]
-    pub inner: MessageKind,
+    /// Message type discriminator (kept for serde round-trip).
+    #[serde(default)]
+    pub message_type: String,
 }
 
 impl MessageEvent {
-    /// Extracts plain text from the message.
+    /// Extracts plain text from the message segments.
     pub fn plain_text(&self) -> String {
         extract_plain_text(&self.message)
     }
-
-    /// Returns the group_id if this is a group message.
-    pub fn group_id(&self) -> Option<i64> {
-        match &self.inner {
-            MessageKind::Group(g) => Some(g.group_id),
-            MessageKind::Private(_) => None,
-        }
-    }
-
-    /// Returns true if this is a private message.
-    pub fn is_private(&self) -> bool {
-        matches!(self.inner, MessageKind::Private(_))
-    }
-
-    /// Returns true if this is a group message.
-    pub fn is_group(&self) -> bool {
-        matches!(self.inner, MessageKind::Group(_))
-    }
-
-    /// Returns the sub_type.
-    pub fn sub_type(&self) -> &str {
-        match &self.inner {
-            MessageKind::Private(p) => &p.sub_type,
-            MessageKind::Group(g) => &g.sub_type,
-        }
-    }
-
-    /// Try to get as private message event.
-    pub fn as_private(&self) -> Option<&PrivateMessageEvent> {
-        match &self.inner {
-            MessageKind::Private(p) => Some(p),
-            MessageKind::Group(_) => None,
-        }
-    }
-
-    /// Try to get as group message event.
-    pub fn as_group(&self) -> Option<&GroupMessageEvent> {
-        match &self.inner {
-            MessageKind::Private(_) => None,
-            MessageKind::Group(g) => Some(g),
-        }
-    }
 }
 
-/// Message kind dispatch based on `message_type`.
+// ============================================================================
+// PrivateMessageEvent
+// ============================================================================
+
+/// Private message event.
+///
+/// `Deref` chain: `PrivateMessageEvent` → [`MessageEvent`] → [`OneBotEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[serde(tag = "message_type")]
 #[event(
-    name = "message",
+    name = "onebot.message.private",
     platform = "onebot",
     parent = "MessageEvent",
     type = "message"
 )]
-pub enum MessageKind {
-    /// Private (direct) message.
-    #[serde(rename = "private")]
-    Private(PrivateMessageEvent),
-    /// Group message.
-    #[serde(rename = "group")]
-    Group(GroupMessageEvent),
-}
-
-// ============================================================================
-// PrivateMessageEvent - Private message specific fields
-// ============================================================================
-
-/// Private message specific fields.
-///
-/// Does NOT contain common fields - those are in `MessageEvent`.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "message.private",
-    platform = "onebot",
-    parent = "MessageKind",
-    type = "message"
-)]
 pub struct PrivateMessageEvent {
+    /// Embedded parent fields (message_id, user_id, message, …, time, self_id).
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: MessageEvent,
+
     /// Sub-type ("friend", "group", "discuss", "other").
     #[serde(default)]
     pub sub_type: String,
@@ -190,20 +140,25 @@ pub struct PrivateMessageEvent {
 }
 
 // ============================================================================
-// GroupMessageEvent - Group message specific fields
+// GroupMessageEvent
 // ============================================================================
 
-/// Group message specific fields.
+/// Group message event.
 ///
-/// Does NOT contain common fields - those are in `MessageEvent`.
+/// `Deref` chain: `GroupMessageEvent` → [`MessageEvent`] → [`OneBotEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(
-    name = "message.group",
+    name = "onebot.message.group",
     platform = "onebot",
-    parent = "MessageKind",
+    parent = "MessageEvent",
     type = "message"
 )]
 pub struct GroupMessageEvent {
+    /// Embedded parent fields.
+    #[event(parent)]
+    #[serde(flatten)]
+    pub parent: MessageEvent,
+
     /// Group ID.
     pub group_id: i64,
     /// Anonymous user info (if anonymous).

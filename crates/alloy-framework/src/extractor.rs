@@ -90,7 +90,7 @@ impl<T: FromContext> FromContext for Option<T> {
 ///     }
 /// }
 /// ```
-impl<T: FromEvent + Clone> FromContext for EventContext<T> {
+impl<T: FromEvent + Clone + alloy_core::Event> FromContext for EventContext<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         ctx.event()
             .extract::<T>()
@@ -110,7 +110,7 @@ impl<T: FromEvent + Clone> FromContext for EventContext<T> {
 ///
 /// async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
 ///     // Use the bot to send a message back
-///     bot.send(event.root.as_ref(), "Hello!").await.ok();
+///     bot.send(event.as_event(), "Hello!").await.ok();
 /// }
 /// ```
 impl FromContext for BoxedBot {

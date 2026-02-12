@@ -7,16 +7,16 @@
 //!
 //! ```rust,ignore
 //! use alloy_adapter_onebot::OneBotBot;
-//! use alloy_core::{BoxedBot, EventContext, FromContext};
+//! use alloy_core::{BoxedBot, EventArc, FromContext};
 //!
-//! async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
+//! async fn my_handler(bot: BoxedBot, event: EventArc<MessageEvent>) {
 //!     // Downcast to OneBotBot for strongly-typed APIs
 //!     if let Some(onebot) = bot.as_any().downcast_ref::<OneBotBot>() {
 //!         // Send a private message
 //!         onebot.send_private_msg(12345678, "Hello!", false).await.ok();
 //!         
-//!         // Or use the generic send method
-//!         bot.send(event.root.as_ref(), "Reply!").await.ok();
+//!         // Or use the generic send method (passes event directly)
+//!         bot.send(event.as_event(), "Reply!").await.ok();
 //!     }
 //! }
 //! ```
@@ -33,6 +33,8 @@ use tokio::time::{Duration, timeout};
 use tracing::{debug, trace};
 
 use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
+
+use crate::model::event::{GroupMessageEvent, MessageEvent, PrivateMessageEvent};
 
 // =============================================================================
 // OneBotBot
@@ -798,7 +800,46 @@ impl Bot for OneBotBot {
     }
 
     async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<i64> {
-        // Try to extract session info from event
+        // Try to downcast to GroupMessageEvent first (most specific)
+        if let Some(group_msg) = event.as_any().downcast_ref::<GroupMessageEvent>() {
+            return self
+                .send_group_msg(group_msg.group_id, message, false)
+                .await;
+        }
+
+        // Try PrivateMessageEvent
+        if let Some(private_msg) = event.as_any().downcast_ref::<PrivateMessageEvent>() {
+            return self
+                .send_private_msg(private_msg.user_id, message, false)
+                .await;
+        }
+
+        // Try generic MessageEvent and infer from message_type
+        if let Some(msg) = event.as_any().downcast_ref::<MessageEvent>() {
+            match msg.message_type.as_str() {
+                "group" => {
+                    // Need to get group_id from raw JSON as fallback
+                    if let Some(raw) = event.raw_json() {
+                        let parsed: Value = serde_json::from_str(raw)
+                            .map_err(|e| ApiError::SerializationError(e.to_string()))?;
+                        let group_id =
+                            parsed
+                                .get("group_id")
+                                .and_then(Value::as_i64)
+                                .ok_or_else(|| {
+                                    ApiError::MissingSession("No group_id in event".into())
+                                })?;
+                        return self.send_group_msg(group_id, message, false).await;
+                    }
+                }
+                "private" => {
+                    return self.send_private_msg(msg.user_id, message, false).await;
+                }
+                _ => {}
+            }
+        }
+
+        // Fallback: parse raw_json
         let raw_json = event
             .raw_json()
             .ok_or_else(|| ApiError::MissingSession("No raw JSON in event".into()))?;
@@ -806,39 +847,16 @@ impl Bot for OneBotBot {
         let parsed: Value = serde_json::from_str(raw_json)
             .map_err(|e| ApiError::SerializationError(e.to_string()))?;
 
-        // Check message type
-        let message_type = parsed.get("message_type").and_then(|v| v.as_str());
-
-        let result = match message_type {
-            Some("private") => {
-                let user_id = parsed
-                    .get("user_id")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| ApiError::MissingSession("No user_id in event".into()))?;
-                self.send_private_msg(user_id, message, false).await?
-            }
-            Some("group") => {
-                let group_id = parsed
-                    .get("group_id")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| ApiError::MissingSession("No group_id in event".into()))?;
-                self.send_group_msg(group_id, message, false).await?
-            }
-            _ => {
-                // Try to detect from available fields
-                if let Some(group_id) = parsed.get("group_id").and_then(Value::as_i64) {
-                    self.send_group_msg(group_id, message, false).await?
-                } else if let Some(user_id) = parsed.get("user_id").and_then(Value::as_i64) {
-                    self.send_private_msg(user_id, message, false).await?
-                } else {
-                    return Err(ApiError::MissingSession(
-                        "Cannot determine message target".into(),
-                    ));
-                }
-            }
-        };
-
-        Ok(result)
+        // Try to detect from available fields
+        if let Some(group_id) = parsed.get("group_id").and_then(Value::as_i64) {
+            self.send_group_msg(group_id, message, false).await
+        } else if let Some(user_id) = parsed.get("user_id").and_then(Value::as_i64) {
+            self.send_private_msg(user_id, message, false).await
+        } else {
+            Err(ApiError::MissingSession(
+                "Cannot determine message target".into(),
+            ))
+        }
     }
 
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

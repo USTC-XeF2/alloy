@@ -150,7 +150,7 @@ impl Matcher {
     /// ```
     pub fn on<T>(self) -> Self
     where
-        T: FromEvent + Clone + 'static,
+        T: FromEvent + Clone + 'static + alloy_core::Event,
     {
         self.check(|ctx| ctx.event().extract::<T>().is_some())
     }

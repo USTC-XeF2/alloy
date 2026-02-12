@@ -1,24 +1,14 @@
 //! Echo Bot Example
 //!
-//! A simple demonstration of the Alloy framework using the new Matcher system
-//! with Axum-style handler functions.
+//! A simple demonstration of the Alloy framework using parent-in-child events.
 //!
-//! # Matcher System
+//! # Parent-in-Child Event Design
 //!
-//! Matchers group handlers with a common check rule:
-//! - When the check passes, all handlers in the matcher are executed
-//! - A blocking matcher stops further matchers from processing
-//!
-//! # Event Extraction
-//!
-//! Handlers use `EventContext<T>` to extract events at any level:
+//! Events use `Deref` chains so child events transparently access parent fields:
 //!
 //! ```text
-//! OneBotEvent { time, self_id, inner: OneBotEventKind }
-//! └── OneBotEventKind::Message(MessageEvent)
-//!     └── MessageEvent { message_id, user_id, message, sender, inner: MessageKind }
-//!         ├── MessageKind::Private(PrivateMessageEvent { sub_type })
-//!         └── MessageKind::Group(GroupMessageEvent { group_id, anonymous, sub_type })
+//! PrivateMessageEvent  ──Deref──▶  MessageEvent  ──Deref──▶  OneBotEvent
+//!   sub_type                        user_id, message, …       time, self_id
 //! ```
 //!
 //! # Usage
@@ -28,7 +18,7 @@
 //! ```
 
 use alloy::prelude::*;
-use alloy_adapter_onebot::{MessageEvent, MessageKind, OneBotAdapter, OneBotBot};
+use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
@@ -93,29 +83,16 @@ enum CalcOperation {
 /// Logging handler - logs all messages.
 ///
 /// This handler runs for every message event.
+/// Uses `MessageEvent` which provides common fields for all message types.
 async fn logging_handler(event: EventContext<MessageEvent>) {
-    let msg = event.data();
-    let nickname = msg.sender.nickname.as_deref().unwrap_or("Unknown");
+    let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
-    match &msg.inner {
-        MessageKind::Private(_) => {
-            info!(
-                "[Private] {} ({}): {}",
-                nickname,
-                msg.user_id,
-                msg.plain_text()
-            );
-        }
-        MessageKind::Group(g) => {
-            info!(
-                "[Group {}] {} ({}): {}",
-                g.group_id,
-                nickname,
-                msg.user_id,
-                msg.plain_text()
-            );
-        }
-    }
+    info!(
+        "[Message] {} ({}): {}",
+        nickname,
+        event.user_id,
+        event.plain_text()
+    );
 }
 
 /// Echo command handler - sends back the message!
@@ -126,7 +103,7 @@ async fn echo_handler(
 ) {
     let content = cmd.text.join(" ");
     if !content.is_empty() {
-        if let Err(e) = bot.send(event.root.as_ref(), &content).await {
+        if let Err(e) = bot.send(event.as_event(), &content).await {
             error!("Failed to send echo reply: {:?}", e);
         }
     }
@@ -138,7 +115,7 @@ async fn ping_handler(
     bot: Arc<OneBotBot>,
     _cmd: Command<PingCommand>,
 ) {
-    if let Err(e) = bot.send(event.root.as_ref(), "Pong! 🏓").await {
+    if let Err(e) = bot.send(event.as_event(), "Pong! 🏓").await {
         error!("Failed to send ping reply: {:?}", e);
     }
 }
@@ -161,7 +138,7 @@ async fn help_handler(
 │ /calc multiply <a> <b>      │
 ╰─────────────────────────────╯";
 
-    if let Err(e) = bot.send(event.root.as_ref(), help_text).await {
+    if let Err(e) = bot.send(event.as_event(), help_text).await {
         error!("Failed to send help message: {:?}", e);
     }
 }
@@ -174,53 +151,36 @@ async fn info_handler(
 ) {
     let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
-    let info_text = match &event.inner {
-        MessageKind::Private(p) => {
-            format!(
-                "📋 Message Info\n\
-                • Type: Private\n\
-                • From: {} ({})\n\
-                • Message ID: {}\n\
-                • Sub Type: {}",
-                nickname, event.user_id, event.message_id, p.sub_type
-            )
-        }
-        MessageKind::Group(g) => {
-            format!(
-                "📋 Message Info\n\
-                • Type: Group\n\
-                • From: {} ({})\n\
-                • Group: {}\n\
-                • Message ID: {}\n\
-                • Sub Type: {}",
-                nickname, event.user_id, g.group_id, event.message_id, g.sub_type
-            )
-        }
-    };
+    let info_text = format!(
+        "📋 Message Info\n\
+        • From: {} ({})\n\
+        • Message ID: {}\n\
+        • Type: {}",
+        nickname, event.user_id, event.message_id, event.message_type
+    );
 
-    if let Err(e) = bot.send(event.root.as_ref(), &info_text).await {
+    if let Err(e) = bot.send(event.as_event(), &info_text).await {
         error!("Failed to send info message: {:?}", e);
     }
 }
 
 /// Group-only command handler - responds only in groups.
+/// Uses `GroupMessageEvent` directly — auto-extracts only for group messages.
 async fn group_only_handler(
-    event: EventContext<MessageEvent>,
+    event: EventContext<GroupMessageEvent>,
     bot: Arc<OneBotBot>,
     _cmd: Command<GroupCommand>,
 ) {
-    if let MessageKind::Group(g) = &event.inner {
-        let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
-        let response = format!(
-            "✅ This is a group-only command!\n\
-                • Group ID: {}\n\
-                • User: {} ({})",
-            g.group_id, nickname, event.user_id
-        );
+    let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
+    let response = format!(
+        "✅ This is a group-only command!\n\
+            • Group ID: {}\n\
+            • User: {} ({})",
+        event.group_id, nickname, event.user_id
+    );
 
-        if let Err(e) = bot.send(event.root.as_ref(), &response).await {
-            error!("Failed to send group-only response: {:?}", e);
-        }
+    if let Err(e) = bot.send(event.as_event(), &response).await {
+        error!("Failed to send group-only response: {:?}", e);
     }
 }
 
@@ -241,7 +201,7 @@ async fn calc_handler(
         }
     };
 
-    if let Err(e) = bot.send(event.root.as_ref(), &response).await {
+    if let Err(e) = bot.send(event.as_event(), &response).await {
         error!("Failed to send calc result: {:?}", e);
     }
 }
