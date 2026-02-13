@@ -5,7 +5,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use alloy_core::{
-    BoxedConnectionHandler, ConnectionHandle, ConnectionInfo, ListenerHandle, WsServerCapability,
+    BoxedConnectionHandler, ConnectionHandle, ConnectionInfo, ListenerHandle, TransportResult,
+    WsServerCapability,
 };
 use async_trait::async_trait;
 use axum::{
@@ -53,7 +54,7 @@ impl WsServerCapability for WsServerCapabilityImpl {
         addr: &str,
         path: &str,
         handler: BoxedConnectionHandler,
-    ) -> anyhow::Result<ListenerHandle> {
+    ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,
             connections: RwLock::new(HashMap::new()),
@@ -145,7 +146,14 @@ async fn handle_socket(
     }
 
     // Call on_connect to get bot ID
-    let bot_id = state.handler.on_connect(conn_info).await;
+    let bot_id = match state.handler.on_connect(conn_info).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!(error = %e, remote_addr = %addr, "Failed to establish WebSocket connection");
+            let _ = ws_tx.close().await;
+            return;
+        }
+    };
 
     info!(bot_id = %bot_id, remote_addr = %addr, "WebSocket connection established");
 

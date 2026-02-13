@@ -24,6 +24,7 @@
 
 use crate::bot::BotStatus;
 use crate::config::{AlloyConfig, ConfigLoader};
+use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
 use crate::registry::{BotRegistry, RegistryStats};
 use alloy_core::{AdapterContext, TransportContext};
@@ -206,7 +207,8 @@ impl AlloyRuntime {
 
     /// Registers an adapter with the runtime.
     ///
-    /// The adapter is automatically created from its configuration in `alloy.yaml`.
+    /// The adapter can be configured via configuration in `alloy.yaml`, or
+    /// it will use its default configuration if not found.
     /// The runtime handles all configuration loading and deserialization.
     ///
     /// # Example
@@ -217,35 +219,40 @@ impl AlloyRuntime {
     ///
     /// This will:
     /// 1. Look for configuration under `adapters.onebot` (from `OneBotAdapter::name()`)
-    /// 2. Deserialize it into `OneBotAdapter::Config` type
-    /// 3. Call `OneBotAdapter::from_config(config)` to create the adapter
-    /// 4. Register the adapter with the runtime
-    pub async fn register_adapter<A>(&self) -> anyhow::Result<()>
+    /// 2. If found, deserialize it into `OneBotAdapter::Config` type
+    /// 3. If not found, use the default configuration via `Default::default()`
+    /// 4. Call `OneBotAdapter::from_config(config)` to create the adapter
+    /// 5. Register the adapter with the runtime
+    pub async fn register_adapter<A>(&self) -> RuntimeResult<()>
     where
         A: alloy_core::ConfigurableAdapter + 'static,
     {
         let adapter_name = A::name();
 
-        // Extract the config value for this adapter
-        let config_value = self.config.adapters.get(adapter_name).ok_or_else(|| {
-            anyhow::anyhow!(
-                "No configuration found for adapter '{adapter_name}'. Add it to alloy.yaml under adapters.{adapter_name}"
-            )
-        })?;
-
-        // Deserialize into the adapter's config type
-        // The runtime handles all deserialization - adapter doesn't need to know about figment
-        let config: A::Config = config_value.clone().deserialize().map_err(|e| {
-            anyhow::anyhow!("Failed to deserialize config for adapter '{adapter_name}': {e}")
-        })?;
+        // Try to get config from file, otherwise use default
+        let config: A::Config = match self.config.adapters.get(adapter_name) {
+            Some(config_value) => {
+                // Deserialize from config
+                config_value.clone().deserialize().map_err(|e| {
+                    RuntimeError::AdapterConfigDeserialize(format!(
+                        "Failed to deserialize config for adapter '{adapter_name}': {e}"
+                    ))
+                })?
+            }
+            None => {
+                // Use default configuration
+                warn!(
+                    adapter = adapter_name,
+                    "No configuration found for adapter, using default"
+                );
+                Default::default()
+            }
+        };
 
         // Create adapter from its config
         let adapter = A::from_config(config)?;
 
-        info!(
-            adapter = adapter_name,
-            "Registered adapter from configuration"
-        );
+        info!(adapter = adapter_name, "Registered adapter");
         self.registry.register_adapter(adapter).await;
         Ok(())
     }
@@ -297,7 +304,7 @@ impl AlloyRuntime {
     }
 
     /// Initializes all registered adapters with transport capabilities.
-    pub async fn init(&self) -> anyhow::Result<()> {
+    pub async fn init(&self) -> RuntimeResult<()> {
         // Set dispatcher in registry
         self.registry
             .set_dispatcher(Arc::clone(&self.dispatcher))
@@ -333,7 +340,7 @@ impl AlloyRuntime {
     }
 
     /// Starts the runtime.
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(&self) -> RuntimeResult<()> {
         {
             let mut running = self.running.write().await;
             if *running {
@@ -368,7 +375,7 @@ impl AlloyRuntime {
     }
 
     /// Stops the runtime and all adapters.
-    pub async fn stop(&self) -> anyhow::Result<()> {
+    pub async fn stop(&self) -> RuntimeResult<()> {
         {
             let mut running = self.running.write().await;
             if !*running {
@@ -402,7 +409,7 @@ impl AlloyRuntime {
     }
 
     /// Runs the runtime until a shutdown signal is received.
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self) -> RuntimeResult<()> {
         self.init().await?;
         self.start().await?;
 
@@ -417,7 +424,7 @@ impl AlloyRuntime {
     }
 
     /// Runs the runtime with a custom shutdown future.
-    pub async fn run_until<F>(&self, shutdown: F) -> anyhow::Result<()>
+    pub async fn run_until<F>(&self, shutdown: F) -> RuntimeResult<()>
     where
         F: std::future::Future<Output = ()>,
     {

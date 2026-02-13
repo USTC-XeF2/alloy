@@ -17,10 +17,10 @@
 //! - `http-server`: HTTP server capability
 //!
 //! ```ignore
-//! use alloy_runtime::AlloyRuntime;
+//! use alloy_runtime::{AlloyRuntime, RuntimeResult};
 //!
 //! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
+//! async fn main() -> RuntimeResult<()> {
 //!     // Runtime automatically initializes transport capabilities
 //!     let runtime = AlloyRuntime::new();
 //!     
@@ -39,12 +39,12 @@
 //! You can also manually configure transport capabilities if needed:
 //!
 //! ```ignore
-//! use alloy_runtime::AlloyRuntime;
+//! use alloy_runtime::{AlloyRuntime, RuntimeResult};
 //! use alloy_core::TransportContext;
 //! use alloy_transport::websocket::WsServerCapabilityImpl;
 //!
 //! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
+//! async fn main() -> RuntimeResult<()> {
 //!     let runtime = AlloyRuntime::new();
 //!     
 //!     // Optionally override with custom transport context

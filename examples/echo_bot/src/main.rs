@@ -57,10 +57,10 @@ async fn echo_handler(
     cmd: CommandArgs<EchoCommand>,
 ) {
     let content = cmd.text.join(" ");
-    if !content.is_empty() {
-        if let Err(e) = bot.send(event.as_event(), &content).await {
-            error!("Failed to send echo reply: {:?}", e);
-        }
+    if !content.is_empty()
+        && let Err(e) = bot.send(event.as_event(), &content).await
+    {
+        error!("Failed to send echo reply: {:?}", e);
     }
 }
 

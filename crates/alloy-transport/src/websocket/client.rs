@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use alloy_core::{
-    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionInfo, WsClientCapability,
+    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionInfo, TransportResult,
+    WsClientCapability,
 };
 use async_trait::async_trait;
 use futures::stream::{SplitSink, SplitStream};
@@ -40,7 +41,7 @@ impl WsClientCapability for WsClientCapabilityImpl {
         url: &str,
         handler: BoxedConnectionHandler,
         config: ClientConfig,
-    ) -> anyhow::Result<ConnectionHandle> {
+    ) -> TransportResult<ConnectionHandle> {
         let url = url.to_string();
 
         // Create channels
@@ -56,7 +57,7 @@ impl WsClientCapability for WsClientCapabilityImpl {
         let (ws_tx, ws_rx) = ws_stream.split();
 
         // Get bot ID from handler
-        let bot_id = handler.on_connect(conn_info).await;
+        let bot_id = handler.on_connect(conn_info).await?;
 
         info!(bot_id = %bot_id, url = %url, "WebSocket client connected");
 

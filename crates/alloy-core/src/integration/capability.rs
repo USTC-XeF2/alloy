@@ -36,6 +36,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
+use crate::foundation::error::{TransportError, TransportResult};
 use crate::foundation::event::BoxedEvent;
 
 // =============================================================================
@@ -52,8 +53,8 @@ pub type MessageHandler = Arc<dyn Fn(&[u8]) -> Option<BoxedEvent> + Send + Sync>
 pub trait ConnectionHandler: Send + Sync {
     /// Called when a new connection is established.
     ///
-    /// Returns a unique bot ID for this connection.
-    async fn on_connect(&self, conn_info: ConnectionInfo) -> String;
+    /// Returns a unique bot ID for this connection, or an error if connection setup fails.
+    async fn on_connect(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
 
     /// Called after connection is established and handle is available.
     ///
@@ -129,7 +130,7 @@ pub trait WsServerCapability: Send + Sync {
         addr: &str,
         path: &str,
         handler: BoxedConnectionHandler,
-    ) -> anyhow::Result<ListenerHandle>;
+    ) -> TransportResult<ListenerHandle>;
 }
 
 /// WebSocket client capability.
@@ -146,7 +147,7 @@ pub trait WsClientCapability: Send + Sync {
         url: &str,
         handler: BoxedConnectionHandler,
         config: ClientConfig,
-    ) -> anyhow::Result<ConnectionHandle>;
+    ) -> TransportResult<ConnectionHandle>;
 }
 
 /// HTTP server capability.
@@ -162,7 +163,7 @@ pub trait HttpServerCapability: Send + Sync {
         addr: &str,
         path: &str,
         handler: BoxedConnectionHandler,
-    ) -> anyhow::Result<ListenerHandle>;
+    ) -> TransportResult<ListenerHandle>;
 }
 
 /// HTTP client capability.
@@ -175,10 +176,10 @@ pub trait HttpClientCapability: Send + Sync {
         &self,
         url: &str,
         body: serde_json::Value,
-    ) -> anyhow::Result<serde_json::Value>;
+    ) -> TransportResult<serde_json::Value>;
 
     /// Sends an HTTP GET request.
-    async fn get(&self, url: &str) -> anyhow::Result<serde_json::Value>;
+    async fn get(&self, url: &str) -> TransportResult<serde_json::Value>;
 }
 
 // =============================================================================
@@ -249,16 +250,17 @@ impl ConnectionHandle {
     }
 
     /// Sends a message through this connection.
-    pub async fn send(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    pub async fn send(&self, data: Vec<u8>) -> TransportResult<()> {
         self.message_tx
             .send(data)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to send message: {e}"))
+            .map_err(|e| TransportError::SendFailed(e.to_string()))
     }
 
     /// Sends a JSON message.
-    pub async fn send_json(&self, value: &serde_json::Value) -> anyhow::Result<()> {
-        let data = serde_json::to_vec(value)?;
+    pub async fn send_json(&self, value: &serde_json::Value) -> TransportResult<()> {
+        let data = serde_json::to_vec(value)
+            .map_err(|e| TransportError::SendFailed(format!("JSON serialization failed: {e}")))?;
         self.send(data).await
     }
 
@@ -505,10 +507,10 @@ impl BotManager {
         id: String,
         connection: ConnectionHandle,
         adapter: String,
-    ) -> anyhow::Result<()> {
+    ) -> TransportResult<()> {
         let mut bots = self.bots.write().await;
         if bots.contains_key(&id) {
-            anyhow::bail!("Bot with ID '{id}' already exists");
+            return Err(TransportError::BotAlreadyExists { id });
         }
         bots.insert(
             id.clone(),
@@ -530,10 +532,10 @@ impl BotManager {
         connection: ConnectionHandle,
         adapter: String,
         bot: crate::integration::bot::BoxedBot,
-    ) -> anyhow::Result<()> {
+    ) -> TransportResult<()> {
         let mut bots = self.bots.write().await;
         if bots.contains_key(&id) {
-            anyhow::bail!("Bot with ID '{id}' already exists");
+            return Err(TransportError::BotAlreadyExists { id });
         }
         bots.insert(
             id.clone(),
@@ -553,11 +555,11 @@ impl BotManager {
         &self,
         id: &str,
         bot: crate::integration::bot::BoxedBot,
-    ) -> anyhow::Result<()> {
+    ) -> TransportResult<()> {
         let mut bots = self.bots.write().await;
         let entry = bots
             .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("Bot '{id}' not found"))?;
+            .ok_or_else(|| TransportError::BotNotFound { id: id.to_string() })?;
         entry.bot = Some(bot);
         Ok(())
     }
@@ -614,16 +616,18 @@ impl BotManager {
     }
 
     /// Sends a message to a specific bot.
-    pub async fn send_to(&self, bot_id: &str, data: Vec<u8>) -> anyhow::Result<()> {
+    pub async fn send_to(&self, bot_id: &str, data: Vec<u8>) -> TransportResult<()> {
         let bots = self.bots.read().await;
         let bot = bots
             .get(bot_id)
-            .ok_or_else(|| anyhow::anyhow!("Bot '{bot_id}' not found"))?;
+            .ok_or_else(|| TransportError::BotNotFound {
+                id: bot_id.to_string(),
+            })?;
         bot.connection.send(data).await
     }
 
     /// Broadcasts a message to all bots.
-    pub async fn broadcast(&self, data: Vec<u8>) -> Vec<anyhow::Result<()>> {
+    pub async fn broadcast(&self, data: Vec<u8>) -> Vec<TransportResult<()>> {
         let bots = self.bots.read().await;
         let mut results = Vec::new();
         for bot in bots.values() {

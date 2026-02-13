@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use alloy_core::{BoxedConnectionHandler, ConnectionInfo, HttpServerCapability, ListenerHandle};
+use alloy_core::{
+    BoxedConnectionHandler, ConnectionInfo, HttpServerCapability, ListenerHandle, TransportError,
+    TransportResult,
+};
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -48,7 +51,7 @@ impl HttpServerCapability for HttpServerCapabilityImpl {
         addr: &str,
         path: &str,
         handler: BoxedConnectionHandler,
-    ) -> anyhow::Result<ListenerHandle> {
+    ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,
             known_clients: RwLock::new(HashMap::new()),
@@ -117,7 +120,17 @@ async fn http_handler(
             // New client, call on_connect
             let conn_info = ConnectionInfo::new("http").with_remote_addr(addr_str.clone());
 
-            let new_bot_id = state.handler.on_connect(conn_info).await;
+            let new_bot_id = match state.handler.on_connect(conn_info).await {
+                Ok(id) => id,
+                Err(e) => {
+                    error!(error = %e, remote_addr = %addr, "Failed to establish HTTP connection");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to establish connection",
+                    )
+                        .into_response();
+                }
+            };
 
             // Store the mapping
             {

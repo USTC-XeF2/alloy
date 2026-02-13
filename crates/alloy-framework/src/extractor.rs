@@ -3,8 +3,8 @@
 //! This module provides the [`FromContext`] trait, which defines how types
 //! can be extracted from an [`AlloyContext`] for use as handler parameters.
 
+use crate::error::ExtractError;
 use alloy_core::foundation::context::AlloyContext;
-use alloy_core::foundation::error::ExtractError;
 use alloy_core::foundation::event::{EventContext, FromEvent};
 use alloy_core::integration::bot::BoxedBot;
 

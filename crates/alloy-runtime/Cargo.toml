@@ -24,7 +24,6 @@ full-transport = ["alloy-transport/full"]
 alloy-core = { path = "../alloy-core" }
 alloy-framework = { path = "../alloy-framework" }
 alloy-transport = { path = "../alloy-transport" }
-anyhow = "1.0.100"
 dirs = "6.0.0"
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -4,6 +4,7 @@
 //! connections are established and unregistered when they disconnect.
 
 use crate::bot::{BotInstance, BotStatus};
+use crate::error::{RuntimeError, RuntimeResult};
 use alloy_core::{BotManager, BoxedAdapter, BoxedEvent, ConnectionHandle};
 use alloy_framework::Dispatcher;
 use std::collections::HashMap;
@@ -92,11 +93,11 @@ impl BotRegistry {
         id: String,
         adapter_name: String,
         connection: ConnectionHandle,
-    ) -> anyhow::Result<Arc<RwLock<BotInstance>>> {
+    ) -> RuntimeResult<Arc<RwLock<BotInstance>>> {
         let mut bots = self.bots.write().await;
 
         if bots.contains_key(&id) {
-            anyhow::bail!("Bot with ID '{id}' is already registered");
+            return Err(RuntimeError::BotExists(id));
         }
 
         let mut bot = BotInstance::new(id.clone(), adapter_name.clone(), connection);
@@ -115,7 +116,7 @@ impl BotRegistry {
     }
 
     /// Unregisters a bot by ID.
-    pub async fn unregister_bot(&self, id: &str) -> anyhow::Result<()> {
+    pub async fn unregister_bot(&self, id: &str) -> RuntimeResult<()> {
         let mut bots = self.bots.write().await;
 
         if let Some(bot) = bots.remove(id) {
@@ -127,7 +128,7 @@ impl BotRegistry {
             info!(bot_id = %id, "Unregistered bot");
             Ok(())
         } else {
-            anyhow::bail!("Bot with ID '{id}' not found");
+            Err(RuntimeError::BotNotFound(id.to_string()))
         }
     }
 
@@ -150,7 +151,7 @@ impl BotRegistry {
     }
 
     /// Disconnects all registered bots.
-    pub async fn disconnect_all(&self) -> anyhow::Result<()> {
+    pub async fn disconnect_all(&self) -> RuntimeResult<()> {
         let bots = self.bots.read().await;
 
         info!("Disconnecting {} bot(s)", bots.len());

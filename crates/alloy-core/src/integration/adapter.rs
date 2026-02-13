@@ -9,7 +9,7 @@
 //!
 //! ```rust,ignore
 //! impl Adapter for MyAdapter {
-//!     async fn on_init(&self, ctx: &mut AdapterContext) -> anyhow::Result<()> {
+//!     async fn on_start(&self, ctx: &mut AdapterContext) -> AdapterResult<()> {
 //!         // Get WebSocket server capability if available
 //!         if let Some(ws_server) = ctx.transport().ws_server() {
 //!             let handler = self.create_connection_handler();
@@ -40,6 +40,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use crate::foundation::error::AdapterResult;
 use crate::foundation::event::BoxedEvent;
 use crate::integration::capability::{
     BotManager, BoxedConnectionHandler, ConnectionHandle, ListenerHandle, TransportContext,
@@ -118,9 +119,9 @@ impl AdapterContext {
 /// impl Adapter for OneBotAdapter {
 ///     fn adapter_name() -> &'static str { "onebot" }
 ///     
-///     fn from_config_erased(config: Box<dyn Any>) -> anyhow::Result<Arc<Self>> {
+///     fn from_config_erased(config: Box<dyn Any>) -> AdapterResult<Arc<Self>> {
 ///         let config = config.downcast::<OneBotConfig>()
-///             .map_err(|_| anyhow::anyhow!("Invalid config type"))?;
+///             .map_err(|_| AdapterError::internal("Invalid config type"))?;
 ///         Ok(Arc::new(Self { config: *config }))
 ///     }
 /// }
@@ -152,7 +153,7 @@ pub trait Adapter: Send + Sync {
     /// # Example
     ///
     /// ```rust,ignore
-    /// async fn on_start(&self, ctx: &mut AdapterContext) -> anyhow::Result<()> {
+    /// async fn on_start(&self, ctx: &mut AdapterContext) -> AdapterResult<()> {
     ///     // Set up WebSocket server if available
     ///     if let Some(ws_server) = ctx.transport().ws_server() {
     ///         let handler = self.create_connection_handler();
@@ -162,13 +163,13 @@ pub trait Adapter: Send + Sync {
     ///     Ok(())
     /// }
     /// ```
-    async fn on_start(&self, ctx: &mut AdapterContext) -> anyhow::Result<()>;
+    async fn on_start(&self, ctx: &mut AdapterContext) -> AdapterResult<()>;
 
     /// Called when the adapter is shutting down.
     ///
     /// The adapter should clean up any resources. Listener and connection
     /// handles will be automatically dropped when the context is dropped.
-    async fn on_shutdown(&self, _ctx: &mut AdapterContext) -> anyhow::Result<()> {
+    async fn on_shutdown(&self, _ctx: &mut AdapterContext) -> AdapterResult<()> {
         Ok(())
     }
 
@@ -180,7 +181,7 @@ pub trait Adapter: Send + Sync {
     /// Parses raw data into an event.
     ///
     /// Returns `Ok(None)` if the data is not an event (e.g., API response).
-    fn parse_event(&self, data: &[u8]) -> anyhow::Result<Option<BoxedEvent>>;
+    fn parse_event(&self, data: &[u8]) -> AdapterResult<Option<BoxedEvent>>;
 
     /// Clones this adapter into an Arc.
     fn clone_adapter(&self) -> Arc<dyn Adapter>;
@@ -195,12 +196,12 @@ pub type BoxedAdapter = Arc<dyn Adapter>;
 /// Adapters implement both `Adapter` and `ConfigurableAdapter`.
 pub trait ConfigurableAdapter: Adapter {
     /// The configuration type for this adapter.
-    type Config: serde::de::DeserializeOwned;
+    type Config: serde::de::DeserializeOwned + Default;
 
     /// Creates an adapter from its configuration.
     ///
     /// The runtime deserializes the config from `alloy.yaml` and calls this method.
-    fn from_config(config: Self::Config) -> anyhow::Result<Arc<Self>>
+    fn from_config(config: Self::Config) -> AdapterResult<Arc<Self>>
     where
         Self: Sized;
 }

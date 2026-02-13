@@ -5,9 +5,13 @@ use thiserror::Error;
 /// Errors that can occur during runtime operations.
 #[derive(Error, Debug)]
 pub enum RuntimeError {
-    /// Configuration error.
-    #[error("Configuration error: {0}")]
-    Config(#[from] crate::config::ConfigError),
+    /// Adapter configuration deserialization failed.
+    #[error("Failed to deserialize adapter config: {0}")]
+    AdapterConfigDeserialize(String),
+
+    /// Adapter error.
+    #[error("Adapter error: {0}")]
+    Adapter(#[from] alloy_core::AdapterError),
 
     /// Bot not found.
     #[error("Bot not found: {0}")]
@@ -16,18 +20,6 @@ pub enum RuntimeError {
     /// Bot already exists.
     #[error("Bot already exists: {0}")]
     BotExists(String),
-
-    /// Bot is in an invalid state for the requested operation.
-    #[error("Invalid bot state: {0}")]
-    InvalidState(String),
-
-    /// IO error.
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    /// Internal error.
-    #[error("Internal error: {0}")]
-    Internal(String),
 }
 
 /// Result type for runtime operations.

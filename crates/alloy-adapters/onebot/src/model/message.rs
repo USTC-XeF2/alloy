@@ -112,7 +112,7 @@ pub mod serde_message {
         S: Serializer,
     {
         // Always serialize as array format (serialize the slice, not the struct)
-        (&msg[..]).serialize(serializer)
+        msg[..].serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Message<Segment>, D::Error>

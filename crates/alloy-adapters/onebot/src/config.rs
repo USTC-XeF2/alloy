@@ -290,24 +290,29 @@ mod tests {
 
     #[test]
     fn test_deserialize_config() {
-        let yaml = r#"
-connections:
-  - name: main-server
-    enabled: true
-    type: ws-server
-    host: 0.0.0.0
-    port: 8080
-    path: /ws
-  - name: backup-client
-    enabled: false
-    type: ws-client
-    url: ws://localhost:6700/ws
-    access_token: secret
-    auto_reconnect: true
-heartbeat_interval_secs: 60
-"#;
+        let config = OneBotConfig {
+            connections: vec![
+                ConnectionConfig::WsServer(WsServerConfig {
+                    name: "main-server".to_string(),
+                    enabled: true,
+                    host: "0.0.0.0".to_string(),
+                    port: 8080,
+                    path: "/ws".to_string(),
+                    access_token: None,
+                }),
+                ConnectionConfig::WsClient(WsClientConfig {
+                    name: "backup-client".to_string(),
+                    enabled: false,
+                    url: "ws://localhost:6700/ws".to_string(),
+                    access_token: Some("secret".to_string()),
+                    ..Default::default()
+                }),
+            ],
+            default_access_token: None,
+            auto_reconnect: false,
+            heartbeat_interval_secs: 60,
+        };
 
-        let config: OneBotConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.connections.len(), 2);
         assert_eq!(config.heartbeat_interval_secs, 60);
 

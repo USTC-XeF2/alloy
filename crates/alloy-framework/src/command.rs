@@ -42,16 +42,16 @@ use std::marker::PhantomData;
 use clap::Parser;
 use clap::error::ErrorKind;
 
+use crate::error::ExtractError;
 use crate::extractor::FromContext;
 use crate::handler::Handler;
 use crate::matcher::Matcher;
 use alloy_core::foundation::context::AlloyContext;
-use alloy_core::foundation::error::ExtractError;
 use alloy_core::foundation::message::RichTextSegment;
 
 // Thread-local registry for resolving handles during clap's FromStr parsing.
 thread_local! {
-    static CURRENT_REGISTRY: RefCell<Option<HandleRegistry>> = RefCell::new(None);
+    static CURRENT_REGISTRY: RefCell<Option<HandleRegistry>> = const { RefCell::new(None) };
 }
 
 // ============================================================================

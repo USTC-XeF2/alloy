@@ -43,8 +43,8 @@
 use std::sync::Arc;
 
 use alloy_core::{
-    AdapterContext, BoxedConnectionHandler, BoxedEvent, ClientConfig, ConnectionHandle,
-    ConnectionHandler, ConnectionInfo,
+    AdapterContext, AdapterError, AdapterResult, BoxedConnectionHandler, BoxedEvent, ClientConfig,
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError, TransportResult,
 };
 use async_trait::async_trait;
 use tracing::{debug, info, trace, warn};
@@ -192,7 +192,7 @@ impl alloy_core::Adapter for OneBotAdapter {
         "onebot"
     }
 
-    async fn on_start(&self, ctx: &mut AdapterContext) -> anyhow::Result<()> {
+    async fn on_start(&self, ctx: &mut AdapterContext) -> AdapterResult<()> {
         let handler: Arc<dyn ConnectionHandler> =
             Arc::new(OneBotConnectionHandler::new(Arc::clone(ctx.bot_manager())));
 
@@ -292,7 +292,7 @@ impl alloy_core::Adapter for OneBotAdapter {
         Ok(())
     }
 
-    async fn on_shutdown(&self, _ctx: &mut AdapterContext) -> anyhow::Result<()> {
+    async fn on_shutdown(&self, _ctx: &mut AdapterContext) -> AdapterResult<()> {
         info!("OneBot adapter shutting down");
         Ok(())
     }
@@ -301,9 +301,11 @@ impl alloy_core::Adapter for OneBotAdapter {
         panic!("create_connection_handler should not be called directly. Use on_start instead.")
     }
 
-    fn parse_event(&self, data: &[u8]) -> anyhow::Result<Option<BoxedEvent>> {
-        let raw = std::str::from_utf8(data)?;
-        let event = parse_onebot_event(raw)?;
+    fn parse_event(&self, data: &[u8]) -> AdapterResult<Option<BoxedEvent>> {
+        let raw = std::str::from_utf8(data)
+            .map_err(|e| AdapterError::parse(format!("Invalid UTF-8: {e}")))?;
+        let event = parse_onebot_event(raw)
+            .map_err(|e| AdapterError::parse(format!("Failed to parse event: {e}")))?;
 
         // Log heartbeat at trace level
         if event.event_name() == "onebot.meta_event.heartbeat" {
@@ -323,7 +325,7 @@ impl alloy_core::Adapter for OneBotAdapter {
 impl alloy_core::ConfigurableAdapter for OneBotAdapter {
     type Config = OneBotConfig;
 
-    fn from_config(config: Self::Config) -> anyhow::Result<Arc<Self>> {
+    fn from_config(config: Self::Config) -> AdapterResult<Arc<Self>> {
         Ok(Arc::new(Self { config }))
     }
 }
@@ -341,15 +343,19 @@ impl OneBotConnectionHandler {
 
 #[async_trait]
 impl ConnectionHandler for OneBotConnectionHandler {
-    async fn on_connect(&self, conn_info: ConnectionInfo) -> String {
+    async fn on_connect(&self, conn_info: ConnectionInfo) -> TransportResult<String> {
         // OneBot v11 uses X-Self-ID header to identify the bot
         // Headers are stored in lowercase in metadata
         let bot_id = conn_info
             .metadata
             .get("x-self-id")
             .cloned()
-            .or_else(|| conn_info.remote_addr.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            .ok_or_else(|| TransportError::BotIdMissing {
+                reason: format!(
+                    "x-self-id header not found in connection metadata. Remote: {:?}",
+                    conn_info.remote_addr
+                ),
+            })?;
 
         info!(
             bot_id = %bot_id,
@@ -357,7 +363,7 @@ impl ConnectionHandler for OneBotConnectionHandler {
             "OneBot connection established"
         );
 
-        bot_id
+        Ok(bot_id)
     }
 
     async fn on_ready(&self, bot_id: &str, connection: ConnectionHandle) {

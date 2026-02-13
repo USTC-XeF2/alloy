@@ -28,6 +28,7 @@
 
 use std::any::Any;
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 
 // ============================================================================
@@ -52,16 +53,17 @@ pub enum EventType {
     Other,
 }
 
-impl EventType {
-    /// Parses an event type from a string.
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+impl FromStr for EventType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "message" => EventType::Message,
             "notice" => EventType::Notice,
             "request" => EventType::Request,
             "meta" | "meta_event" => EventType::Meta,
             _ => EventType::Other,
-        }
+        })
     }
 }
 

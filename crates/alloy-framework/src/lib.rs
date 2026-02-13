@@ -13,6 +13,7 @@
 //! abstractions that aren't strictly necessary for the runtime.
 
 pub mod dispatcher;
+pub mod error;
 pub mod extractor;
 pub mod handler;
 pub mod matcher;
@@ -22,6 +23,7 @@ pub mod matcher_builders;
 pub mod command;
 
 pub use dispatcher::Dispatcher;
+pub use error::{ExtractError, ExtractResult};
 pub use extractor::FromContext;
 pub use handler::{
     BoxFuture, BoxedHandler, CanExtract, ErasedHandler, Handler, HandlerFn, into_handler,

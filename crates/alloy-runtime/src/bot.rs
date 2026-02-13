@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use alloy_core::ConnectionHandle;
+use alloy_core::{ConnectionHandle, TransportResult};
 use alloy_framework::Dispatcher;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
@@ -114,12 +114,12 @@ impl BotInstance {
     }
 
     /// Sends data through the connection.
-    pub async fn send(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    pub async fn send(&self, data: Vec<u8>) -> TransportResult<()> {
         self.connection.send(data).await
     }
 
     /// Sends a JSON value through the connection.
-    pub async fn send_json(&self, value: &serde_json::Value) -> anyhow::Result<()> {
+    pub async fn send_json(&self, value: &serde_json::Value) -> TransportResult<()> {
         self.connection.send_json(value).await
     }
 

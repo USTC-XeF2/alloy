@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use alloy_core::HttpClientCapability;
+use alloy_core::{HttpClientCapability, TransportError, TransportResult};
 use async_trait::async_trait;
 use reqwest::{Client, ClientBuilder};
 use tracing::trace;
@@ -46,33 +46,58 @@ impl HttpClientCapability for HttpClientCapabilityImpl {
         &self,
         url: &str,
         body: serde_json::Value,
-    ) -> anyhow::Result<serde_json::Value> {
+    ) -> TransportResult<serde_json::Value> {
         trace!(url = %url, "HTTP POST JSON");
 
-        let response = self.client.post(url).json(&body).send().await?;
+        let response = self
+            .client
+            .post(url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| TransportError::Io(e.to_string()))?;
 
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            anyhow::bail!("HTTP {} error: {}", status.as_u16(), text);
+            return Err(TransportError::Io(format!(
+                "HTTP {} error: {}",
+                status.as_u16(),
+                text
+            )));
         }
 
-        let result = response.json().await?;
+        let result = response
+            .json()
+            .await
+            .map_err(|e| TransportError::Io(e.to_string()))?;
         Ok(result)
     }
 
-    async fn get(&self, url: &str) -> anyhow::Result<serde_json::Value> {
+    async fn get(&self, url: &str) -> TransportResult<serde_json::Value> {
         trace!(url = %url, "HTTP GET");
 
-        let response = self.client.get(url).send().await?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| TransportError::Io(e.to_string()))?;
 
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            anyhow::bail!("HTTP {} error: {}", status.as_u16(), text);
+            return Err(TransportError::Io(format!(
+                "HTTP {} error: {}",
+                status.as_u16(),
+                text
+            )));
         }
 
-        let result = response.json().await?;
+        let result = response
+            .json()
+            .await
+            .map_err(|e| TransportError::Io(e.to_string()))?;
         Ok(result)
     }
 }
