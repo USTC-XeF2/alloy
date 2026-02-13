@@ -2,10 +2,6 @@
 
 use std::time::Duration;
 
-use alloy_core::{
-    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionInfo, TransportResult,
-    WsClientCapability,
-};
 use async_trait::async_trait;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
@@ -13,6 +9,11 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 use tracing::{debug, error, info, trace, warn};
+
+use alloy_core::{
+    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionInfo, TransportError,
+    TransportResult, WsClientCapability,
+};
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsSink = SplitSink<WsStream, Message>;
@@ -53,7 +54,13 @@ impl WsClientCapability for WsClientCapabilityImpl {
 
         info!(url = %url, "Connecting to WebSocket server");
 
-        let (ws_stream, _response) = connect_async(&url).await?;
+        let (ws_stream, _response) =
+            connect_async(&url)
+                .await
+                .map_err(|e| TransportError::ConnectionFailed {
+                    url: url.clone(),
+                    reason: format!("WebSocket connection failed: {}", e),
+                })?;
         let (ws_tx, ws_rx) = ws_stream.split();
 
         // Get bot ID from handler

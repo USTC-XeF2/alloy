@@ -64,7 +64,6 @@ enum EventKind {
 struct FieldAttrs {
     is_parent: bool,
     is_raw_json: bool,
-    is_bot_id: bool,
     is_message: bool,
 }
 
@@ -160,8 +159,6 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 result.is_parent = true;
             } else if meta.path.is_ident("raw_json") {
                 result.is_raw_json = true;
-            } else if meta.path.is_ident("bot_id") {
-                result.is_bot_id = true;
             } else if meta.path.is_ident("message") {
                 result.is_message = true;
             }
@@ -184,7 +181,6 @@ fn generate_struct_impl(
     // Scan fields for markers
     let mut parent_field: Option<(Ident, Type)> = None;
     let mut raw_json_field: Option<Ident> = None;
-    let mut bot_id_field: Option<Ident> = None;
     let mut message_field: Option<(Ident, Type)> = None;
 
     if let Fields::Named(named) = fields {
@@ -196,9 +192,6 @@ fn generate_struct_impl(
             }
             if fa.is_raw_json {
                 raw_json_field = Some(ident.clone());
-            }
-            if fa.is_bot_id {
-                bot_id_field = Some(ident.clone());
             }
             if fa.is_message {
                 message_field = Some((ident.clone(), f.ty.clone()));
@@ -217,14 +210,7 @@ fn generate_struct_impl(
                     "#[root_event] must not have a #[event(parent)] field",
                 ));
             }
-            generate_root_event(
-                name,
-                platform,
-                segment_type,
-                raw_json_field,
-                bot_id_field,
-                message_field,
-            )
+            generate_root_event(name, platform, segment_type, raw_json_field, message_field)
         }
         EventKind::Child {
             name: event_name,
@@ -257,7 +243,6 @@ fn generate_root_event(
     platform: &str,
     segment_type_str: &str,
     raw_json_field: Option<Ident>,
-    bot_id_field: Option<Ident>,
     message_field: Option<(Ident, Type)>,
 ) -> syn::Result<TokenStream> {
     let platform_lit = syn::LitStr::new(platform, name.span());
@@ -267,16 +252,6 @@ fn generate_root_event(
         quote! {
             fn raw_json(&self) -> Option<&str> {
                 self.#rj.as_deref()
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let bot_id_impl = if let Some(ref bi) = bot_id_field {
-        quote! {
-            fn bot_id(&self) -> Option<&str> {
-                self.#bi.as_deref()
             }
         }
     } else {
@@ -328,7 +303,6 @@ fn generate_root_event(
             }
 
             #raw_json_impl
-            #bot_id_impl
             #segment_type_impl
             #get_message_impl
         }
@@ -403,15 +377,10 @@ fn generate_child_event(
         }
     };
 
-    // ── raw_json / bot_id — always delegate to parent ──
+    // ── raw_json — always delegate to parent ──
     let raw_json_impl = quote! {
         fn raw_json(&self) -> Option<&str> {
             <#parent_ty as ::alloy_core::Event>::raw_json(&self.#parent_field_ident)
-        }
-    };
-    let bot_id_impl = quote! {
-        fn bot_id(&self) -> Option<&str> {
-            <#parent_ty as ::alloy_core::Event>::bot_id(&self.#parent_field_ident)
         }
     };
 
@@ -480,7 +449,6 @@ fn generate_child_event(
             }
 
             #raw_json_impl
-            #bot_id_impl
             #segment_type_impl
             #get_message_impl
         }

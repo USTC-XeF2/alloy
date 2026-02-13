@@ -4,9 +4,8 @@
 //! can be extracted from an [`AlloyContext`] for use as handler parameters.
 
 use crate::error::ExtractError;
-use alloy_core::foundation::context::AlloyContext;
-use alloy_core::foundation::event::{EventContext, FromEvent};
-use alloy_core::integration::bot::BoxedBot;
+use alloy_core::integration::bot::downcast_bot;
+use alloy_core::{AlloyContext, Bot, BoxedBot, BoxedEvent, Event, EventContext, FromEvent};
 
 /// A trait for types that can be extracted from an [`AlloyContext`].
 ///
@@ -53,7 +52,7 @@ pub trait FromContext: Sized {
 ///
 /// This is useful when a handler needs to work with any event type
 /// without knowing the concrete type at compile time.
-impl FromContext for alloy_core::foundation::event::BoxedEvent {
+impl FromContext for BoxedEvent {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         Ok(ctx.event().clone())
     }
@@ -90,7 +89,7 @@ impl<T: FromContext> FromContext for Option<T> {
 ///     }
 /// }
 /// ```
-impl<T: FromEvent + Clone + alloy_core::Event> FromContext for EventContext<T> {
+impl<T: FromEvent + Clone + Event> FromContext for EventContext<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         ctx.event()
             .extract::<T>()
@@ -132,10 +131,8 @@ impl FromContext for BoxedBot {
 ///     bot.send_private_msg(12345, "Hello!", false).await.ok();
 /// }
 /// ```
-impl<T: alloy_core::integration::bot::Bot + 'static> FromContext for std::sync::Arc<T> {
+impl<T: Bot + 'static> FromContext for std::sync::Arc<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
-        use alloy_core::integration::bot::downcast_bot;
-
         // Get the BoxedBot
         let boxed_bot = ctx.bot_arc();
 

@@ -42,16 +42,17 @@
 
 use std::sync::Arc;
 
-use alloy_core::{
-    AdapterContext, AdapterError, AdapterResult, BoxedConnectionHandler, BoxedEvent, ClientConfig,
-    ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError, TransportResult,
-};
 use async_trait::async_trait;
 use tracing::{debug, info, trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig, WsClientConfig, WsServerConfig};
 use crate::model::event::{LifecycleEvent, parse_onebot_event};
+use alloy_core::{
+    Adapter, AdapterContext, AdapterResult, BotManager, BoxedEvent, ClientConfig,
+    ConfigurableAdapter, ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError,
+    TransportResult,
+};
 
 /// The OneBot v11 adapter.
 ///
@@ -187,7 +188,7 @@ fn parse_addr(addr: &str) -> (String, u16) {
 }
 
 #[async_trait]
-impl alloy_core::Adapter for OneBotAdapter {
+impl Adapter for OneBotAdapter {
     fn name() -> &'static str {
         "onebot"
     }
@@ -296,33 +297,9 @@ impl alloy_core::Adapter for OneBotAdapter {
         info!("OneBot adapter shutting down");
         Ok(())
     }
-
-    fn create_connection_handler(&self) -> BoxedConnectionHandler {
-        panic!("create_connection_handler should not be called directly. Use on_start instead.")
-    }
-
-    fn parse_event(&self, data: &[u8]) -> AdapterResult<Option<BoxedEvent>> {
-        let raw = std::str::from_utf8(data)
-            .map_err(|e| AdapterError::parse(format!("Invalid UTF-8: {e}")))?;
-        let event = parse_onebot_event(raw)
-            .map_err(|e| AdapterError::parse(format!("Failed to parse event: {e}")))?;
-
-        // Log heartbeat at trace level
-        if event.event_name() == "onebot.meta_event.heartbeat" {
-            trace!("Heartbeat from bot {:?}", event.bot_id());
-        }
-
-        Ok(Some(event))
-    }
-
-    fn clone_adapter(&self) -> Arc<dyn alloy_core::Adapter> {
-        Arc::new(Self {
-            config: self.config.clone(),
-        })
-    }
 }
 
-impl alloy_core::ConfigurableAdapter for OneBotAdapter {
+impl ConfigurableAdapter for OneBotAdapter {
     type Config = OneBotConfig;
 
     fn from_config(config: Self::Config) -> AdapterResult<Arc<Self>> {
@@ -332,11 +309,11 @@ impl alloy_core::ConfigurableAdapter for OneBotAdapter {
 
 /// Connection handler for OneBot connections.
 struct OneBotConnectionHandler {
-    bot_manager: Arc<alloy_core::BotManager>,
+    bot_manager: Arc<BotManager>,
 }
 
 impl OneBotConnectionHandler {
-    fn new(bot_manager: Arc<alloy_core::BotManager>) -> Self {
+    fn new(bot_manager: Arc<BotManager>) -> Self {
         Self { bot_manager }
     }
 }
@@ -373,7 +350,7 @@ impl ConnectionHandler for OneBotConnectionHandler {
         // Register with bot instance
         if let Err(e) = self
             .bot_manager
-            .register_with_bot(bot_id.to_string(), connection, "onebot".to_string(), bot)
+            .register(bot_id.to_string(), connection, "onebot".to_string(), bot)
             .await
         {
             warn!(bot_id = %bot_id, error = %e, "Failed to register bot instance");
@@ -438,8 +415,10 @@ impl ConnectionHandler for OneBotConnectionHandler {
             );
         }
 
-        // Dispatch event through bot manager (requires bot)
-        self.bot_manager.dispatch_event(boxed_event.clone()).await;
+        // Dispatch event through bot manager with bot_id
+        self.bot_manager
+            .dispatch_event(bot_id, boxed_event.clone())
+            .await;
         Some(boxed_event)
     }
 

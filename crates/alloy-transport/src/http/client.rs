@@ -2,10 +2,11 @@
 
 use std::time::Duration;
 
-use alloy_core::{HttpClientCapability, TransportError, TransportResult};
 use async_trait::async_trait;
 use reqwest::{Client, ClientBuilder};
 use tracing::trace;
+
+use alloy_core::{HttpClientCapability, TransportError, TransportResult};
 
 /// HTTP client capability implementation.
 pub struct HttpClientCapabilityImpl {

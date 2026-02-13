@@ -36,6 +36,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
+use crate::BoxedBot;
 use crate::foundation::error::{TransportError, TransportResult};
 use crate::foundation::event::BoxedEvent;
 
@@ -459,7 +460,7 @@ pub struct BotManager {
     /// Active bots by ID.
     bots: RwLock<HashMap<String, BotEntry>>,
     /// Event dispatcher callback (always requires bot).
-    event_dispatcher: Arc<dyn Fn(BoxedEvent, crate::integration::bot::BoxedBot) + Send + Sync>,
+    event_dispatcher: Arc<dyn Fn(BoxedEvent, BoxedBot) + Send + Sync>,
 }
 
 /// Entry for a managed bot.
@@ -473,7 +474,7 @@ struct BotEntry {
     /// Bot metadata.
     metadata: HashMap<String, String>,
     /// Bot instance (if available).
-    bot: Option<crate::integration::bot::BoxedBot>,
+    bot: BoxedBot,
 }
 
 impl std::fmt::Debug for BotEntry {
@@ -483,7 +484,6 @@ impl std::fmt::Debug for BotEntry {
             .field("connection", &self.connection)
             .field("adapter", &self.adapter)
             .field("metadata", &self.metadata)
-            .field("has_bot", &self.bot.is_some())
             .finish()
     }
 }
@@ -492,21 +492,20 @@ impl BotManager {
     /// Creates a new bot manager with the event dispatcher.
     ///
     /// The dispatcher callback receives both the event and the associated bot.
-    pub fn new(
-        event_dispatcher: Arc<dyn Fn(BoxedEvent, crate::integration::bot::BoxedBot) + Send + Sync>,
-    ) -> Self {
+    pub fn new(event_dispatcher: Arc<dyn Fn(BoxedEvent, BoxedBot) + Send + Sync>) -> Self {
         Self {
             bots: RwLock::new(HashMap::new()),
             event_dispatcher,
         }
     }
 
-    /// Registers a new bot.
+    /// Registers a new bot with a Bot instance.
     pub async fn register(
         &self,
         id: String,
         connection: ConnectionHandle,
         adapter: String,
+        bot: BoxedBot,
     ) -> TransportResult<()> {
         let mut bots = self.bots.write().await;
         if bots.contains_key(&id) {
@@ -519,55 +518,16 @@ impl BotManager {
                 connection,
                 adapter,
                 metadata: HashMap::new(),
-                bot: None,
+                bot,
             },
         );
-        Ok(())
-    }
-
-    /// Registers a new bot with a Bot instance.
-    pub async fn register_with_bot(
-        &self,
-        id: String,
-        connection: ConnectionHandle,
-        adapter: String,
-        bot: crate::integration::bot::BoxedBot,
-    ) -> TransportResult<()> {
-        let mut bots = self.bots.write().await;
-        if bots.contains_key(&id) {
-            return Err(TransportError::BotAlreadyExists { id });
-        }
-        bots.insert(
-            id.clone(),
-            BotEntry {
-                id,
-                connection,
-                adapter,
-                metadata: HashMap::new(),
-                bot: Some(bot),
-            },
-        );
-        Ok(())
-    }
-
-    /// Sets the bot instance for an already registered bot.
-    pub async fn set_bot(
-        &self,
-        id: &str,
-        bot: crate::integration::bot::BoxedBot,
-    ) -> TransportResult<()> {
-        let mut bots = self.bots.write().await;
-        let entry = bots
-            .get_mut(id)
-            .ok_or_else(|| TransportError::BotNotFound { id: id.to_string() })?;
-        entry.bot = Some(bot);
         Ok(())
     }
 
     /// Gets the bot instance by ID.
-    pub async fn get_bot(&self, id: &str) -> Option<crate::integration::bot::BoxedBot> {
+    pub async fn get_bot(&self, id: &str) -> Option<BoxedBot> {
         let bots = self.bots.read().await;
-        bots.get(id).and_then(|e| e.bot.clone())
+        bots.get(id).map(|e| e.bot.clone())
     }
 
     /// Unregisters a bot.
@@ -584,22 +544,22 @@ impl BotManager {
 
     /// Dispatches an event with the associated bot.
     ///
-    /// If the event has a `bot_id()` and a bot instance is registered,
-    /// this will dispatch the event with that bot.
+    /// If the bot instance is registered, this will dispatch the event with that bot.
+    ///
+    /// # Arguments
+    ///
+    /// * `bot_id` - The ID of the bot associated with this event
+    /// * `event` - The event to dispatch
     ///
     /// # Returns
     ///
     /// `true` if the event was dispatched, `false` if the bot was not found.
-    pub async fn dispatch_event(&self, event: BoxedEvent) -> bool {
-        if let Some(bot_id) = event.inner().bot_id() {
-            if let Some(bot) = self.get_bot(bot_id).await {
-                (self.event_dispatcher)(event, bot);
-                return true;
-            }
-            tracing::warn!(bot_id = %bot_id, "Cannot dispatch event: bot not found");
-        } else {
-            tracing::warn!(event = %event.event_name(), "Cannot dispatch event: no bot_id in event");
+    pub async fn dispatch_event(&self, bot_id: &str, event: BoxedEvent) -> bool {
+        if let Some(bot) = self.get_bot(bot_id).await {
+            (self.event_dispatcher)(event, bot);
+            return true;
         }
+        tracing::warn!(bot_id = %bot_id, "Cannot dispatch event: bot not found");
         false
     }
 

@@ -1,10 +1,12 @@
 //! Alloy Runtime - Orchestration layer for the Alloy bot framework.
 //!
 //! This crate provides:
-//! - Bot instance management (`Bot`, `BotRegistry`)
 //! - Runtime orchestration (`AlloyRuntime`)
 //! - Automatic transport capability initialization
 //! - Logging configuration
+//!
+//! Bots are managed by `alloy_core::BotManager` within adapters,
+//! not directly by the runtime.
 //!
 //! # Automatic Transport Initialization
 //!
@@ -25,7 +27,7 @@
 //!     let runtime = AlloyRuntime::new();
 //!     
 //!     // Register adapters - they can discover and use available capabilities
-//!     runtime.register_adapter(MyAdapter::new()).await;
+//!     runtime.register_adapter::<MyAdapter>().await?;
 //!     
 //!     // Run until Ctrl+C
 //!     runtime.run().await?;
@@ -60,25 +62,22 @@
 //!
 //! # Dynamic Bot Management
 //!
-//! Bots are managed dynamically:
+//! Bots are managed dynamically through `alloy_core::BotManager`:
 //! - Server transports: New connections automatically become bots
 //! - Client transports: Connections auto-reconnect on disconnect
 //! - Bots can join/leave at any time during runtime
+//! - Bot queries and management via `BotManager` in adapters
 
-pub mod bot;
 pub mod config;
 pub mod error;
 pub mod logging;
-pub mod registry;
 pub mod runtime;
 
 // Re-exports
-pub use bot::{BotInstance, BotStatus};
 pub use config::{
     AlloyConfig, ConfigError, ConfigLoader, ConfigResult, LogFormat, LogLevel, LogOutput,
     LoggingConfig, RuntimeConfig,
 };
 pub use error::{RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};
-pub use registry::{BotRegistry, RegistryStats};
 pub use runtime::{AlloyRuntime, RuntimeBuilder, RuntimeStats};

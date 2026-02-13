@@ -58,8 +58,7 @@ use tower::Service;
 use tracing::{debug, trace};
 
 use crate::handler::{BoxedHandler, Handler, into_handler};
-use alloy_core::foundation::context::AlloyContext;
-use alloy_core::foundation::event::FromEvent;
+use alloy_core::{AlloyContext, Event, FromEvent};
 
 /// A type-erased check function.
 pub type CheckFn = Arc<dyn Fn(&AlloyContext) -> bool + Send + Sync>;
@@ -150,7 +149,7 @@ impl Matcher {
     /// ```
     pub fn on<T>(self) -> Self
     where
-        T: FromEvent + Clone + 'static + alloy_core::Event,
+        T: FromEvent + Clone + 'static + Event,
     {
         self.check(|ctx| ctx.event().extract::<T>().is_some())
     }

@@ -40,9 +40,11 @@ pub mod meta;
 pub mod notice;
 pub mod request;
 
+use std::sync::Arc;
+
+use alloy_core::BoxedEvent;
 use alloy_macros::BotEvent;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 pub use message::*;
 pub use meta::*;
@@ -68,17 +70,12 @@ pub struct OneBotEvent {
     #[serde(skip)]
     #[event(raw_json)]
     raw: Option<Arc<str>>,
-    /// Cached bot_id string (not serialized).
-    #[serde(skip)]
-    #[event(bot_id)]
-    bot_id_str: Option<Arc<str>>,
 }
 
 impl OneBotEvent {
     /// Attaches raw JSON and caches bot_id.
     pub fn set_raw(&mut self, raw: &str) {
         self.raw = Some(Arc::from(raw));
-        self.bot_id_str = Some(Arc::from(self.self_id.to_string()));
     }
 }
 
@@ -89,7 +86,7 @@ impl OneBotEvent {
 /// Parses raw JSON into the most specific `BoxedEvent`.
 ///
 /// The adapter calls this from `parse_event` / `on_message`.
-pub fn parse_onebot_event(raw: &str) -> Result<alloy_core::BoxedEvent, serde_json::Error> {
+pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
     // Pre-parse to extract type discriminators
     let v: serde_json::Value = serde_json::from_str(raw)?;
     let post_type = v.get("post_type").and_then(|v| v.as_str()).unwrap_or("");
@@ -98,7 +95,7 @@ pub fn parse_onebot_event(raw: &str) -> Result<alloy_core::BoxedEvent, serde_jso
         ($ty:ty) => {{
             let mut event: $ty = serde_json::from_value(v)?;
             event.set_raw(raw);
-            Ok(alloy_core::BoxedEvent::new(event))
+            Ok(BoxedEvent::new(event))
         }};
     }
 
@@ -161,7 +158,7 @@ pub fn parse_onebot_event(raw: &str) -> Result<alloy_core::BoxedEvent, serde_jso
             // Unknown post_type — fall back to root event
             let mut event: OneBotEvent = serde_json::from_value(v)?;
             event.set_raw(raw);
-            Ok(alloy_core::BoxedEvent::new(event))
+            Ok(BoxedEvent::new(event))
         }
     }
 }

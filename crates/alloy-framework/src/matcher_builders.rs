@@ -17,7 +17,7 @@
 //! ```
 
 use crate::matcher::Matcher;
-use alloy_core::foundation::event::EventType;
+use alloy_core::EventType;
 
 /// Creates a matcher that only handles message events.
 ///

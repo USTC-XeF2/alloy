@@ -22,17 +22,20 @@
 //! let runtime = AlloyRuntime::from_config(&config);
 //! ```
 
-use crate::bot::BotStatus;
-use crate::config::{AlloyConfig, ConfigLoader};
-use crate::error::{RuntimeError, RuntimeResult};
-use crate::logging;
-use crate::registry::{BotRegistry, RegistryStats};
-use alloy_core::{AdapterContext, TransportContext};
-use alloy_framework::{Dispatcher, Matcher};
+use std::collections::HashMap;
 use std::sync::Arc;
+
 use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+
+use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
+use crate::error::{RuntimeError, RuntimeResult};
+use crate::logging;
+use alloy_core::{
+    AdapterContext, BotManager, BoxedAdapter, BoxedEvent, ConfigurableAdapter, TransportContext,
+};
+use alloy_framework::{Dispatcher, Matcher};
 
 /// The main Alloy runtime that orchestrates adapters and bots.
 ///
@@ -65,8 +68,8 @@ use tracing::{debug, error, info, warn};
 pub struct AlloyRuntime {
     /// The configuration.
     config: AlloyConfig,
-    /// The bot registry.
-    registry: Arc<BotRegistry>,
+    /// Map of adapter name to adapter instance.
+    adapters: Arc<RwLock<HashMap<String, BoxedAdapter>>>,
     /// The event dispatcher.
     dispatcher: Arc<RwLock<Dispatcher>>,
     /// Transport context (populated before init).
@@ -140,7 +143,7 @@ impl AlloyRuntime {
 
         Self {
             config: config.clone(),
-            registry: Arc::new(BotRegistry::new()),
+            adapters: Arc::new(RwLock::new(HashMap::new())),
             dispatcher: Arc::new(RwLock::new(Dispatcher::new())),
             transport_context: Arc::new(RwLock::new(Some(transport_ctx))),
             adapter_contexts: Arc::new(RwLock::new(Vec::new())),
@@ -225,7 +228,7 @@ impl AlloyRuntime {
     /// 5. Register the adapter with the runtime
     pub async fn register_adapter<A>(&self) -> RuntimeResult<()>
     where
-        A: alloy_core::ConfigurableAdapter + 'static,
+        A: ConfigurableAdapter + 'static,
     {
         let adapter_name = A::name();
 
@@ -252,8 +255,10 @@ impl AlloyRuntime {
         // Create adapter from its config
         let adapter = A::from_config(config)?;
 
+        let adapter_name = A::name();
+        let mut adapters = self.adapters.write().await;
+        adapters.insert(adapter_name.to_string(), adapter);
         info!(adapter = adapter_name, "Registered adapter");
-        self.registry.register_adapter(adapter).await;
         Ok(())
     }
 
@@ -288,11 +293,6 @@ impl AlloyRuntime {
         }
     }
 
-    /// Returns a reference to the bot registry.
-    pub fn registry(&self) -> &Arc<BotRegistry> {
-        &self.registry
-    }
-
     /// Returns a reference to the dispatcher.
     pub fn dispatcher(&self) -> &Arc<RwLock<Dispatcher>> {
         &self.dispatcher
@@ -303,28 +303,54 @@ impl AlloyRuntime {
         *self.running.read().await
     }
 
+    // =========================================================================
+    // Adapter Management
+    // =========================================================================
+
+    /// Gets an adapter by name.
+    async fn get_adapter(&self, name: &str) -> Option<BoxedAdapter> {
+        let adapters = self.adapters.read().await;
+        adapters.get(name).cloned()
+    }
+
+    /// Returns all registered adapter names.
+    async fn adapter_names(&self) -> Vec<String> {
+        let adapters = self.adapters.read().await;
+        adapters.keys().cloned().collect()
+    }
+
+    /// Creates a BotManager for event dispatching.
+    pub fn create_bot_manager(&self) -> Arc<BotManager> {
+        let dispatcher = Arc::clone(&self.dispatcher);
+
+        Arc::new(BotManager::new(Arc::new(
+            move |event: BoxedEvent, bot: alloy_core::BoxedBot| {
+                let dispatcher = Arc::clone(&dispatcher);
+                tokio::spawn(async move {
+                    let d = dispatcher.read().await;
+                    let _ = d.dispatch(event, bot).await;
+                });
+            },
+        )))
+    }
+
     /// Initializes all registered adapters with transport capabilities.
     pub async fn init(&self) -> RuntimeResult<()> {
-        // Set dispatcher in registry
-        self.registry
-            .set_dispatcher(Arc::clone(&self.dispatcher))
-            .await;
-
         // Get transport context (use empty if not set)
         let transport_ctx = {
             let guard = self.transport_context.read().await;
             guard.clone().unwrap_or_default()
         };
 
-        let adapter_names = self.registry.adapter_names().await;
+        let adapter_names = self.adapter_names().await;
         debug!("Initializing {} adapter(s)", adapter_names.len());
 
         let mut contexts = self.adapter_contexts.write().await;
 
         for name in adapter_names {
-            if self.registry.get_adapter(&name).await.is_some() {
+            if self.get_adapter(&name).await.is_some() {
                 // Create bot manager for this adapter
-                let bot_manager = self.registry.create_bot_manager();
+                let bot_manager = self.create_bot_manager();
 
                 // Create adapter context
                 let ctx = AdapterContext::new(transport_ctx.clone(), bot_manager);
@@ -353,11 +379,11 @@ impl AlloyRuntime {
         info!("Starting Alloy runtime");
 
         // Start all adapters
-        let adapter_names = self.registry.adapter_names().await;
+        let adapter_names = self.adapter_names().await;
         let mut contexts = self.adapter_contexts.write().await;
 
         for (idx, name) in adapter_names.iter().enumerate() {
-            if let Some(adapter) = self.registry.get_adapter(name).await
+            if let Some(adapter) = self.get_adapter(name).await
                 && let Some(ctx) = contexts.get_mut(idx)
             {
                 if let Err(e) = adapter.on_start(ctx).await {
@@ -368,7 +394,7 @@ impl AlloyRuntime {
             }
         }
 
-        let stats = self.registry.stats().await;
+        let stats = self.stats().await;
         info!("Runtime started: {}", stats);
 
         Ok(())
@@ -388,20 +414,17 @@ impl AlloyRuntime {
         info!("Stopping Alloy runtime");
 
         // Call on_shutdown for all adapters
-        let adapter_names = self.registry.adapter_names().await;
+        let adapter_names = self.adapter_names().await;
         let mut contexts = self.adapter_contexts.write().await;
 
         for (i, name) in adapter_names.iter().enumerate() {
-            if let Some(adapter) = self.registry.get_adapter(name).await
+            if let Some(adapter) = self.get_adapter(name).await
                 && let Some(ctx) = contexts.get_mut(i)
                 && let Err(e) = adapter.on_shutdown(ctx).await
             {
                 error!(adapter = %name, error = %e, "Error during adapter shutdown");
             }
         }
-
-        // Disconnect all bots
-        self.registry.disconnect_all().await?;
 
         info!("Runtime stopped");
 
@@ -464,22 +487,12 @@ impl AlloyRuntime {
 
     /// Returns statistics about the runtime.
     pub async fn stats(&self) -> RuntimeStats {
-        let registry_stats = self.registry.stats().await;
+        let adapters = self.adapters.read().await;
         let running = *self.running.read().await;
 
         RuntimeStats {
             running,
-            registry: registry_stats,
-        }
-    }
-
-    /// Gets the status of a specific bot.
-    pub async fn bot_status(&self, id: &str) -> Option<BotStatus> {
-        if let Some(bot) = self.registry.get(id).await {
-            let guard = bot.read().await;
-            Some(guard.status().await)
-        } else {
-            None
+            adapter_count: adapters.len(),
         }
     }
 }
@@ -553,7 +566,7 @@ impl RuntimeBuilder {
     }
 
     /// Builds the runtime.
-    pub fn build(self) -> crate::config::ConfigResult<AlloyRuntime> {
+    pub fn build(self) -> ConfigResult<AlloyRuntime> {
         let config = self.config_loader.load()?;
         Ok(AlloyRuntime::from_config(&config))
     }
@@ -574,17 +587,17 @@ impl Default for RuntimeBuilder {
 pub struct RuntimeStats {
     /// Whether the runtime is running.
     pub running: bool,
-    /// Registry statistics.
-    pub registry: RegistryStats,
+    /// Number of registered adapters.
+    pub adapter_count: usize,
 }
 
 impl std::fmt::Display for RuntimeStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Runtime: {}, {}",
+            "Runtime: {} | Adapters: {}",
             if self.running { "Running" } else { "Stopped" },
-            self.registry
+            self.adapter_count
         )
     }
 }

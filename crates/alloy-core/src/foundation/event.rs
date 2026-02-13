@@ -167,14 +167,6 @@ pub trait Event: AsText + Any + Send + Sync {
         None
     }
 
-    /// Returns the bot ID associated with this event, if available.
-    ///
-    /// This is used to route responses back to the correct bot instance.
-    /// For OneBot, this would be `self_id` from the event.
-    fn bot_id(&self) -> Option<&str> {
-        None
-    }
-
     /// The segment type used by messages in this event's platform.
     ///
     /// For all events under the same adapter/platform, this should be the same type

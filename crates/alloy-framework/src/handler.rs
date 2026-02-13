@@ -35,7 +35,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::extractor::FromContext;
-use alloy_core::foundation::context::AlloyContext;
+use alloy_core::AlloyContext;
 
 /// A type alias for a boxed, pinned future that is `Send`.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

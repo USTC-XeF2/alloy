@@ -22,8 +22,7 @@
 //! let face = Segment::face(178);
 //! ```
 
-use alloy_core::MessageSegment as MessageSegmentTrait;
-use alloy_core::RichTextSegment;
+use alloy_core::{MessageSegment as MessageSegmentTrait, RichTextSegment};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================

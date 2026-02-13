@@ -4,10 +4,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use alloy_core::{
-    BoxedConnectionHandler, ConnectionHandle, ConnectionInfo, ListenerHandle, TransportResult,
-    WsServerCapability,
-};
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -22,6 +18,11 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, trace, warn};
+
+use alloy_core::{
+    BoxedConnectionHandler, ConnectionHandle, ConnectionInfo, ListenerHandle, TransportResult,
+    WsServerCapability,
+};
 
 /// WebSocket server capability implementation.
 pub struct WsServerCapabilityImpl;

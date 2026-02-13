@@ -55,7 +55,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// Generates:
 /// - `impl Event` — `event_name()`, `platform()`, `event_type()`, `as_any()`,
-///   and optionally `raw_json()`, `bot_id()`, `get_message()`.
+///   and optionally `raw_json()`, `get_message()`.
 /// - `impl FromEvent` — with optional JSON field validation.
 /// - `impl Deref<Target = Parent>` + `DerefMut` — when `#[event(parent)]` field exists.
 ///

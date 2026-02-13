@@ -12,14 +12,6 @@ pub enum RuntimeError {
     /// Adapter error.
     #[error("Adapter error: {0}")]
     Adapter(#[from] alloy_core::AdapterError),
-
-    /// Bot not found.
-    #[error("Bot not found: {0}")]
-    BotNotFound(String),
-
-    /// Bot already exists.
-    #[error("Bot already exists: {0}")]
-    BotExists(String),
 }
 
 /// Result type for runtime operations.

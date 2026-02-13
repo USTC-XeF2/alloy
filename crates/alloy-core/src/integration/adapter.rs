@@ -41,9 +41,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::foundation::error::AdapterResult;
-use crate::foundation::event::BoxedEvent;
 use crate::integration::capability::{
-    BotManager, BoxedConnectionHandler, ConnectionHandle, ListenerHandle, TransportContext,
+    BotManager, ConnectionHandle, ListenerHandle, TransportContext,
 };
 
 /// Context provided to adapters during initialization and runtime.
@@ -121,7 +120,7 @@ impl AdapterContext {
 ///     
 ///     fn from_config_erased(config: Box<dyn Any>) -> AdapterResult<Arc<Self>> {
 ///         let config = config.downcast::<OneBotConfig>()
-///             .map_err(|_| AdapterError::internal("Invalid config type"))?;
+///             .map_err(|_| AdapterError::Internal("Invalid config type"))?;
 ///         Ok(Arc::new(Self { config: *config }))
 ///     }
 /// }
@@ -172,19 +171,6 @@ pub trait Adapter: Send + Sync {
     async fn on_shutdown(&self, _ctx: &mut AdapterContext) -> AdapterResult<()> {
         Ok(())
     }
-
-    /// Creates a connection handler for this adapter.
-    ///
-    /// The handler will be called for connection lifecycle events.
-    fn create_connection_handler(&self) -> BoxedConnectionHandler;
-
-    /// Parses raw data into an event.
-    ///
-    /// Returns `Ok(None)` if the data is not an event (e.g., API response).
-    fn parse_event(&self, data: &[u8]) -> AdapterResult<Option<BoxedEvent>>;
-
-    /// Clones this adapter into an Arc.
-    fn clone_adapter(&self) -> Arc<dyn Adapter>;
 }
 
 /// A boxed adapter trait object.

@@ -4,10 +4,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use alloy_core::{
-    BoxedConnectionHandler, ConnectionInfo, HttpServerCapability, ListenerHandle, TransportError,
-    TransportResult,
-};
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -19,6 +15,10 @@ use axum::{
 };
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, trace};
+
+use alloy_core::{
+    BoxedConnectionHandler, ConnectionInfo, HttpServerCapability, ListenerHandle, TransportResult,
+};
 
 /// HTTP server capability implementation.
 pub struct HttpServerCapabilityImpl;
@@ -151,5 +151,5 @@ async fn http_handler(
     }
 
     // Return 200 OK
-    (StatusCode::OK, "ok")
+    (StatusCode::OK, "ok").into_response()
 }

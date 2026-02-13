@@ -98,18 +98,6 @@ pub enum AdapterError {
     Transport(#[from] TransportError),
 }
 
-impl AdapterError {
-    /// Creates an internal adapter error.
-    pub fn internal(msg: impl Into<String>) -> Self {
-        Self::Internal(msg.into())
-    }
-
-    /// Creates a parse error.
-    pub fn parse(msg: impl Into<String>) -> Self {
-        Self::ParseError { reason: msg.into() }
-    }
-}
-
 // =============================================================================
 // Result Type Aliases
 // =============================================================================

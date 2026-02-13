@@ -46,8 +46,7 @@ use crate::error::ExtractError;
 use crate::extractor::FromContext;
 use crate::handler::Handler;
 use crate::matcher::Matcher;
-use alloy_core::foundation::context::AlloyContext;
-use alloy_core::foundation::message::RichTextSegment;
+use alloy_core::{AlloyContext, EventType, RichTextSegment};
 
 // Thread-local registry for resolving handles during clap's FromStr parsing.
 thread_local! {
@@ -460,8 +459,6 @@ where
     ///
     /// You can add handlers using `.handler()` on the returned `Matcher`.
     pub fn build(self) -> Matcher {
-        use alloy_core::foundation::event::EventType;
-
         let command_name = self.name.clone();
         let should_reply_help = self.reply_help;
         let should_reply_error = self.reply_error;

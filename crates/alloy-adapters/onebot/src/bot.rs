@@ -21,20 +21,20 @@
 //! }
 //! ```
 
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use tokio::sync::{RwLock, oneshot};
 use tokio::time::{Duration, timeout};
 use tracing::{debug, trace};
 
-use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
-
 use crate::model::event::{GroupMessageEvent, MessageEvent, PrivateMessageEvent};
+use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
 
 // =============================================================================
 // OneBotBot
