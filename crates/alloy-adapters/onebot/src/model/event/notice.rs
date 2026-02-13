@@ -29,12 +29,7 @@ use super::OneBotEvent;
 ///
 /// Use `EventContext<NoticeEvent>` to match **any** notice event.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice", type = "notice")]
 pub struct NoticeEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -56,16 +51,11 @@ pub struct UploadedFile {
 
 /// Group file upload event.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_upload",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_upload", type = "notice")]
 pub struct GroupUploadEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     pub file: UploadedFile,
@@ -76,16 +66,11 @@ pub struct GroupUploadEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_admin",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_admin", type = "notice")]
 pub struct GroupAdminEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     pub sub_type: String,
@@ -96,16 +81,11 @@ pub struct GroupAdminEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_decrease",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_decrease", type = "notice")]
 pub struct GroupDecreaseEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     #[serde(default)]
@@ -118,16 +98,11 @@ pub struct GroupDecreaseEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_increase",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_increase", type = "notice")]
 pub struct GroupIncreaseEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     #[serde(default)]
@@ -140,16 +115,11 @@ pub struct GroupIncreaseEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_ban",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_ban", type = "notice")]
 pub struct GroupBanEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     #[serde(default)]
@@ -163,16 +133,11 @@ pub struct GroupBanEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.friend_add",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.friend_add", type = "notice")]
 pub struct FriendAddEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub user_id: i64,
 }
 
@@ -181,16 +146,11 @@ pub struct FriendAddEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_recall",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_recall", type = "notice")]
 pub struct GroupRecallEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     #[serde(default)]
@@ -203,16 +163,11 @@ pub struct GroupRecallEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.friend_recall",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.friend_recall", type = "notice")]
 pub struct FriendRecallEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub user_id: i64,
     pub message_id: i64,
 }
@@ -222,16 +177,11 @@ pub struct FriendRecallEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.group_card",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.group_card", type = "notice")]
 pub struct GroupCardEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub user_id: i64,
     #[serde(default)]
@@ -252,16 +202,11 @@ pub struct OfflineFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.offline_file",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.offline_file", type = "notice")]
 pub struct OfflineFileEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub user_id: i64,
     pub file: OfflineFile,
 }
@@ -281,16 +226,11 @@ pub struct Device {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.client_status",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.client_status", type = "notice")]
 pub struct ClientStatusEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     #[serde(default)]
     pub online: bool,
     #[serde(default)]
@@ -302,16 +242,11 @@ pub struct ClientStatusEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.essence",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.essence", type = "notice")]
 pub struct EssenceEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     pub group_id: i64,
     pub sender_id: i64,
     pub operator_id: i64,
@@ -325,18 +260,13 @@ pub struct EssenceEvent {
 
 /// Notify event with common fields shared by poke / lucky_king / honor.
 ///
-/// `Deref` → [`OneBotEvent`].
+/// `Deref` → [`NoticeEvent`] → [`OneBotEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.notify",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "notice"
-)]
+#[event(name = "notice.notify", type = "notice")]
 pub struct NotifyEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: NoticeEvent,
     #[serde(default)]
     pub group_id: i64,
     pub user_id: i64,
@@ -347,12 +277,7 @@ pub struct NotifyEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.notify.poke",
-    platform = "onebot",
-    parent = "NotifyEvent",
-    type = "notice"
-)]
+#[event(name = "notice.notify.poke", type = "notice")]
 pub struct PokeEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -365,12 +290,7 @@ pub struct PokeEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.notify.lucky_king",
-    platform = "onebot",
-    parent = "NotifyEvent",
-    type = "notice"
-)]
+#[event(name = "notice.notify.lucky_king", type = "notice")]
 pub struct LuckyKingEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -383,12 +303,7 @@ pub struct LuckyKingEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.notice.notify.honor",
-    platform = "onebot",
-    parent = "NotifyEvent",
-    type = "notice"
-)]
+#[event(name = "notice.notify.honor", type = "notice")]
 pub struct HonorEvent {
     #[event(parent)]
     #[serde(flatten)]

@@ -8,38 +8,55 @@
 //! 2. `impl FromEvent` — JSON validation + deserialization
 //! 3. `impl Deref[Mut]` — auto-generated when a parent field exists
 //!
-//! # Struct-level attributes `#[event(...)]`
+//! # Root events: `#[root_event(...)]`
 //!
-//! | Key | Example | Description |
-//! |-----|---------|-------------|
-//! | `name` | `"onebot.message.private"` | Full event name (default: `"{platform}.{snake_case_name}"`) |
-//! | `platform` | `"onebot"` | Platform name (default: `"unknown"`) |
-//! | `parent` | `"MessageEvent"` | Parent type ⟹ generates `Deref` / `DerefMut` |
-//! | `type` | `"message"` | `EventType` variant |
+//! Used for the top-level event of a platform. It has no parent and defines
+//! the platform name and segment type that all child events will inherit.
+//!
+//! | Key | Example | Required | Description |
+//! |-----|---------|----------|-------------|
+//! | `platform` | `"onebot"` | **Yes** | Platform name; also used as event name |
+//! | `segment_type` | `"crate::segment::Segment"` | **Yes** | Segment type for the whole platform |
+//!
+//! # Child events: `#[event(...)]`
+//!
+//! Used for all non-root events. The parent is detected from the field
+//! marked with `#[event(parent)]`, so you only need to write it once.
+//!
+//! | Key | Example | Required | Description |
+//! |-----|---------|----------|-------------|
+//! | `name` | `"message.private"` | No | Event name suffix (auto-prefixed with `{platform}.`) |
+//! | `type` | `"message"` | No | `EventType` variant (default: inherited from parent or `Other`) |
 //!
 //! # Field-level attributes `#[event(...)]`
 //!
 //! | Key | Description |
 //! |-----|-------------|
-//! | `parent` | Marks this field as the parent (must be the type in `parent = "…"`) |
+//! | `parent` | Marks this field as the parent (type is auto-detected) |
 //! | `raw_json` | Field that stores `Option<Arc<str>>` of raw JSON |
 //! | `bot_id` | Field that stores `Option<Arc<str>>` of bot ID |
+//! | `message` | Field of type `Message<Segment>`, used for `Event::get_message()` |
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, spanned::Spanned};
+use syn::{Attribute, Data, DeriveInput, Fields, Ident, Type, spanned::Spanned};
 
 // ============================================================================
 // Attribute structures
 // ============================================================================
 
-/// Top-level `#[event(…)]` attributes.
-#[derive(Default)]
-pub struct EventAttrs {
-    pub platform: Option<String>,
-    pub name: Option<String>,
-    pub parent: Option<String>,
-    pub event_type: Option<String>,
+/// Which kind of struct-level attribute was found.
+enum EventKind {
+    /// `#[root_event(platform = "…", segment_type = "…")]`
+    Root {
+        platform: String,
+        segment_type: String,
+    },
+    /// `#[event(name = "…", type = "…")]`
+    Child {
+        name: Option<String>,
+        event_type: Option<String>,
+    },
 }
 
 /// Per-field `#[event(…)]` markers.
@@ -48,6 +65,7 @@ struct FieldAttrs {
     is_parent: bool,
     is_raw_json: bool,
     is_bot_id: bool,
+    is_message: bool,
 }
 
 // ============================================================================
@@ -55,14 +73,14 @@ struct FieldAttrs {
 // ============================================================================
 
 pub fn derive_bot_event(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let attrs = parse_event_attrs(&input.attrs)?;
+    let kind = parse_struct_attrs(&input.attrs, input.ident.span())?;
     let name = &input.ident;
 
     match &input.data {
-        Data::Struct(data) => generate_struct_impl(name, &attrs, &data.fields),
+        Data::Struct(data) => generate_struct_impl(name, &kind, &data.fields),
         Data::Enum(_) => Err(syn::Error::new(
             input.span(),
-            "BotEvent no longer supports enums. Use structs with a `parent` field instead.",
+            "BotEvent does not support enums. Use structs with a parent field instead.",
         )),
         Data::Union(_) => Err(syn::Error::new(
             input.span(),
@@ -75,29 +93,59 @@ pub fn derive_bot_event(input: &DeriveInput) -> syn::Result<TokenStream> {
 // Attribute parsing
 // ============================================================================
 
-fn parse_event_attrs(attrs: &[Attribute]) -> syn::Result<EventAttrs> {
-    let mut result = EventAttrs::default();
-
+fn parse_struct_attrs(attrs: &[Attribute], span: proc_macro2::Span) -> syn::Result<EventKind> {
+    // Check for #[root_event(...)]
     for attr in attrs {
-        if !attr.path().is_ident("event") {
-            continue;
-        }
+        if attr.path().is_ident("root_event") {
+            let mut platform: Option<String> = None;
+            let mut segment_type: Option<String> = None;
 
-        attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("platform") {
-                result.platform = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-            } else if meta.path.is_ident("name") {
-                result.name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-            } else if meta.path.is_ident("parent") {
-                result.parent = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-            } else if meta.path.is_ident("type") {
-                result.event_type = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-            }
-            Ok(())
-        })?;
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("platform") {
+                    platform = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+                } else if meta.path.is_ident("segment_type") {
+                    segment_type = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+                }
+                Ok(())
+            })?;
+
+            let platform = platform.ok_or_else(|| {
+                syn::Error::new(span, "#[root_event] requires `platform = \"…\"`")
+            })?;
+            let segment_type = segment_type.ok_or_else(|| {
+                syn::Error::new(span, "#[root_event] requires `segment_type = \"…\"`")
+            })?;
+
+            return Ok(EventKind::Root {
+                platform,
+                segment_type,
+            });
+        }
     }
 
-    Ok(result)
+    // Check for #[event(...)]
+    for attr in attrs {
+        if attr.path().is_ident("event") {
+            let mut name: Option<String> = None;
+            let mut event_type: Option<String> = None;
+
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("name") {
+                    name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+                } else if meta.path.is_ident("type") {
+                    event_type = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+                }
+                Ok(())
+            })?;
+
+            return Ok(EventKind::Child { name, event_type });
+        }
+    }
+
+    Err(syn::Error::new(
+        span,
+        "BotEvent requires either #[root_event(...)] or #[event(...)] attribute",
+    ))
 }
 
 fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
@@ -114,6 +162,8 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 result.is_raw_json = true;
             } else if meta.path.is_ident("bot_id") {
                 result.is_bot_id = true;
+            } else if meta.path.is_ident("message") {
+                result.is_message = true;
             }
             Ok(())
         })?;
@@ -123,33 +173,26 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
 }
 
 // ============================================================================
-// Code generation — structs only
+// Code generation
 // ============================================================================
 
 fn generate_struct_impl(
     name: &Ident,
-    attrs: &EventAttrs,
+    kind: &EventKind,
     fields: &Fields,
 ) -> syn::Result<TokenStream> {
-    let platform = attrs.platform.as_deref().unwrap_or("unknown");
-    let full_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("{}.{}", platform, to_snake_case(&name.to_string())));
-    let full_name_lit = syn::LitStr::new(&full_name, name.span());
-    let platform_lit = syn::LitStr::new(platform, name.span());
-
     // Scan fields for markers
-    let mut parent_field_ident: Option<Ident> = None;
+    let mut parent_field: Option<(Ident, Type)> = None;
     let mut raw_json_field: Option<Ident> = None;
     let mut bot_id_field: Option<Ident> = None;
+    let mut message_field: Option<(Ident, Type)> = None;
 
     if let Fields::Named(named) = fields {
         for f in &named.named {
             let fa = parse_field_attrs(&f.attrs)?;
             let ident = f.ident.as_ref().unwrap();
             if fa.is_parent {
-                parent_field_ident = Some(ident.clone());
+                parent_field = Some((ident.clone(), f.ty.clone()));
             }
             if fa.is_raw_json {
                 raw_json_field = Some(ident.clone());
@@ -157,11 +200,167 @@ fn generate_struct_impl(
             if fa.is_bot_id {
                 bot_id_field = Some(ident.clone());
             }
+            if fa.is_message {
+                message_field = Some((ident.clone(), f.ty.clone()));
+            }
         }
     }
 
+    match kind {
+        EventKind::Root {
+            platform,
+            segment_type,
+        } => {
+            if parent_field.is_some() {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "#[root_event] must not have a #[event(parent)] field",
+                ));
+            }
+            generate_root_event(
+                name,
+                platform,
+                segment_type,
+                raw_json_field,
+                bot_id_field,
+                message_field,
+            )
+        }
+        EventKind::Child {
+            name: event_name,
+            event_type,
+        } => {
+            let (pf_ident, pf_ty) = parent_field.ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    "#[event] requires a field marked with #[event(parent)]",
+                )
+            })?;
+            generate_child_event(
+                name,
+                event_name.as_deref(),
+                event_type.as_deref(),
+                &pf_ident,
+                &pf_ty,
+                message_field,
+            )
+        }
+    }
+}
+
+// ============================================================================
+// Root event generation
+// ============================================================================
+
+fn generate_root_event(
+    name: &Ident,
+    platform: &str,
+    segment_type_str: &str,
+    raw_json_field: Option<Ident>,
+    bot_id_field: Option<Ident>,
+    message_field: Option<(Ident, Type)>,
+) -> syn::Result<TokenStream> {
+    let platform_lit = syn::LitStr::new(platform, name.span());
+    let seg_ty: Type = syn::parse_str(segment_type_str)?;
+
+    let raw_json_impl = if let Some(ref rj) = raw_json_field {
+        quote! {
+            fn raw_json(&self) -> Option<&str> {
+                self.#rj.as_deref()
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let bot_id_impl = if let Some(ref bi) = bot_id_field {
+        quote! {
+            fn bot_id(&self) -> Option<&str> {
+                self.#bi.as_deref()
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let (segment_type_impl, get_message_impl, get_plain_text_impl);
+    if let Some((ref mf, ref _mft)) = message_field {
+        segment_type_impl = quote! { type Segment = #seg_ty; };
+        get_message_impl = quote! {
+            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
+                &self.#mf
+            }
+        };
+        get_plain_text_impl = quote! {
+            fn get_plain_text(&self) -> String {
+                self.#mf.extract_plain_text()
+            }
+        };
+    } else {
+        segment_type_impl = quote! { type Segment = #seg_ty; };
+        get_message_impl = quote! {
+            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
+                static EMPTY: ::std::sync::OnceLock<::alloy_core::Message<#seg_ty>> = ::std::sync::OnceLock::new();
+                EMPTY.get_or_init(|| ::alloy_core::Message::new())
+            }
+        };
+        get_plain_text_impl = quote! {};
+    }
+
+    let from_event_impl = quote! {
+        impl ::alloy_core::FromEvent for #name {
+            fn from_event(root: &dyn ::alloy_core::Event) -> Option<Self> {
+                if let Some(e) = root.as_any().downcast_ref::<Self>() {
+                    return Some(e.clone());
+                }
+                let json = root.raw_json()?;
+                ::serde_json::from_str(json).ok()
+            }
+        }
+    };
+
+    let event_impl = quote! {
+        impl ::alloy_core::Event for #name {
+            fn event_name(&self) -> &'static str {
+                #platform_lit
+            }
+
+            fn platform(&self) -> &'static str {
+                #platform_lit
+            }
+
+            fn as_any(&self) -> &dyn ::std::any::Any {
+                self
+            }
+
+            #raw_json_impl
+            #bot_id_impl
+            #segment_type_impl
+            #get_message_impl
+            #get_plain_text_impl
+        }
+    };
+
+    Ok(quote! {
+        #event_impl
+        #from_event_impl
+    })
+}
+
+// ============================================================================
+// Child event generation
+// ============================================================================
+
+fn generate_child_event(
+    name: &Ident,
+    event_name: Option<&str>,
+    event_type: Option<&str>,
+    parent_field_ident: &Ident,
+    parent_ty: &Type,
+    message_field: Option<(Ident, Type)>,
+) -> syn::Result<TokenStream> {
     // ── event_type ──
-    let event_type_impl = match attrs.event_type.as_deref() {
+    let event_type_impl = match event_type {
         Some(t) => {
             let variant = match t.to_lowercase().as_str() {
                 "message" => quote! { ::alloy_core::EventType::Message },
@@ -172,96 +371,114 @@ fn generate_struct_impl(
             };
             quote! { fn event_type(&self) -> ::alloy_core::EventType { #variant } }
         }
-        None => quote! {},
+        None => {
+            quote! {
+                fn event_type(&self) -> ::alloy_core::EventType {
+                    <#parent_ty as ::alloy_core::Event>::event_type(&self.#parent_field_ident)
+                }
+            }
+        }
     };
 
-    // ── raw_json / bot_id / plain_text delegation ──
-    let (raw_json_impl, bot_id_impl, plain_text_impl);
+    // ── event_name ──
+    // For child events with a name suffix, we build "{platform}.{suffix}" at first call
+    // using OnceLock + Box::leak to get a &'static str.
+    // For child events without a name, we delegate to parent.
+    let event_name_impl = if let Some(suffix) = event_name {
+        let suffix_lit = syn::LitStr::new(suffix, name.span());
+        quote! {
+            fn event_name(&self) -> &'static str {
+                static FULL_NAME: ::std::sync::OnceLock<String> = ::std::sync::OnceLock::new();
+                FULL_NAME.get_or_init(|| {
+                    let platform = <#parent_ty as ::alloy_core::Event>::platform(&self.#parent_field_ident);
+                    format!("{}.{}", platform, #suffix_lit)
+                })
+            }
+        }
+    } else {
+        quote! {
+            fn event_name(&self) -> &'static str {
+                <#parent_ty as ::alloy_core::Event>::event_name(&self.#parent_field_ident)
+            }
+        }
+    };
 
-    if let Some(ref pf) = parent_field_ident {
-        // Delegate to parent
-        let parent_ty: syn::Type = syn::parse_str(
-            attrs
-                .parent
-                .as_deref()
-                .expect("parent field found but no parent = \"...\" attribute"),
-        )?;
+    // ── platform — always delegate to parent ──
+    let platform_impl = quote! {
+        fn platform(&self) -> &'static str {
+            <#parent_ty as ::alloy_core::Event>::platform(&self.#parent_field_ident)
+        }
+    };
 
-        raw_json_impl = quote! {
-            fn raw_json(&self) -> Option<&str> {
-                <#parent_ty as ::alloy_core::Event>::raw_json(&self.#pf)
+    // ── raw_json / bot_id — always delegate to parent ──
+    let raw_json_impl = quote! {
+        fn raw_json(&self) -> Option<&str> {
+            <#parent_ty as ::alloy_core::Event>::raw_json(&self.#parent_field_ident)
+        }
+    };
+    let bot_id_impl = quote! {
+        fn bot_id(&self) -> Option<&str> {
+            <#parent_ty as ::alloy_core::Event>::bot_id(&self.#parent_field_ident)
+        }
+    };
+
+    // ── message type / get_message / get_plain_text ──
+    let (segment_type_impl, get_message_impl, get_plain_text_impl);
+    if let Some((ref mf, ref _mt)) = message_field {
+        segment_type_impl = quote! {
+            type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
+        };
+        get_message_impl = quote! {
+            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
+                &self.#mf
             }
         };
-        bot_id_impl = quote! {
-            fn bot_id(&self) -> Option<&str> {
-                <#parent_ty as ::alloy_core::Event>::bot_id(&self.#pf)
-            }
-        };
-        plain_text_impl = quote! {
-            fn plain_text(&self) -> String {
-                <#parent_ty as ::alloy_core::Event>::plain_text(&self.#pf)
+        get_plain_text_impl = quote! {
+            fn get_plain_text(&self) -> String {
+                self.#mf.extract_plain_text()
             }
         };
     } else {
-        // Root event — use field attrs if present
-        raw_json_impl = if let Some(ref rj) = raw_json_field {
-            quote! {
-                fn raw_json(&self) -> Option<&str> {
-                    self.#rj.as_deref()
-                }
-            }
-        } else {
-            quote! {}
+        segment_type_impl = quote! {
+            type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
         };
-        bot_id_impl = if let Some(ref bi) = bot_id_field {
-            quote! {
-                fn bot_id(&self) -> Option<&str> {
-                    self.#bi.as_deref()
-                }
+        get_message_impl = quote! {
+            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
+                <#parent_ty as ::alloy_core::Event>::get_message(&self.#parent_field_ident)
             }
-        } else {
-            quote! {}
         };
-        // Root event plain_text returns empty string by default
-        plain_text_impl = quote! {
-            fn plain_text(&self) -> String {
-                String::new()
+        get_plain_text_impl = quote! {
+            fn get_plain_text(&self) -> String {
+                <#parent_ty as ::alloy_core::Event>::get_plain_text(&self.#parent_field_ident)
             }
         };
     }
 
     // ── Deref / DerefMut ──
-    let deref_impls = if let Some(ref pf) = parent_field_ident {
-        let parent_ty: syn::Type = syn::parse_str(attrs.parent.as_deref().unwrap())?;
-        quote! {
-            impl ::std::ops::Deref for #name {
-                type Target = #parent_ty;
-                #[inline]
-                fn deref(&self) -> &Self::Target {
-                    &self.#pf
-                }
-            }
-
-            impl ::std::ops::DerefMut for #name {
-                #[inline]
-                fn deref_mut(&mut self) -> &mut Self::Target {
-                    &mut self.#pf
-                }
+    let deref_impls = quote! {
+        impl ::std::ops::Deref for #name {
+            type Target = #parent_ty;
+            #[inline]
+            fn deref(&self) -> &Self::Target {
+                &self.#parent_field_ident
             }
         }
-    } else {
-        quote! {}
+
+        impl ::std::ops::DerefMut for #name {
+            #[inline]
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.#parent_field_ident
+            }
+        }
     };
 
-    // ── FromEvent — simple downcast/parse (no validation) ──
+    // ── FromEvent ──
     let from_event_impl = quote! {
         impl ::alloy_core::FromEvent for #name {
             fn from_event(root: &dyn ::alloy_core::Event) -> Option<Self> {
-                // 1. Downcast
                 if let Some(e) = root.as_any().downcast_ref::<Self>() {
                     return Some(e.clone());
                 }
-                // 2. Parse from raw JSON
                 let json = root.raw_json()?;
                 ::serde_json::from_str(json).ok()
             }
@@ -271,14 +488,8 @@ fn generate_struct_impl(
     // ── Event trait impl ──
     let event_impl = quote! {
         impl ::alloy_core::Event for #name {
-            fn event_name(&self) -> &'static str {
-                #full_name_lit
-            }
-
-            fn platform(&self) -> &'static str {
-                #platform_lit
-            }
-
+            #event_name_impl
+            #platform_impl
             #event_type_impl
 
             fn as_any(&self) -> &dyn ::std::any::Any {
@@ -287,7 +498,9 @@ fn generate_struct_impl(
 
             #raw_json_impl
             #bot_id_impl
-            #plain_text_impl
+            #segment_type_impl
+            #get_message_impl
+            #get_plain_text_impl
         }
     };
 
@@ -296,24 +509,4 @@ fn generate_struct_impl(
         #event_impl
         #from_event_impl
     })
-}
-
-// ============================================================================
-// Utility
-// ============================================================================
-
-/// Converts `CamelCase` → `snake_case`.
-pub fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(c.to_lowercase().next().unwrap());
-        } else {
-            result.push(c);
-        }
-    }
-    result
 }

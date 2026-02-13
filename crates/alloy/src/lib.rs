@@ -32,7 +32,7 @@
 //! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter, OneBotConfig};
 //!
 //! async fn echo(event: EventContext<MessageEvent>) {
-//!     if let Some(content) = event.data().plain_text().strip_prefix("/echo ") {
+//!     if let Some(content) = event.get_plain_text().strip_prefix("/echo ") {
 //!         info!("Echo: {}", content);
 //!     }
 //! }
@@ -108,7 +108,7 @@ pub mod prelude {
 
     // Structured command support (requires "command" feature)
     #[cfg(feature = "command")]
-    pub use alloy_framework::{Command, on_command};
+    pub use alloy_framework::{CommandArgs, on_command};
 
     // Bot types - for interacting with bots in handlers
     pub use alloy_core::Bot;

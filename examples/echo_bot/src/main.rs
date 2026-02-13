@@ -1,17 +1,9 @@
-//! Echo Bot Example
+//! Alloy Framework Echo Bot Example
 //!
-//! A simple demonstration of the Alloy framework using parent-in-child events.
+//! A simple bot demonstration using the Alloy framework, featuring message logging,
+//! basic commands, and group-specific handling.
 //!
-//! # Parent-in-Child Event Design
-//!
-//! Events use `Deref` chains so child events transparently access parent fields:
-//!
-//! ```text
-//! PrivateMessageEvent  ──Deref──▶  MessageEvent  ──Deref──▶  OneBotEvent
-//!   sub_type                        user_id, message, …       time, self_id
-//! ```
-//!
-//! # Usage
+//! # Running the Example
 //!
 //! ```bash
 //! cargo run --package echo-bot
@@ -24,45 +16,25 @@ use clap::Parser;
 use std::sync::Arc;
 use tracing::{error, info};
 
-// ============================================================================
-// Command Definitions (using clap)
-// ============================================================================
+// --- Command Definitions ---
 
-/// Echo command - echoes back the given text
+// An empty command with no arguments.
 #[derive(Parser, Debug, Clone)]
-#[command(name = "/echo")]
+pub struct EmptyCommand;
+
+/// Arguments for the `/echo` command.
+#[derive(Parser, Debug, Clone)]
 struct EchoCommand {
-    /// Text to echo back
+    /// The text to be echoed back.
     text: Vec<String>,
 }
 
-/// Ping command - responds with Pong!
-#[derive(Parser, Debug, Clone)]
-#[command(name = "/ping")]
-struct PingCommand;
-
-/// Help command - shows help message
-#[derive(Parser, Debug, Clone)]
-#[command(name = "/help")]
-struct HelpCommand;
-
-/// Info command - shows message info
-#[derive(Parser, Debug, Clone)]
-#[command(name = "/info")]
-struct InfoCommand;
-
-/// Group-only command - only works in groups
-#[derive(Parser, Debug, Clone)]
-#[command(name = "/group")]
-struct GroupCommand;
-
-/// Calculator command with subcommands
+/// Arguments for the `/calc` command, supporting various mathematical operations.
 ///
-/// Usage:
-/// - /calc add 5 10
-/// - /calc multiply 3 4
+/// Example usage:
+/// - `/calc add 5 10`
+/// - `/calc multiply 3 4`
 #[derive(Parser, Debug, Clone)]
-#[command(name = "/calc")]
 struct CalcCommand {
     #[command(subcommand)]
     operation: CalcOperation,
@@ -70,20 +42,18 @@ struct CalcCommand {
 
 #[derive(Parser, Debug, Clone)]
 enum CalcOperation {
-    /// Add two numbers
+    /// Adds two integers.
     Add { a: i32, b: i32 },
-    /// Multiply two numbers
+    /// Multiplies two integers.
     Multiply { a: i32, b: i32 },
 }
 
-// ============================================================================
-// Handler Functions (Axum-style - no macro needed!)
-// ============================================================================
+// --- Event Handlers ---
 
-/// Logging handler - logs all messages.
+/// A simple logging handler that records every incoming message.
 ///
-/// This handler runs for every message event.
-/// Uses `MessageEvent` which provides common fields for all message types.
+/// This handler demonstrates how to use `EventContext<MessageEvent>` to access
+/// common message information like the sender's nickname and message content.
 async fn logging_handler(event: EventContext<MessageEvent>) {
     let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
@@ -91,15 +61,15 @@ async fn logging_handler(event: EventContext<MessageEvent>) {
         "[Message] {} ({}): {}",
         nickname,
         event.user_id,
-        event.plain_text()
+        event.get_plain_text()
     );
 }
 
-/// Echo command handler - sends back the message!
+/// Handles the `/echo` command by sending the provided text back to the source.
 async fn echo_handler(
     event: EventContext<MessageEvent>,
     bot: Arc<OneBotBot>,
-    cmd: Command<EchoCommand>,
+    cmd: CommandArgs<EchoCommand>,
 ) {
     let content = cmd.text.join(" ");
     if !content.is_empty() {
@@ -109,46 +79,15 @@ async fn echo_handler(
     }
 }
 
-/// Ping command handler - responds with Pong!
-async fn ping_handler(
-    event: EventContext<MessageEvent>,
-    bot: Arc<OneBotBot>,
-    _cmd: Command<PingCommand>,
-) {
+/// Handles the `/ping` command with a "Pong!" response.
+async fn ping_handler(event: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
     if let Err(e) = bot.send(event.as_event(), "Pong! 🏓").await {
         error!("Failed to send ping reply: {:?}", e);
     }
 }
 
-/// Help command handler - sends help message.
-async fn help_handler(
-    event: EventContext<MessageEvent>,
-    bot: Arc<OneBotBot>,
-    _cmd: Command<HelpCommand>,
-) {
-    let help_text = r"╭─────────────────────────────╮
-│     Echo Bot - Commands     │
-├─────────────────────────────┤
-│ /echo <text> - Echo text    │
-│ /ping        - Pong!        │
-│ /help        - This help    │
-│ /info        - Message info │
-│ /group       - Group only   │
-│ /calc add <a> <b>           │
-│ /calc multiply <a> <b>      │
-╰─────────────────────────────╯";
-
-    if let Err(e) = bot.send(event.as_event(), help_text).await {
-        error!("Failed to send help message: {:?}", e);
-    }
-}
-
-/// Info command handler - sends message info.
-async fn info_handler(
-    event: EventContext<MessageEvent>,
-    bot: Arc<OneBotBot>,
-    _cmd: Command<InfoCommand>,
-) {
+/// Displays information about the current message and its sender.
+async fn info_handler(event: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
     let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
     let info_text = format!(
@@ -164,13 +103,12 @@ async fn info_handler(
     }
 }
 
-/// Group-only command handler - responds only in groups.
-/// Uses `GroupMessageEvent` directly — auto-extracts only for group messages.
-async fn group_only_handler(
-    event: EventContext<GroupMessageEvent>,
-    bot: Arc<OneBotBot>,
-    _cmd: Command<GroupCommand>,
-) {
+/// A handler that only responds to group messages.
+///
+/// By using `EventContext<GroupMessageEvent>`, this handler will only be
+/// triggered when the event is a group message. Alloy's dispatcher handles
+/// this filtering automatically.
+async fn group_only_handler(event: EventContext<GroupMessageEvent>, bot: Arc<OneBotBot>) {
     let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
     let response = format!(
         "✅ This is a group-only command!\n\
@@ -184,11 +122,11 @@ async fn group_only_handler(
     }
 }
 
-/// Calculator command handler - handles add and multiply operations
+/// A subcommand-based handler for mathematical calculations.
 async fn calc_handler(
     event: EventContext<MessageEvent>,
     bot: Arc<OneBotBot>,
-    cmd: Command<CalcCommand>,
+    cmd: CommandArgs<CalcCommand>,
 ) {
     let response = match &cmd.operation {
         CalcOperation::Add { a, b } => {
@@ -206,51 +144,35 @@ async fn calc_handler(
     }
 }
 
-// ============================================================================
-// Main Entry Point
-// ============================================================================
+// --- Main Application ---
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Create runtime - automatically loads config from alloy.yaml
-    // Config can be overridden via environment variables:
-    // - ALLOY_LOGGING__LEVEL=debug
-    // - ALLOY_ADAPTERS__ONEBOT__CONNECTIONS__0__URL=ws://...
+    // Initialize the Alloy runtime.
+    // By default, it loads configuration from `alloy.yaml` in the current directory.
+    // Configuration can also be overridden via environment variables using the prefixed format.
     let runtime = AlloyRuntime::new();
 
-    // Register the OneBot adapter - configuration is automatically loaded from alloy.yaml
-    // The adapter name "onebot" is defined in OneBotAdapter::adapter_name()
+    // Register the OneBot adapter.
+    // The adapter will automatically use the connection settings defined in the configuration.
     runtime.register_adapter::<OneBotAdapter>().await?;
 
-    // ========================================================================
-    // Register Matchers
-    // ========================================================================
-
+    // Register matchers to define how the bot should respond to events.
     runtime
         .register_matchers(vec![
-            // Logging - runs for all message events, does NOT block
-            on_message()
-                .block(false) // Don't block - let other matchers also process
-                .handler(logging_handler),
-            // Command handlers - use on_command::<T>() with clap parsing
+            // A non-blocking matcher that logs every message received.
+            on_message().block(false).handler(logging_handler),
+            // Command matchers use `on_command` to bridge message text and structured data.
+            // They automatically handle prefix stripping and parsing.
             on_command::<EchoCommand>("echo").handler(echo_handler),
-            on_command::<PingCommand>("ping").handler(ping_handler),
-            on_command::<HelpCommand>("help").handler(help_handler),
-            on_command::<InfoCommand>("info").handler(info_handler),
-            on_command::<GroupCommand>("group").handler(group_only_handler),
-            // Calculator command with subcommands
-            // Automatic help (-h) and error messages
-            // Example: /calc add 5 10
-            //          /calc multiply 3 4
-            //          /calc -h (shows help)
-            on_command::<CalcCommand>("calc")
-                .reply_help(true)
-                .reply_error(true)
-                .handler(calc_handler),
+            on_command::<EmptyCommand>("ping").handler(ping_handler),
+            on_command::<EmptyCommand>("info").handler(info_handler),
+            on_command::<EmptyCommand>("group").handler(group_only_handler),
+            on_command::<CalcCommand>("calc").handler(calc_handler),
         ])
         .await;
 
-    // Run the runtime
+    // Start the bot and wait for it to finish.
     runtime.run().await?;
 
     Ok(())

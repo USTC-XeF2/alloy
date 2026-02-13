@@ -20,12 +20,7 @@ use super::OneBotEvent;
 
 /// Request event base — matches any event with `post_type = "request"`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.request",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "request"
-)]
+#[event(name = "request", type = "request")]
 pub struct RequestEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -37,12 +32,7 @@ pub struct RequestEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.request.friend",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "request"
-)]
+#[event(name = "request.friend", type = "request")]
 pub struct FriendRequestEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -58,12 +48,7 @@ pub struct FriendRequestEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.request.group",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "request"
-)]
+#[event(name = "request.group", type = "request")]
 pub struct GroupRequestEvent {
     #[event(parent)]
     #[serde(flatten)]

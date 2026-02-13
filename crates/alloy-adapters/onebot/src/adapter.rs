@@ -51,8 +51,7 @@ use tracing::{debug, info, trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig, WsClientConfig, WsServerConfig};
-use crate::model::event::{LifecycleEvent, MessageEvent, parse_onebot_event};
-use crate::traits::{GroupEvent, MemberRole, PrivateEvent};
+use crate::model::event::{LifecycleEvent, parse_onebot_event};
 
 /// The OneBot v11 adapter.
 ///
@@ -454,43 +453,5 @@ impl ConnectionHandler for OneBotConnectionHandler {
 
     async fn on_error(&self, bot_id: &str, error: &str) {
         warn!(bot_id = %bot_id, error = %error, "OneBot connection error");
-    }
-}
-
-// ============================================================================
-// Group/Private event trait implementations
-// ============================================================================
-
-impl GroupEvent for MessageEvent {
-    fn get_group_id(&self) -> &str {
-        // MessageEvent itself doesn't have group_id.
-        // Users should extract GroupMessageEvent for group context.
-        ""
-    }
-
-    fn get_sender_role(&self) -> MemberRole {
-        match self.sender.role.as_deref() {
-            Some("owner") => MemberRole::Owner,
-            Some("admin") => MemberRole::Admin,
-            _ => MemberRole::Member,
-        }
-    }
-
-    fn get_sender_id(&self) -> &str {
-        Box::leak(self.user_id.to_string().into_boxed_str())
-    }
-
-    fn get_sender_nickname(&self) -> Option<&str> {
-        self.sender.nickname.as_deref()
-    }
-}
-
-impl PrivateEvent for MessageEvent {
-    fn get_user_id(&self) -> &str {
-        Box::leak(self.user_id.to_string().into_boxed_str())
-    }
-
-    fn get_user_nickname(&self) -> Option<&str> {
-        self.sender.nickname.as_deref()
     }
 }

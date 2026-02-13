@@ -62,7 +62,6 @@ mod adapter;
 pub mod bot;
 pub mod config;
 pub mod model;
-pub mod traits;
 
 pub use adapter::{OneBotAdapter, OneBotAdapterBuilder};
 pub use bot::{
@@ -104,8 +103,8 @@ pub use model::segment::{
     unescape_cq_value,
 };
 
-// Re-export message type
-pub use model::message::{OneBotMessage, parse_cq_string};
+// Re-export message type and extension trait
+pub use model::message::{OneBotMessage, OneBotMessageExt, parse_cq_string};
 
 // Re-export event types
 pub use model::event::{
@@ -149,5 +148,3 @@ pub use model::event::{
     // Parsing helper
     parse_onebot_event,
 };
-
-pub use traits::{GroupEvent, GroupManagement, MemberRole, PrivateEvent};

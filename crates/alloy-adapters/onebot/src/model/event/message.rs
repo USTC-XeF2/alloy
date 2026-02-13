@@ -14,9 +14,9 @@
 
 use alloy_macros::BotEvent;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::OneBotEvent;
+use crate::model::message::OneBotMessage;
 
 // ============================================================================
 // Shared Types
@@ -73,12 +73,7 @@ pub struct Anonymous {
 ///
 /// `Deref` → [`OneBotEvent`], so `msg.time` and `msg.self_id` work directly.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.message",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "message"
-)]
+#[event(name = "message", type = "message")]
 pub struct MessageEvent {
     /// Embedded parent fields (time, self_id, …).
     #[event(parent)]
@@ -90,7 +85,9 @@ pub struct MessageEvent {
     /// Sender's user ID.
     pub user_id: i64,
     /// Message content (array of segments).
-    pub message: Value,
+    #[event(message)]
+    #[serde(with = "crate::model::message::serde_message")]
+    pub message: OneBotMessage,
     /// Raw message string (CQ codes or plain text).
     pub raw_message: String,
     /// Font (usually 0).
@@ -104,13 +101,6 @@ pub struct MessageEvent {
     pub message_type: String,
 }
 
-impl MessageEvent {
-    /// Extracts plain text from the message segments.
-    pub fn plain_text(&self) -> String {
-        extract_plain_text(&self.message)
-    }
-}
-
 // ============================================================================
 // PrivateMessageEvent
 // ============================================================================
@@ -119,12 +109,7 @@ impl MessageEvent {
 ///
 /// `Deref` chain: `PrivateMessageEvent` → [`MessageEvent`] → [`OneBotEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.message.private",
-    platform = "onebot",
-    parent = "MessageEvent",
-    type = "message"
-)]
+#[event(name = "message.private", type = "message")]
 pub struct PrivateMessageEvent {
     /// Embedded parent fields (message_id, user_id, message, …, time, self_id).
     #[event(parent)]
@@ -147,12 +132,7 @@ pub struct PrivateMessageEvent {
 ///
 /// `Deref` chain: `GroupMessageEvent` → [`MessageEvent`] → [`OneBotEvent`].
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.message.group",
-    platform = "onebot",
-    parent = "MessageEvent",
-    type = "message"
-)]
+#[event(name = "message.group", type = "message")]
 pub struct GroupMessageEvent {
     /// Embedded parent fields.
     #[event(parent)]
@@ -167,26 +147,4 @@ pub struct GroupMessageEvent {
     /// Sub-type ("normal", "anonymous", "notice").
     #[serde(default)]
     pub sub_type: String,
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Extracts plain text from message segments.
-pub fn extract_plain_text(message: &Value) -> String {
-    if let Value::Array(segments) = message {
-        segments
-            .iter()
-            .filter_map(|seg| {
-                if seg.get("type")?.as_str()? == "text" {
-                    seg.get("data")?.get("text")?.as_str().map(String::from)
-                } else {
-                    None
-                }
-            })
-            .collect::<String>()
-    } else {
-        String::new()
-    }
 }

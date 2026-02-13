@@ -21,12 +21,7 @@ use super::OneBotEvent;
 
 /// Meta event base — matches any event with `post_type = "meta_event"`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.meta_event",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "meta"
-)]
+#[event(name = "meta_event", type = "meta")]
 pub struct MetaEventEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -38,12 +33,7 @@ pub struct MetaEventEvent {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.meta_event.lifecycle",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "meta"
-)]
+#[event(name = "meta_event.lifecycle", type = "meta")]
 pub struct LifecycleEvent {
     #[event(parent)]
     #[serde(flatten)]
@@ -74,12 +64,7 @@ pub struct HeartbeatStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(
-    name = "onebot.meta_event.heartbeat",
-    platform = "onebot",
-    parent = "OneBotEvent",
-    type = "meta"
-)]
+#[event(name = "meta_event.heartbeat", type = "meta")]
 pub struct HeartbeatEvent {
     #[event(parent)]
     #[serde(flatten)]

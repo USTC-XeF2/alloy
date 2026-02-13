@@ -41,6 +41,7 @@
 use std::marker::PhantomData;
 
 use clap::Parser;
+use clap::error::ErrorKind;
 
 use crate::extractor::FromContext;
 use crate::handler::Handler;
@@ -61,23 +62,23 @@ use alloy_core::foundation::error::ExtractError;
 /// # Example
 ///
 /// ```rust,ignore
-/// use alloy_framework::Command;
+/// use alloy_framework::CommandArgs;
 ///
-/// async fn echo_handler(cmd: Command<BotCommand>) {
+/// async fn echo_handler(cmd: CommandArgs<BotCommand>) {
 ///     println!("Got command: {:?}", cmd.0);
 /// }
 /// ```
 #[derive(Debug, Clone)]
-pub struct Command<T>(pub T);
+pub struct CommandArgs<T: Parser>(pub T);
 
-impl<T> Command<T> {
+impl<T: Parser> CommandArgs<T> {
     /// Unwraps the command value.
     pub fn into_inner(self) -> T {
         self.0
     }
 }
 
-impl<T> std::ops::Deref for Command<T> {
+impl<T: Parser> std::ops::Deref for CommandArgs<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -85,19 +86,19 @@ impl<T> std::ops::Deref for Command<T> {
     }
 }
 
-impl<T> std::ops::DerefMut for Command<T> {
+impl<T: Parser> std::ops::DerefMut for CommandArgs<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> FromContext for Command<T> {
+impl<T: Parser + Clone + Send + Sync + 'static> FromContext for CommandArgs<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         ctx.get_state::<ParsedCommand<T>>()
-            .map(|parsed| Command(parsed.0.clone()))
+            .map(|parsed| CommandArgs(parsed.0.clone()))
             .ok_or_else(|| {
                 ExtractError::custom(format!(
-                    "Command<{}> not found in context. Make sure to use on_command::<T>() matcher.",
+                    "CommandArgs<{}> not found in context. Make sure to use on_command::<T>() matcher.",
                     std::any::type_name::<T>()
                 ))
             })
@@ -107,52 +108,6 @@ impl<T: Clone + Send + Sync + 'static> FromContext for Command<T> {
 /// Internal wrapper for storing parsed commands in context.
 #[derive(Clone)]
 struct ParsedCommand<T>(T);
-
-// ============================================================================
-// Command Parsing Utilities
-// ============================================================================
-
-/// Parse a command from plain text.
-///
-/// This function:
-/// 1. Splits the text into shell-like arguments
-/// 2. Uses clap to parse them into the target type
-///
-/// Returns `Ok(command)` on success, or `Err(error_message)` on failure.
-pub fn parse_command<T: Parser>(text: &str) -> Result<T, String> {
-    // Split text into arguments (simple shell-like splitting)
-    let args = shell_split(text);
-
-    // Try to parse using clap
-    T::try_parse_from(args).map_err(|e| e.to_string())
-}
-
-/// Parse command and return both the command and any remaining text.
-pub fn parse_command_with_remainder<T: Parser>(text: &str) -> Result<(T, Vec<String>), String> {
-    let args = shell_split(text);
-
-    // Use clap's FromArgMatches for more control
-    let mut cmd = T::command();
-    let matches = cmd
-        .try_get_matches_from_mut(args)
-        .map_err(|e| e.to_string())?;
-
-    let command = T::from_arg_matches(&matches).map_err(|e| e.to_string())?;
-
-    // Get any remaining arguments (if the command allows them)
-    // For now, we don't capture remainder
-    Ok((command, vec![]))
-}
-
-/// Get the help message for a command.
-pub fn get_help<T: Parser>() -> String {
-    T::command().render_help().to_string()
-}
-
-/// Get the short help message for a command.
-pub fn get_short_help<T: Parser>() -> String {
-    T::command().render_help().to_string()
-}
 
 /// Simple shell-like argument splitting.
 ///
@@ -202,16 +157,12 @@ fn shell_split(input: &str) -> Vec<String> {
     args
 }
 
-// ============================================================================
-// on_command - Simple Matcher Builder
-// ============================================================================
-
 /// Creates a matcher that parses messages as clap commands.
 ///
 /// This function creates a `Matcher` that:
 /// 1. Only matches `Message` events
 /// 2. Parses the plain text as a clap command
-/// 3. Stores the parsed command in context for extraction via `Command<T>`
+/// 3. Stores the parsed command in context for extraction via `CommandArgs<T>`
 /// 4. Fails the check if parsing fails (optionally can reply with help)
 ///
 /// # Type Parameters
@@ -226,7 +177,7 @@ fn shell_split(input: &str) -> Vec<String> {
 ///
 /// ```rust,ignore
 /// use clap::Parser;
-/// use alloy_framework::{on_command, Command};
+/// use alloy_framework::{on_command, CommandArgs};
 ///
 /// #[derive(Parser, Clone)]
 /// struct PingCommand {
@@ -237,7 +188,7 @@ fn shell_split(input: &str) -> Vec<String> {
 /// let matcher = on_command::<PingCommand>("ping")
 ///     .reply_help(true)
 ///     .reply_error(true)
-///     .handler(|cmd: Command<PingCommand>| async move {
+///     .handler(|cmd: CommandArgs<PingCommand>| async move {
 ///         println!("Ping! {:?}", cmd.message);
 ///     });
 /// ```
@@ -245,14 +196,7 @@ pub fn on_command<T>(name: impl Into<String>) -> CommandMatcherBuilder<T>
 where
     T: Parser + Clone + Send + Sync + 'static,
 {
-    let name = name.into();
-    // Auto-prepend "/" if not present
-    let full_name = if name.starts_with('/') {
-        name
-    } else {
-        format!("/{name}")
-    };
-    CommandMatcherBuilder::new(full_name)
+    CommandMatcherBuilder::new(name.into())
 }
 
 /// Builder for command matchers.
@@ -276,8 +220,8 @@ where
     fn new(name: String) -> Self {
         Self {
             name,
-            reply_help: false,
-            reply_error: false,
+            reply_help: true,
+            reply_error: true,
             _marker: PhantomData,
         }
     }
@@ -317,63 +261,62 @@ where
         let should_reply_help = self.reply_help;
         let should_reply_error = self.reply_error;
 
-        Matcher::new()
-            .name(format!("command:{}", command_name.trim_start_matches('/')))
-            .check(move |ctx| {
-                // Must be a message event
-                if ctx.event().event_type() != EventType::Message {
-                    return false;
+        Matcher::new().check(move |ctx| {
+            // Must be a message event
+            if ctx.event().event_type() != EventType::Message {
+                return false;
+            }
+
+            let text = ctx.event().get_plain_text();
+            let text = text.trim();
+
+            // Split into arguments first
+            let args = shell_split(text);
+
+            // Check if first argument matches "/{command_name}"
+            let expected_cmd = format!("/{}", command_name);
+            if args.is_empty() || args[0].to_lowercase() != expected_cmd.to_lowercase() {
+                return false;
+            }
+
+            // Try to parse
+            match T::try_parse_from(args) {
+                Ok(cmd) => {
+                    // Store parsed command in context
+                    ctx.set_state(ParsedCommand(cmd));
+                    true
                 }
-
-                let text = ctx.event().plain_text();
-                let text = text.trim();
-
-                // Check if message starts with command name
-                let starts_with_command = text
-                    .to_lowercase()
-                    .starts_with(&command_name.to_lowercase());
-                if !starts_with_command {
-                    return false;
-                }
-
-                // Check for help flag
-                if should_reply_help && (text.contains("-h") || text.contains("--help")) {
-                    let help_text = get_help::<T>();
-                    let bot = ctx.bot_arc();
-                    let event = ctx.event().inner().clone();
-                    tokio::spawn(async move {
-                        let _ = bot.send(event.as_ref(), &help_text).await;
-                    });
-                    return false;
-                }
-
-                // Try to parse
-                match parse_command::<T>(text) {
-                    Ok(cmd) => {
-                        // Store parsed command in context
-                        ctx.set_state(ParsedCommand(cmd));
-                        true
-                    }
-                    Err(err) => {
-                        // Send error message if enabled
-                        if should_reply_error {
-                            let bot = ctx.bot_arc();
-                            let event = ctx.event().inner().clone();
-                            let error_msg = format!("❌ Command error:\n{err}");
-                            tokio::spawn(async move {
-                                let _ = bot.send(event.as_ref(), &error_msg).await;
-                            });
+                Err(err) => {
+                    // Check error kind to handle help/version requests
+                    match err.kind() {
+                        ErrorKind::DisplayHelp => {
+                            if should_reply_help {
+                                let help_text = err.to_string();
+                                let bot = ctx.bot_arc();
+                                let event = ctx.event().inner().clone();
+                                tokio::spawn(async move {
+                                    let _ = bot.send(event.as_ref(), &help_text).await;
+                                });
+                            }
                         }
-                        false
+                        _ => {
+                            // Other parse errors
+                            if should_reply_error {
+                                let bot = ctx.bot_arc();
+                                let event = ctx.event().inner().clone();
+                                let error_msg = format!("❌ Command error:\n{}", err);
+                                tokio::spawn(async move {
+                                    let _ = bot.send(event.as_ref(), &error_msg).await;
+                                });
+                            }
+                        }
                     }
+                    false
                 }
-            })
+            }
+        })
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -413,77 +356,5 @@ mod tests {
     fn test_shell_split_whitespace_only() {
         let args = shell_split("   \t  ");
         assert!(args.is_empty());
-    }
-
-    // Tests below require clap derive feature
-    #[cfg(feature = "command-test")]
-    mod derive_tests {
-        use super::*;
-        use clap::Parser;
-
-        #[derive(Parser, Debug, Clone, PartialEq)]
-        #[command(name = "/test")]
-        struct TestCommand {
-            /// A required argument
-            arg: String,
-            /// An optional flag
-            #[arg(short, long)]
-            flag: bool,
-        }
-
-        #[test]
-        fn test_parse_command_simple() {
-            let cmd: TestCommand = parse_command("/test hello").unwrap();
-            assert_eq!(cmd.arg, "hello");
-            assert!(!cmd.flag);
-        }
-
-        #[test]
-        fn test_parse_command_with_flag() {
-            let cmd: TestCommand = parse_command("/test hello -f").unwrap();
-            assert_eq!(cmd.arg, "hello");
-            assert!(cmd.flag);
-        }
-
-        #[test]
-        fn test_parse_command_long_flag() {
-            let cmd: TestCommand = parse_command("/test hello --flag").unwrap();
-            assert_eq!(cmd.arg, "hello");
-            assert!(cmd.flag);
-        }
-
-        #[test]
-        fn test_parse_command_failure() {
-            let result: Result<TestCommand, _> = parse_command("/test");
-            assert!(result.is_err());
-        }
-
-        #[derive(Parser, Debug, Clone)]
-        #[command(name = "/bot")]
-        struct BotCommand {
-            #[command(subcommand)]
-            cmd: BotSubcommand,
-        }
-
-        #[derive(clap::Subcommand, Debug, Clone)]
-        enum BotSubcommand {
-            Echo { message: String },
-            Status,
-        }
-
-        #[test]
-        fn test_parse_subcommand() {
-            let cmd: BotCommand = parse_command("/bot echo hello").unwrap();
-            match cmd.cmd {
-                BotSubcommand::Echo { message } => assert_eq!(message, "hello"),
-                _ => panic!("Wrong subcommand"),
-            }
-        }
-
-        #[test]
-        fn test_parse_subcommand_status() {
-            let cmd: BotCommand = parse_command("/bot status").unwrap();
-            assert!(matches!(cmd.cmd, BotSubcommand::Status));
-        }
     }
 }

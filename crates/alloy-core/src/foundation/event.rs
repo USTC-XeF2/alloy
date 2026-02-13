@@ -121,11 +121,41 @@ pub trait Event: Any + Send + Sync {
         None
     }
 
-    /// Extracts plain text from the event, if applicable.
+    /// The segment type used by messages in this event's platform.
+    ///
+    /// For all events under the same adapter/platform, this should be the same type
+    /// (e.g., all OneBot events use `onebot::Segment`). The root event specifies the
+    /// segment type, and child events inherit it.
+    ///
+    /// Messages are represented as `Message<Self::Segment>`.
+    ///
+    /// This is gated by `Self: Sized` so that `dyn Event` remains object-safe.
+    type Segment: super::message::MessageSegment
+    where
+        Self: Sized;
+
+    /// Returns a reference to the message contained in this event.
+    ///
+    /// Only available on concrete (sized) event types, not through `dyn Event`.
+    /// For message events, adapters should return the concrete message.
+    /// For non-message events, returns an empty message by default.
+    fn get_message(&self) -> &super::message::Message<Self::Segment>
+    where
+        Self: Sized,
+    {
+        // This should be overridden by the macro for events with message fields.
+        // For events without message fields, this would need a static empty instance.
+        // The macro will generate proper implementations.
+        panic!("get_message() called on event without message field - macro should override this")
+    }
+
+    /// Extracts plain text from the event's message, if applicable.
     ///
     /// For message events, this returns the message content.
     /// For other events, this returns an empty string by default.
-    fn plain_text(&self) -> String {
+    ///
+    /// This method is object-safe and can be called through `dyn Event`.
+    fn get_plain_text(&self) -> String {
         String::new()
     }
 }
@@ -177,7 +207,7 @@ pub trait FromEvent: Sized + Clone {
 /// #[handler]
 /// async fn handler(event: EventContext<PrivateMessage>) -> Outcome {
 ///     // Access fields directly via Deref
-///     println!("From: {} Message: {}", event.user_id, event.plain_text());
+///     println!("From: {} Message: {}", event.user_id, event.get_plain_text());
 ///     
 ///     // The event can be passed directly to APIs
 ///     bot.send(&event, "reply").await.ok();
@@ -242,7 +272,7 @@ impl<T: Event + Clone> AsRef<dyn Event> for EventContext<T> {
 /// ```rust,ignore
 /// let event: BoxedEvent = /* ... */;
 /// let name = event.event_name();
-/// let text = event.plain_text();
+/// let text = event.get_plain_text();
 /// let typ = event.event_type();
 /// ```
 #[derive(Clone)]

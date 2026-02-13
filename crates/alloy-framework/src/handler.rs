@@ -17,7 +17,7 @@
 //!
 //! // Handler with extractor
 //! async fn echo_handler(event: EventContext<MessageEvent>) {
-//!     println!("Message: {}", event.plain_text());
+//!     println!("Message: {}", event.get_plain_text());
 //! }
 //!
 //! // Handler with multiple extractors

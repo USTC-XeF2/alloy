@@ -58,7 +58,7 @@ pub use request::*;
 /// Contains common fields shared by **all** OneBot events.
 /// Child events embed this via `#[serde(flatten)] parent: OneBotEvent`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "onebot", platform = "onebot")]
+#[root_event(platform = "onebot", segment_type = "crate::model::segment::Segment")]
 pub struct OneBotEvent {
     /// Unix timestamp when the event occurred.
     pub time: i64,

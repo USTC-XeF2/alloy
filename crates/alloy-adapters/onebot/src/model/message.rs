@@ -1,8 +1,6 @@
 //! OneBot v11 Message type.
 //!
-//! This module provides the [`OneBotMessage`] type that implements
-//! the [`alloy_core::Message`] trait, representing a complete message
-//! composed of multiple segments.
+//! This module provides OneBot-specific extensions for `Message<Segment>`.
 //!
 //! # Message Formats
 //!
@@ -10,338 +8,65 @@
 //! - **Array format**: A JSON array of message segments (recommended)
 //! - **String format**: CQ-coded string (legacy, for compatibility)
 //!
-//! This module handles both formats transparently.
+//! This module handles both formats via custom serde helpers.
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use alloy_adapter_onebot::{OneBotMessage, Segment};
-//! use alloy_core::Message;
+//! use alloy_adapter_onebot::{OneBotMessage, Segment, OneBotMessageExt};
 //!
-//! // Create a message with builder pattern
-//! let msg = OneBotMessage::new()
-//!     .text("Hello, ")
-//!     .at(10001000)
-//!     .text("! Check this out: ")
-//!     .image("http://example.com/image.jpg");
+//! // Create a message
+//! let msg = OneBotMessage::from_segments(vec![
+//!     Segment::text("Hello, "),
+//!     Segment::at(10001000),
+//! ]);
 //!
-//! // Access segments
-//! for segment in msg.iter() {
-//!     println!("{}", segment.display());
-//! }
-//!
-//! // Extract plain text
-//! println!("Plain text: {}", msg.extract_plain_text());
+//! // Use extension methods
+//! println!("CQ string: {}", msg.to_cq_string());
+//! println!("Mentioned users: {:?}", msg.mentioned_users());
 //! ```
 
-use alloy_core::{Message as MessageTrait, MessageSegment as MessageSegmentTrait};
+use alloy_core::Message;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::segment::Segment;
 
 // ============================================================================
-// OneBotMessage - The main message type
+// Type Alias
 // ============================================================================
 
 /// A OneBot v11 message composed of multiple segments.
 ///
-/// This type implements [`alloy_core::Message`] and provides a builder
-/// pattern for constructing messages, as well as utilities for parsing
-/// and converting between different message formats.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct OneBotMessage {
-    /// The segments that make up this message.
-    segments: Vec<Segment>,
-}
-
-impl MessageTrait for OneBotMessage {
-    type Segment = Segment;
-
-    fn iter(&self) -> impl Iterator<Item = &Self::Segment> {
-        self.segments.iter()
-    }
-
-    fn len(&self) -> usize {
-        self.segments.len()
-    }
-
-    fn as_slice(&self) -> &[Self::Segment] {
-        &self.segments
-    }
-}
+/// This is a type alias for `Message<Segment>`. Use the `OneBotMessageExt`
+/// trait to access OneBot-specific methods.
+pub type OneBotMessage = Message<Segment>;
 
 // ============================================================================
-// Serialization / Deserialization
+// Extension Trait (avoids orphan rule for OneBot-specific methods)
 // ============================================================================
 
-impl Serialize for OneBotMessage {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // Always serialize as array format
-        self.segments.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for OneBotMessage {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Support both array and string formats
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum MessageFormat {
-            Array(Vec<Segment>),
-            String(String),
-        }
-
-        match MessageFormat::deserialize(deserializer)? {
-            MessageFormat::Array(segments) => Ok(OneBotMessage { segments }),
-            MessageFormat::String(cq_string) => Ok(OneBotMessage::from_cq_string(&cq_string)),
-        }
-    }
-}
-
-// ============================================================================
-// Constructors and Builders
-// ============================================================================
-
-impl OneBotMessage {
-    /// Creates a new empty message.
-    pub fn new() -> Self {
-        Self {
-            segments: Vec::new(),
-        }
-    }
-
-    /// Creates a message from a vector of segments.
-    pub fn from_segments(segments: Vec<Segment>) -> Self {
-        Self { segments }
-    }
-
-    /// Creates a message containing only plain text.
-    pub fn from_text(text: impl Into<String>) -> Self {
-        Self {
-            segments: vec![Segment::text(text)],
-        }
-    }
-
-    /// Creates a message from a CQ code string.
-    ///
-    /// Parses the string format into an array of segments.
-    pub fn from_cq_string(cq_string: &str) -> Self {
-        Self {
-            segments: parse_cq_string(cq_string),
-        }
-    }
-
-    // --------------------------------
-    // Builder methods
-    // --------------------------------
-
-    /// Adds a text segment to the message.
-    pub fn text(mut self, text: impl Into<String>) -> Self {
-        self.segments.push(Segment::text(text));
-        self
-    }
-
-    /// Adds a face/emoji segment.
-    pub fn face(mut self, id: i32) -> Self {
-        self.segments.push(Segment::face(id));
-        self
-    }
-
-    /// Adds an image segment.
-    pub fn image(mut self, file: impl Into<String>) -> Self {
-        self.segments.push(Segment::image(file));
-        self
-    }
-
-    /// Adds a flash image segment.
-    pub fn flash_image(mut self, file: impl Into<String>) -> Self {
-        self.segments.push(Segment::flash_image(file));
-        self
-    }
-
-    /// Adds a voice/record segment.
-    pub fn record(mut self, file: impl Into<String>) -> Self {
-        self.segments.push(Segment::record(file));
-        self
-    }
-
-    /// Adds a video segment.
-    pub fn video(mut self, file: impl Into<String>) -> Self {
-        self.segments.push(Segment::video(file));
-        self
-    }
-
-    /// Adds an @mention segment.
-    pub fn at(mut self, qq: i64) -> Self {
-        self.segments.push(Segment::at(qq));
-        self
-    }
-
-    /// Adds an @all segment.
-    pub fn at_all(mut self) -> Self {
-        self.segments.push(Segment::at_all());
-        self
-    }
-
-    /// Adds a rock-paper-scissors segment.
-    pub fn rps(mut self) -> Self {
-        self.segments.push(Segment::rps());
-        self
-    }
-
-    /// Adds a dice segment.
-    pub fn dice(mut self) -> Self {
-        self.segments.push(Segment::dice());
-        self
-    }
-
-    /// Adds a shake segment.
-    pub fn shake(mut self) -> Self {
-        self.segments.push(Segment::shake());
-        self
-    }
-
-    /// Adds a poke segment.
-    pub fn poke(mut self, poke_type: impl Into<String>, id: impl Into<String>) -> Self {
-        self.segments.push(Segment::poke(poke_type, id));
-        self
-    }
-
-    /// Adds a link share segment.
-    pub fn share(mut self, url: impl Into<String>, title: impl Into<String>) -> Self {
-        self.segments.push(Segment::share(url, title));
-        self
-    }
-
-    /// Adds a location segment.
-    pub fn location(mut self, lat: f64, lon: f64) -> Self {
-        self.segments.push(Segment::location(lat, lon));
-        self
-    }
-
-    /// Adds a music share segment.
-    pub fn music(mut self, music_type: impl Into<String>, id: impl Into<String>) -> Self {
-        self.segments.push(Segment::music(music_type, id));
-        self
-    }
-
-    /// Adds a custom music share segment.
-    pub fn music_custom(
-        mut self,
-        url: impl Into<String>,
-        audio: impl Into<String>,
-        title: impl Into<String>,
-    ) -> Self {
-        self.segments.push(Segment::music_custom(url, audio, title));
-        self
-    }
-
-    /// Adds a reply segment.
-    pub fn reply(mut self, id: impl Into<String>) -> Self {
-        self.segments.push(Segment::reply(id));
-        self
-    }
-
-    /// Adds an XML message segment.
-    pub fn xml(mut self, data: impl Into<String>) -> Self {
-        self.segments.push(Segment::xml(data));
-        self
-    }
-
-    /// Adds a JSON message segment.
-    pub fn json(mut self, data: impl Into<String>) -> Self {
-        self.segments.push(Segment::json(data));
-        self
-    }
-
-    /// Adds a raw segment.
-    pub fn segment(mut self, segment: Segment) -> Self {
-        self.segments.push(segment);
-        self
-    }
-
-    /// Appends multiple segments.
-    pub fn append_segments(mut self, segments: impl IntoIterator<Item = Segment>) -> Self {
-        self.segments.extend(segments);
-        self
-    }
-
-    // --------------------------------
-    // Mutable builder methods
-    // --------------------------------
-
-    /// Adds a text segment to the message (mutable).
-    pub fn push_text(&mut self, text: impl Into<String>) -> &mut Self {
-        self.segments.push(Segment::text(text));
-        self
-    }
-
-    /// Adds an @mention segment (mutable).
-    pub fn push_at(&mut self, qq: i64) -> &mut Self {
-        self.segments.push(Segment::at(qq));
-        self
-    }
-
-    /// Adds a segment (mutable).
-    pub fn push(&mut self, segment: Segment) -> &mut Self {
-        self.segments.push(segment);
-        self
-    }
-
-    /// Extends with multiple segments (mutable).
-    pub fn extend(&mut self, segments: impl IntoIterator<Item = Segment>) -> &mut Self {
-        self.segments.extend(segments);
-        self
-    }
-}
-
-// ============================================================================
-// Conversion Methods
-// ============================================================================
-
-impl OneBotMessage {
-    /// Returns the segments as a slice.
-    pub fn segments(&self) -> &[Segment] {
-        &self.segments
-    }
-
-    /// Returns the segments as a mutable slice.
-    pub fn segments_mut(&mut self) -> &mut Vec<Segment> {
-        &mut self.segments
-    }
-
-    /// Converts the message into a vector of segments.
-    pub fn into_segments(self) -> Vec<Segment> {
-        self.segments
-    }
-
+/// Extension trait providing OneBot-specific methods for `Message<Segment>`.
+pub trait OneBotMessageExt {
     /// Converts the message to CQ code string format.
-    pub fn to_cq_string(&self) -> String {
-        self.segments.iter().map(Segment::to_cq_code).collect()
-    }
-
-    /// Returns the first text segment's content, if any.
-    pub fn first_text(&self) -> Option<&str> {
-        self.segments
-            .iter()
-            .find_map(|seg| MessageSegmentTrait::as_text(seg))
-    }
-
-    /// Checks if the message contains only text segments.
-    pub fn is_plain_text(&self) -> bool {
-        self.segments.iter().all(Segment::is_text)
-    }
+    fn to_cq_string(&self) -> String;
 
     /// Returns all @mention QQ numbers in the message.
-    pub fn mentioned_users(&self) -> Vec<i64> {
-        self.segments
-            .iter()
+    fn mentioned_users(&self) -> Vec<i64>;
+
+    /// Checks if the message contains @all.
+    fn mentions_all(&self) -> bool;
+
+    /// Gets the reply message ID if this is a reply.
+    fn reply_to(&self) -> Option<&str>;
+}
+
+impl OneBotMessageExt for Message<Segment> {
+    fn to_cq_string(&self) -> String {
+        self.iter().map(Segment::to_cq_code).collect()
+    }
+
+    fn mentioned_users(&self) -> Vec<i64> {
+        self.iter()
             .filter_map(|seg| {
                 if let Segment::At(data) = seg {
                     if data.qq == "all" {
@@ -356,16 +81,13 @@ impl OneBotMessage {
             .collect()
     }
 
-    /// Checks if the message contains @all.
-    pub fn mentions_all(&self) -> bool {
-        self.segments
-            .iter()
+    fn mentions_all(&self) -> bool {
+        self.iter()
             .any(|seg| matches!(seg, Segment::At(data) if data.qq == "all"))
     }
 
-    /// Gets the reply message ID if this is a reply.
-    pub fn reply_to(&self) -> Option<&str> {
-        self.segments.iter().find_map(|seg| {
+    fn reply_to(&self) -> Option<&str> {
+        self.iter().find_map(|seg| {
             if let Segment::Reply(data) = seg {
                 Some(data.id.as_str())
             } else {
@@ -376,58 +98,42 @@ impl OneBotMessage {
 }
 
 // ============================================================================
-// From implementations
+// Serde helpers (for use with #[serde(with = "...")])
 // ============================================================================
 
-impl From<Vec<Segment>> for OneBotMessage {
-    fn from(segments: Vec<Segment>) -> Self {
-        Self { segments }
-    }
-}
+/// Serde helper module for OneBot message serialization.
+///
+/// Use with `#[serde(with = "crate::model::message::serde_message")]` on message fields.
+pub mod serde_message {
+    use super::*;
 
-impl From<Segment> for OneBotMessage {
-    fn from(segment: Segment) -> Self {
-        Self {
-            segments: vec![segment],
+    pub fn serialize<S>(msg: &Message<Segment>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Always serialize as array format (serialize the slice, not the struct)
+        (&msg[..]).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Message<Segment>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Support both array and string formats
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum MessageFormat {
+            Array(Vec<Segment>),
+            String(String),
         }
-    }
-}
 
-impl From<&str> for OneBotMessage {
-    fn from(text: &str) -> Self {
-        Self::from_text(text)
-    }
-}
-
-impl From<String> for OneBotMessage {
-    fn from(text: String) -> Self {
-        Self::from_text(text)
-    }
-}
-
-impl FromIterator<Segment> for OneBotMessage {
-    fn from_iter<T: IntoIterator<Item = Segment>>(iter: T) -> Self {
-        Self {
-            segments: iter.into_iter().collect(),
+        match MessageFormat::deserialize(deserializer)? {
+            MessageFormat::Array(segments) => Ok(Message::from_segments(segments)),
+            MessageFormat::String(cq_string) => {
+                let segments = super::parse_cq_string(&cq_string);
+                Ok(Message::from_segments(segments))
+            }
         }
-    }
-}
-
-impl IntoIterator for OneBotMessage {
-    type Item = Segment;
-    type IntoIter = std::vec::IntoIter<Segment>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.segments.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a OneBotMessage {
-    type Item = &'a Segment;
-    type IntoIter = std::slice::Iter<'a, Segment>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.segments.iter()
     }
 }
 
@@ -637,8 +343,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_message_builder() {
-        let msg = OneBotMessage::new().text("Hello, ").at(10001000).text("!");
+    fn test_message_creation() {
+        let msg = OneBotMessage::from_segments(vec![
+            Segment::text("Hello, "),
+            Segment::at(10001000),
+            Segment::text("!"),
+        ]);
 
         assert_eq!(msg.len(), 3);
         assert_eq!(msg.extract_plain_text(), "Hello, !");
@@ -646,8 +356,9 @@ mod tests {
 
     #[test]
     fn test_message_serialize_array() {
-        let msg = OneBotMessage::new().text("Hello").face(178);
-        let json = serde_json::to_string(&msg).unwrap();
+        let msg = OneBotMessage::from_segments(vec![Segment::text("Hello"), Segment::face(178)]);
+        // Serialize using slice to get array format
+        let json = serde_json::to_string(&msg[..]).unwrap();
         assert_eq!(
             json,
             r#"[{"type":"text","data":{"text":"Hello"}},{"type":"face","data":{"id":"178"}}]"#
@@ -658,7 +369,8 @@ mod tests {
     fn test_message_deserialize_array() {
         let json =
             r#"[{"type":"text","data":{"text":"Hello"}},{"type":"at","data":{"qq":"10001000"}}]"#;
-        let msg: OneBotMessage = serde_json::from_str(json).unwrap();
+        let msg =
+            serde_message::deserialize(&mut serde_json::Deserializer::from_str(json)).unwrap();
         assert_eq!(msg.len(), 2);
         assert_eq!(msg.extract_plain_text(), "Hello");
     }
@@ -666,7 +378,8 @@ mod tests {
     #[test]
     fn test_message_deserialize_string() {
         let json = r#""Hello [CQ:face,id=178] World""#;
-        let msg: OneBotMessage = serde_json::from_str(json).unwrap();
+        let msg =
+            serde_message::deserialize(&mut serde_json::Deserializer::from_str(json)).unwrap();
         assert_eq!(msg.len(), 3);
         assert_eq!(msg.extract_plain_text(), "Hello  World");
     }
@@ -691,17 +404,22 @@ mod tests {
 
     #[test]
     fn test_to_cq_string() {
-        let msg = OneBotMessage::new().text("Hello ").face(178).text(" World");
+        let msg = OneBotMessage::from_segments(vec![
+            Segment::text("Hello "),
+            Segment::face(178),
+            Segment::text(" World"),
+        ]);
         assert_eq!(msg.to_cq_string(), "Hello [CQ:face,id=178] World");
     }
 
     #[test]
     fn test_mentioned_users() {
-        let msg = OneBotMessage::new()
-            .at(10001000)
-            .text(" and ")
-            .at(10001001)
-            .at_all();
+        let msg = OneBotMessage::from_segments(vec![
+            Segment::at(10001000),
+            Segment::text(" and "),
+            Segment::at(10001001),
+            Segment::at_all(),
+        ]);
 
         let users = msg.mentioned_users();
         assert_eq!(users, vec![10001000, 10001001]);
@@ -710,42 +428,37 @@ mod tests {
 
     #[test]
     fn test_reply_to() {
-        let msg = OneBotMessage::new().reply("12345").text("This is a reply");
+        let msg = OneBotMessage::from_segments(vec![
+            Segment::reply("12345"),
+            Segment::text("This is a reply"),
+        ]);
 
         assert_eq!(msg.reply_to(), Some("12345"));
     }
 
     #[test]
-    fn test_message_trait() {
-        let msg = OneBotMessage::new()
-            .text("Hello")
-            .image("test.jpg")
-            .text(" World");
+    fn test_message_methods() {
+        let msg = OneBotMessage::from_segments(vec![
+            Segment::text("Hello"),
+            Segment::image("test.jpg"),
+            Segment::text(" World"),
+        ]);
 
-        // Test Message trait methods
+        // Test Message core methods
         assert_eq!(msg.len(), 3);
         assert!(!msg.is_empty());
         assert_eq!(msg.extract_plain_text(), "Hello World");
-        assert_eq!(msg.as_slice().len(), 3);
+        assert_eq!(msg.len(), 3);
     }
 
     #[test]
-    fn test_from_implementations() {
-        // From &str
-        let msg: OneBotMessage = "Hello".into();
-        assert_eq!(msg.extract_plain_text(), "Hello");
+    fn test_extension_trait() {
+        let msg = OneBotMessage::from_segments(vec![Segment::text("Plain text")]);
 
-        // From String
-        let msg: OneBotMessage = String::from("World").into();
-        assert_eq!(msg.extract_plain_text(), "World");
-
-        // From Segment
-        let msg: OneBotMessage = Segment::face(178).into();
-        assert_eq!(msg.len(), 1);
-
-        // From Vec<Segment>
-        let msg: OneBotMessage = vec![Segment::text("A"), Segment::text("B")].into();
-        assert_eq!(msg.len(), 2);
+        // Test extension trait methods
+        assert_eq!(msg.mentioned_users(), Vec::<i64>::new());
+        assert!(!msg.mentions_all());
+        assert_eq!(msg.reply_to(), None);
     }
 
     #[test]

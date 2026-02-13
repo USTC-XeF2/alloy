@@ -1,18 +1,62 @@
-//! Message traits for the Alloy framework.
+//! Message types for the Alloy framework.
 //!
-//! This module provides the core message abstraction traits that enable
+//! This module provides the core message abstraction that enables
 //! cross-protocol message handling.
 //!
 //! # Architecture
 //!
 //! The message system is built around two core abstractions:
-//! - [`MessageSegment`]: A single unit of content (text, image, etc.)
-//! - [`Message`]: A collection of message segments forming a complete message
+//! - [`MessageSegment`]: A trait for a single unit of content (text, image, etc.)
+//! - [`Message<S>`]: A generic struct holding a collection of segments
 //!
-//! Protocol adapters implement these traits to provide uniform message handling
-//! across different chat protocols.
+//! Protocol adapters define their own segment types and use `Message<TheirSegment>`.
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use alloy_core::{Message, MessageSegment};
+//!
+//! // Define your segment type
+//! #[derive(Debug, Clone)]
+//! enum MySegment {
+//!     Text(String),
+//!     Image(String),
+//! }
+//!
+//! impl MessageSegment for MySegment {
+//!     fn segment_type(&self) -> &str {
+//!         match self {
+//!             MySegment::Text(_) => "text",
+//!             MySegment::Image(_) => "image",
+//!         }
+//!     }
+//!     
+//!     fn as_text(&self) -> Option<&str> {
+//!         match self {
+//!             MySegment::Text(s) => Some(s),
+//!             _ => None,
+//!         }
+//!     }
+//!     
+//!     fn display(&self) -> String {
+//!         match self {
+//!             MySegment::Text(s) => s.clone(),
+//!             MySegment::Image(url) => format!("[Image: {}]", url),
+//!         }
+//!     }
+//! }
+//!
+//! // Use the generic Message type
+//! type MyMessage = Message<MySegment>;
+//!
+//! let msg = MyMessage::new()
+//!     .push(MySegment::Text("Hello".to_string()))
+//!     .push(MySegment::Image("http://...".to_string()));
+//! ```
 
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 
 // ============================================================================
 // Message Segment Trait
@@ -23,18 +67,7 @@ use std::fmt::Debug;
 /// A message segment is the smallest unit of content in a message.
 /// It can be plain text, an image, an emoji, a mention, etc.
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy_core::MessageSegment;
-///
-/// fn process_segment<S: MessageSegment>(segment: &S) {
-///     println!("Segment type: {}", segment.segment_type());
-///     if segment.is_text() {
-///         println!("Text content: {:?}", segment.as_text());
-///     }
-/// }
-/// ```
+/// Protocol adapters should implement this trait for their segment types.
 pub trait MessageSegment: Debug + Clone + Send + Sync + 'static {
     /// Returns the type identifier of this segment (e.g., "text", "image", "at").
     fn segment_type(&self) -> &str;
@@ -52,59 +85,103 @@ pub trait MessageSegment: Debug + Clone + Send + Sync + 'static {
 }
 
 // ============================================================================
-// Message Trait
+// Message Generic Struct
 // ============================================================================
 
-/// A trait representing a complete message composed of segments.
+/// A generic message type composed of segments.
 ///
-/// A message is a sequence of [`MessageSegment`]s that together form
-/// the complete content of a chat message.
+/// This struct provides common message functionality for all adapters.
+/// Each adapter uses `Message<TheirSegmentType>` and can implement
+/// adapter-specific methods via `impl Message<TheirSegment>`.
 ///
-/// # Example
+/// # Type Parameters
 ///
-/// ```rust,ignore
-/// use alloy_core::Message;
-///
-/// fn process_message<M: Message>(msg: &M) {
-///     println!("Message has {} segments", msg.len());
-///     println!("Plain text: {}", msg.extract_plain_text());
-///     
-///     for segment in msg.iter() {
-///         println!("- {}: {}", segment.segment_type(), segment.display());
-///     }
-/// }
-/// ```
-pub trait Message: Debug + Clone + Send + Sync + 'static {
-    /// The segment type used by this message.
-    type Segment: MessageSegment;
+/// - `S`: The segment type, must implement [`MessageSegment`]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Message<S: MessageSegment> {
+    #[serde(bound(deserialize = "S: Deserialize<'de>"))]
+    segments: Vec<S>,
+}
 
-    /// Returns an iterator over the message segments.
-    fn iter(&self) -> impl Iterator<Item = &Self::Segment>;
+impl<S: MessageSegment> Message<S> {
+    /// Creates a new empty message.
+    pub const fn new() -> Self {
+        Self {
+            segments: Vec::new(),
+        }
+    }
 
-    /// Returns the number of segments in the message.
-    fn len(&self) -> usize;
-
-    /// Returns true if the message has no segments.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
+    /// Creates a message from a vector of segments.
+    pub fn from_segments(segments: Vec<S>) -> Self {
+        Self { segments }
     }
 
     /// Extracts all plain text content from the message.
     ///
     /// This concatenates the text content of all text segments,
     /// ignoring non-text segments like images or mentions.
-    fn extract_plain_text(&self) -> String {
-        self.iter()
-            .filter_map(|seg| seg.as_text())
-            .collect::<Vec<_>>()
-            .join("")
+    pub fn extract_plain_text(&self) -> String {
+        self.iter().filter_map(|seg| seg.as_text()).collect()
     }
 
     /// Returns a display string representation of the entire message.
-    fn display(&self) -> String {
+    pub fn display(&self) -> String {
         self.iter().map(MessageSegment::display).collect()
     }
 
-    /// Returns the segments as a slice (if the underlying storage supports it).
-    fn as_slice(&self) -> &[Self::Segment];
+    /// Adds a segment to the end of the message.
+    pub fn push(&mut self, segment: S) {
+        self.segments.push(segment);
+    }
+
+    /// Consumes the message and adds a segment (builder pattern).
+    pub fn with(mut self, segment: S) -> Self {
+        self.segments.push(segment);
+        self
+    }
+
+    /// Consumes the message and returns the inner segments vector.
+    pub fn into_segments(self) -> Vec<S> {
+        self.segments
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Deref implementations
+// ══════════════════════════════════════════════════════════════════════════════
+
+impl<S: MessageSegment> Deref for Message<S> {
+    type Target = [S];
+
+    fn deref(&self) -> &Self::Target {
+        &self.segments
+    }
+}
+
+impl<S: MessageSegment> DerefMut for Message<S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.segments
+    }
+}
+
+impl<S: MessageSegment> From<Vec<S>> for Message<S> {
+    fn from(segments: Vec<S>) -> Self {
+        Self { segments }
+    }
+}
+
+impl<S: MessageSegment> From<S> for Message<S> {
+    fn from(segment: S) -> Self {
+        Self {
+            segments: vec![segment],
+        }
+    }
+}
+
+impl<S: MessageSegment> FromIterator<S> for Message<S> {
+    fn from_iter<T: IntoIterator<Item = S>>(iter: T) -> Self {
+        Self {
+            segments: iter.into_iter().collect(),
+        }
+    }
 }
