@@ -283,17 +283,12 @@ fn generate_root_event(
         quote! {}
     };
 
-    let (segment_type_impl, get_message_impl, get_plain_text_impl);
+    let (segment_type_impl, get_message_impl);
     if let Some((ref mf, ref _mft)) = message_field {
         segment_type_impl = quote! { type Segment = #seg_ty; };
         get_message_impl = quote! {
             fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
                 &self.#mf
-            }
-        };
-        get_plain_text_impl = quote! {
-            fn get_plain_text(&self) -> String {
-                self.#mf.extract_plain_text()
             }
         };
     } else {
@@ -304,7 +299,6 @@ fn generate_root_event(
                 EMPTY.get_or_init(|| ::alloy_core::Message::new())
             }
         };
-        get_plain_text_impl = quote! {};
     }
 
     let from_event_impl = quote! {
@@ -337,7 +331,6 @@ fn generate_root_event(
             #bot_id_impl
             #segment_type_impl
             #get_message_impl
-            #get_plain_text_impl
         }
     };
 
@@ -423,7 +416,7 @@ fn generate_child_event(
     };
 
     // ── message type / get_message / get_plain_text ──
-    let (segment_type_impl, get_message_impl, get_plain_text_impl);
+    let (segment_type_impl, get_message_impl);
     if let Some((ref mf, ref _mt)) = message_field {
         segment_type_impl = quote! {
             type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
@@ -433,11 +426,6 @@ fn generate_child_event(
                 &self.#mf
             }
         };
-        get_plain_text_impl = quote! {
-            fn get_plain_text(&self) -> String {
-                self.#mf.extract_plain_text()
-            }
-        };
     } else {
         segment_type_impl = quote! {
             type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
@@ -445,11 +433,6 @@ fn generate_child_event(
         get_message_impl = quote! {
             fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
                 <#parent_ty as ::alloy_core::Event>::get_message(&self.#parent_field_ident)
-            }
-        };
-        get_plain_text_impl = quote! {
-            fn get_plain_text(&self) -> String {
-                <#parent_ty as ::alloy_core::Event>::get_plain_text(&self.#parent_field_ident)
             }
         };
     }
@@ -500,7 +483,6 @@ fn generate_child_event(
             #bot_id_impl
             #segment_type_impl
             #get_message_impl
-            #get_plain_text_impl
         }
     };
 

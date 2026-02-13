@@ -59,6 +59,46 @@ use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 
 // ============================================================================
+// Rich Text Segment
+// ============================================================================
+
+/// A platform-agnostic rich text segment.
+///
+/// This enum provides a unified representation of message segments across
+/// all adapters. Adapters can convert their platform-specific segments
+/// into `RichTextSegment` via [`MessageSegment::as_rich_text()`].
+///
+/// # Variants
+///
+/// - `Text`: Plain text content
+/// - `Image`: An image, identified by a platform-specific reference string
+/// - `At`: A user mention, identified by a user ID string
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use alloy_core::RichTextSegment;
+///
+/// let segments: Vec<RichTextSegment> = vec![
+///     RichTextSegment::Text("Hello ".into()),
+///     RichTextSegment::At("12345".into()),
+///     RichTextSegment::Text(" check this: ".into()),
+///     RichTextSegment::Image("abc.jpg".into()),
+/// ];
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RichTextSegment {
+    /// Plain text content.
+    Text(String),
+    /// An image segment. The string is a platform-specific reference
+    /// (file path, URL, base64, etc.).
+    Image(String),
+    /// A user mention. The string is the user identifier
+    /// (e.g., QQ number, Discord user ID).
+    At(String),
+}
+
+// ============================================================================
 // Message Segment Trait
 // ============================================================================
 
@@ -82,6 +122,31 @@ pub trait MessageSegment: Debug + Clone + Send + Sync + 'static {
 
     /// Returns a string representation suitable for display.
     fn display(&self) -> String;
+
+    /// Converts this segment into a platform-agnostic [`RichTextSegment`].
+    ///
+    /// The default implementation returns `RichTextSegment::Text` using
+    /// [`as_text()`](MessageSegment::as_text) (or an empty string for non-text segments).
+    /// Adapters should override this to properly convert image and at-mention
+    /// segments into their rich-text equivalents.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// impl MessageSegment for MySegment {
+    ///     fn as_rich_text(&self) -> RichTextSegment {
+    ///         match self {
+    ///             MySegment::Text(s) => RichTextSegment::Text(s.clone()),
+    ///             MySegment::Image(data) => RichTextSegment::Image(data.file.clone()),
+    ///             MySegment::At(data) => RichTextSegment::At(data.id.clone()),
+    ///             _ => RichTextSegment::Text(self.display()),
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    fn as_rich_text(&self) -> RichTextSegment {
+        RichTextSegment::Text(self.as_text().unwrap_or_default().to_string())
+    }
 }
 
 // ============================================================================
@@ -122,6 +187,14 @@ impl<S: MessageSegment> Message<S> {
     /// ignoring non-text segments like images or mentions.
     pub fn extract_plain_text(&self) -> String {
         self.iter().filter_map(|seg| seg.as_text()).collect()
+    }
+
+    /// Extracts rich text segments from the message.
+    ///
+    /// Converts each platform-specific segment into a [`RichTextSegment`]
+    /// using [`MessageSegment::as_rich_text()`].
+    pub fn extract_rich_text(&self) -> Vec<RichTextSegment> {
+        self.iter().map(|seg| seg.as_rich_text()).collect()
     }
 
     /// Returns a display string representation of the entire message.

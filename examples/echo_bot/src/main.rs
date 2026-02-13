@@ -18,10 +18,6 @@ use tracing::{error, info};
 
 // --- Command Definitions ---
 
-// An empty command with no arguments.
-#[derive(Parser, Debug, Clone)]
-pub struct EmptyCommand;
-
 /// Arguments for the `/echo` command.
 #[derive(Parser, Debug, Clone)]
 struct EchoCommand {
@@ -29,23 +25,12 @@ struct EchoCommand {
     text: Vec<String>,
 }
 
-/// Arguments for the `/calc` command, supporting various mathematical operations.
-///
-/// Example usage:
-/// - `/calc add 5 10`
-/// - `/calc multiply 3 4`
+/// Arguments for the `/info` command.
 #[derive(Parser, Debug, Clone)]
-struct CalcCommand {
-    #[command(subcommand)]
-    operation: CalcOperation,
-}
-
-#[derive(Parser, Debug, Clone)]
-enum CalcOperation {
-    /// Adds two integers.
-    Add { a: i32, b: i32 },
-    /// Multiplies two integers.
-    Multiply { a: i32, b: i32 },
+struct InfoCommand {
+    /// Optional user to query. Uses @mention syntax.
+    #[arg(short, long)]
+    user: Option<AtSegment>,
 }
 
 // --- Event Handlers ---
@@ -79,68 +64,58 @@ async fn echo_handler(
     }
 }
 
-/// Handles the `/ping` command with a "Pong!" response.
-async fn ping_handler(event: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    if let Err(e) = bot.send(event.as_event(), "Pong! 🏓").await {
-        error!("Failed to send ping reply: {:?}", e);
-    }
-}
-
-/// Displays information about the current message and its sender.
-async fn info_handler(event: EventContext<MessageEvent>, bot: Arc<OneBotBot>) {
-    let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
-
-    let info_text = format!(
-        "📋 Message Info\n\
-        • From: {} ({})\n\
-        • Message ID: {}\n\
-        • Type: {}",
-        nickname, event.user_id, event.message_id, event.message_type
-    );
-
-    if let Err(e) = bot.send(event.as_event(), &info_text).await {
-        error!("Failed to send info message: {:?}", e);
-    }
-}
-
-/// A handler that only responds to group messages.
+/// Displays information about the current group and optionally queries a specific member.
 ///
-/// By using `EventContext<GroupMessageEvent>`, this handler will only be
-/// triggered when the event is a group message. Alloy's dispatcher handles
-/// this filtering automatically.
-async fn group_only_handler(event: EventContext<GroupMessageEvent>, bot: Arc<OneBotBot>) {
-    let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
-    let response = format!(
-        "✅ This is a group-only command!\n\
-            • Group ID: {}\n\
-            • User: {} ({})",
-        event.group_id, nickname, event.user_id
-    );
-
-    if let Err(e) = bot.send(event.as_event(), &response).await {
-        error!("Failed to send group-only response: {:?}", e);
-    }
-}
-
-/// A subcommand-based handler for mathematical calculations.
-async fn calc_handler(
-    event: EventContext<MessageEvent>,
+/// This handler only works in group channels. If no user is specified with `--user`,
+/// it displays group information. If a user is specified (using @mention syntax),
+/// it queries member information via the OneBot API.
+async fn info_handler(
+    event: EventContext<GroupMessageEvent>,
     bot: Arc<OneBotBot>,
-    cmd: CommandArgs<CalcCommand>,
+    cmd: CommandArgs<InfoCommand>,
 ) {
-    let response = match &cmd.operation {
-        CalcOperation::Add { a, b } => {
-            let result = a + b;
-            format!("➕ {a} + {b} = {result}")
+    let info_text = if let Some(user_id) = &cmd.user {
+        // Parse user ID and query member information
+        match user_id.parse::<i64>() {
+            Ok(parsed_id) => {
+                match bot
+                    .get_group_member_info(event.group_id, parsed_id, false)
+                    .await
+                {
+                    Ok(member) => {
+                        format!(
+                            "Member Info\n\
+                             • Name: {}\n\
+                             • User ID: {}\n\
+                             • Title: {}\n\
+                             • Joined: {}",
+                            member.nickname, member.user_id, member.title, member.join_time
+                        )
+                    }
+                    Err(e) => {
+                        error!("Failed to query member info: {:?}", e);
+                        "Failed to query member information".to_string()
+                    }
+                }
+            }
+            Err(_) => "Invalid user ID".to_string(),
         }
-        CalcOperation::Multiply { a, b } => {
-            let result = a * b;
-            format!("✖️ {a} × {b} = {result}")
-        }
+    } else {
+        // Display group information
+        let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
+
+        format!(
+            "Group Info\n\
+             • Group ID: {}\n\
+             • From: {} ({})\n\
+             • Message ID: {}\n\
+             • Type: {}",
+            event.group_id, nickname, event.user_id, event.message_id, event.message_type
+        )
     };
 
-    if let Err(e) = bot.send(event.as_event(), &response).await {
-        error!("Failed to send calc result: {:?}", e);
+    if let Err(e) = bot.send(event.as_event(), &info_text).await {
+        error!("Failed to send message: {:?}", e);
     }
 }
 
@@ -165,10 +140,7 @@ async fn main() -> Result<()> {
             // Command matchers use `on_command` to bridge message text and structured data.
             // They automatically handle prefix stripping and parsing.
             on_command::<EchoCommand>("echo").handler(echo_handler),
-            on_command::<EmptyCommand>("ping").handler(ping_handler),
-            on_command::<EmptyCommand>("info").handler(info_handler),
-            on_command::<EmptyCommand>("group").handler(group_only_handler),
-            on_command::<CalcCommand>("calc").handler(calc_handler),
+            on_command::<InfoCommand>("info").handler(info_handler),
         ])
         .await;
 

@@ -29,8 +29,8 @@ pub mod integration;
 
 // Re-export foundation types
 pub use foundation::{
-    AlloyContext, BoxedEvent, Event, EventContext, EventType, ExtractError, FromEvent, Message,
-    MessageSegment,
+    AlloyContext, AsText, BoxedEvent, Event, EventContext, EventType, ExtractError, FromEvent,
+    Message, MessageSegment, RichTextSegment,
 };
 
 // Re-export integration types

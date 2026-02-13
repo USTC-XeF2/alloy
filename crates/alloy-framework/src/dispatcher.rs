@@ -142,12 +142,29 @@ impl std::fmt::Debug for Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_core::Event;
     use alloy_core::{ApiError, ApiResult, Bot};
+    use alloy_core::{Event, MessageSegment};
     use async_trait::async_trait;
     use serde_json::Value;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Clone)]
+    struct TestSegment;
+
+    impl MessageSegment for TestSegment {
+        fn segment_type(&self) -> &str {
+            "text"
+        }
+
+        fn as_text(&self) -> Option<&str> {
+            Some("")
+        }
+
+        fn display(&self) -> String {
+            String::new()
+        }
+    }
 
     struct TestEvent {
         name: &'static str,
@@ -165,6 +182,8 @@ mod tests {
         fn as_any(&self) -> &dyn Any {
             self
         }
+
+        type Segment = TestSegment;
     }
 
     struct MockBot;

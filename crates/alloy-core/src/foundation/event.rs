@@ -66,6 +66,55 @@ impl EventType {
 }
 
 // ============================================================================
+// Text Extraction Trait
+// ============================================================================
+
+/// Trait for extracting text content from events.
+///
+/// This trait is automatically implemented for all types that implement [`Event`].
+/// It provides an object-safe way to extract both plain text and rich text content
+/// from events, even when accessed through a trait object.
+///
+/// # Type Safety
+///
+/// While `AsText` itself is object-safe and can be used with `dyn AsText`,
+/// the blanket implementation `impl<E: Event> AsText for E` leverages the fact
+/// that concrete types are `Sized` to safely call `get_message()`. This means:
+///
+/// - Direct calls on concrete types: Always works
+/// - Calls through `&dyn AsText`: Always works
+/// - Calls through `&dyn Event`: Not available (use downcasting or trait casting if needed)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use alloy_core::{Event, AsText};
+///
+/// fn process_events(events: Vec<Box<dyn AsText>>) {
+///     for event in events {
+///         println!("Plain: {}", event.get_plain_text());
+///         for seg in event.get_rich_text() {
+///             println!("  {:?}", seg);
+///         }
+///     }
+/// }
+/// ```
+pub trait AsText: Send + Sync {
+    /// Extracts plain text from the event's message.
+    ///
+    /// For message events, this returns the concatenated text content of all
+    /// text segments. For non-message events, returns an empty string.
+    fn get_plain_text(&self) -> String;
+
+    /// Extracts rich text segments from the event's message.
+    ///
+    /// Returns a vector of [`RichTextSegment`] representing the full message
+    /// content including images, mentions, and text. For non-message events,
+    /// returns an empty vector.
+    fn get_rich_text(&self) -> Vec<super::message::RichTextSegment>;
+}
+
+// ============================================================================
 // Core Event Trait
 // ============================================================================
 
@@ -74,6 +123,9 @@ impl EventType {
 /// Events are type-erased using `dyn Event` and can be downcast to concrete
 /// types using `as_any()`. Raw JSON is preserved to enable Clap-like extraction
 /// at any hierarchy level via `FromEvent`.
+///
+/// All events automatically implement [`AsText`], which provides the
+/// `get_plain_text()` and `get_rich_text()` methods in a type-safe way.
 ///
 /// # Derive Macro
 ///
@@ -87,7 +139,7 @@ impl EventType {
 ///     Group(GroupMessage),
 /// }
 /// ```
-pub trait Event: Any + Send + Sync {
+pub trait Event: AsText + Any + Send + Sync {
     /// Returns the human-readable name of this event type.
     fn event_name(&self) -> &'static str;
 
@@ -148,15 +200,25 @@ pub trait Event: Any + Send + Sync {
         // The macro will generate proper implementations.
         panic!("get_message() called on event without message field - macro should override this")
     }
+}
 
-    /// Extracts plain text from the event's message, if applicable.
-    ///
-    /// For message events, this returns the message content.
-    /// For other events, this returns an empty string by default.
-    ///
-    /// This method is object-safe and can be called through `dyn Event`.
+// ============================================================================
+// AsText Blanket Implementation
+// ============================================================================
+
+/// Automatic implementation of [`AsText`] for all [`Event`] types.
+///
+/// This blanket implementation safely leverages the `Sized` bound on concrete
+/// types to call `get_message()` and extract text. While both `Event`
+/// and `AsText` are object-safe on their own, this implementation ensures
+/// that whenever you use `&dyn AsText`, you get the correct behavior.
+impl<E: Event> AsText for E {
     fn get_plain_text(&self) -> String {
-        String::new()
+        self.get_message().extract_plain_text()
+    }
+
+    fn get_rich_text(&self) -> Vec<super::message::RichTextSegment> {
+        self.get_message().extract_rich_text()
     }
 }
 

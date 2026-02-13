@@ -30,4 +30,4 @@ pub use matcher::{CheckFn, Matcher, MatcherResponse};
 pub use matcher_builders::{on_message, on_meta, on_notice, on_request};
 
 #[cfg(feature = "command")]
-pub use command::{CommandArgs, on_command};
+pub use command::{AtSegment, CommandArgs, ImageSegment, on_command};

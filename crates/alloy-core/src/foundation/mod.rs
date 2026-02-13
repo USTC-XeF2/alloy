@@ -15,5 +15,5 @@ pub use context::AlloyContext;
 pub use error::{
     AdapterError, AdapterResult, ExtractError, ExtractResult, TransportError, TransportResult,
 };
-pub use event::{BoxedEvent, Event, EventContext, EventType, FromEvent};
-pub use message::{Message, MessageSegment};
+pub use event::{AsText, BoxedEvent, Event, EventContext, EventType, FromEvent};
+pub use message::{Message, MessageSegment, RichTextSegment};

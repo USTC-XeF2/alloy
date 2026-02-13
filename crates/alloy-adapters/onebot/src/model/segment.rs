@@ -23,6 +23,7 @@
 //! ```
 
 use alloy_core::MessageSegment as MessageSegmentTrait;
+use alloy_core::RichTextSegment;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -141,6 +142,15 @@ impl MessageSegmentTrait for Segment {
             Segment::Node(_) => "[转发节点]".to_string(),
             Segment::Xml(_) => "[XML消息]".to_string(),
             Segment::Json(_) => "[JSON消息]".to_string(),
+        }
+    }
+
+    fn as_rich_text(&self) -> RichTextSegment {
+        match self {
+            Segment::Text(data) => RichTextSegment::Text(data.text.clone()),
+            Segment::Image(data) => RichTextSegment::Image(data.file.clone()),
+            Segment::At(data) => RichTextSegment::At(data.qq.clone()),
+            _ => RichTextSegment::Text(self.display()),
         }
     }
 }
@@ -411,30 +421,6 @@ impl Segment {
     /// Creates a JSON message segment.
     pub fn json(data: impl Into<String>) -> Self {
         Segment::Json(JsonData { data: data.into() })
-    }
-
-    // --------------------------------
-    // Type checking helpers
-    // --------------------------------
-
-    /// Checks if this is a text segment.
-    pub fn is_text(&self) -> bool {
-        matches!(self, Segment::Text(_))
-    }
-
-    /// Checks if this is an image segment.
-    pub fn is_image(&self) -> bool {
-        matches!(self, Segment::Image(_))
-    }
-
-    /// Checks if this is an at mention segment.
-    pub fn is_at(&self) -> bool {
-        matches!(self, Segment::At(_))
-    }
-
-    /// Checks if this is a reply segment.
-    pub fn is_reply(&self) -> bool {
-        matches!(self, Segment::Reply(_))
     }
 }
 
@@ -941,8 +927,6 @@ mod tests {
 
     #[test]
     fn test_message_segment_trait() {
-        use alloy_core::MessageSegment as _;
-
         let text = Segment::text("Hello");
         assert_eq!(text.segment_type(), "text");
         assert!(text.is_text());
