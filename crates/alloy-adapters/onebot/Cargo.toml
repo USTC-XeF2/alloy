@@ -8,7 +8,6 @@ license = { workspace = true }
 
 [dependencies]
 alloy-core = { path = "../../alloy-core" }
-alloy-framework = { path = "../../alloy-framework" }
 alloy-macros = { path = "../../alloy-macros" }
 anyhow = "1.0.101"
 async-trait = "0.1.89"

@@ -54,9 +54,10 @@
 //!     .push(MySegment::Image("http://...".to_string()));
 //! ```
 
-use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
+
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Rich Text Segment

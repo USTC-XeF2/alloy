@@ -107,10 +107,7 @@ impl OneBotBot {
         let request_bytes = serde_json::to_vec(&request)
             .map_err(|e| ApiError::SerializationError(e.to_string()))?;
 
-        self.connection
-            .send(request_bytes)
-            .await
-            .map_err(|e| ApiError::TransportError(e.to_string()))?;
+        self.connection.send(request_bytes).await?;
 
         // Wait for response with timeout
         match timeout(self.api_timeout, rx).await {

@@ -99,6 +99,36 @@ pub enum AdapterError {
 }
 
 // =============================================================================
+// API Errors
+// =============================================================================
+
+/// Error type for API calls.
+#[derive(Debug, Clone, Error)]
+pub enum ApiError {
+    /// The bot is not connected.
+    #[error("bot is not connected")]
+    NotConnected,
+    /// The API call timed out.
+    #[error("API call timed out")]
+    Timeout,
+    /// The API returned an error.
+    #[error("API error ({retcode}): {message}")]
+    ApiError { retcode: i64, message: String },
+    /// Failed to serialize/deserialize.
+    #[error("serialization error: {0}")]
+    SerializationError(String),
+    /// Transport error.
+    #[error(transparent)]
+    Transport(#[from] TransportError),
+    /// The event does not have the required session information.
+    #[error("missing session info: {0}")]
+    MissingSession(String),
+    /// Other error.
+    #[error("{0}")]
+    Other(String),
+}
+
+// =============================================================================
 // Result Type Aliases
 // =============================================================================
 
@@ -107,3 +137,6 @@ pub type TransportResult<T> = Result<T, TransportError>;
 
 /// Result type for adapter operations.
 pub type AdapterResult<T> = Result<T, AdapterError>;
+
+/// Result type for API calls.
+pub type ApiResult<T> = Result<T, ApiError>;

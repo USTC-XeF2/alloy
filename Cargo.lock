@@ -26,7 +26,6 @@ name = "alloy-adapter-onebot"
 version = "0.1.0"
 dependencies = [
  "alloy-core",
- "alloy-framework",
  "alloy-macros",
  "anyhow",
  "async-trait",

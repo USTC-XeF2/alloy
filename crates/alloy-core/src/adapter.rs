@@ -40,10 +40,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::foundation::error::AdapterResult;
-use crate::integration::capability::{
-    BotManager, ConnectionHandle, ListenerHandle, TransportContext,
-};
+use crate::bot::BotManager;
+use crate::error::AdapterResult;
+use crate::transport::{ConnectionHandle, ListenerHandle, TransportContext};
 
 /// Context provided to adapters during initialization and runtime.
 ///

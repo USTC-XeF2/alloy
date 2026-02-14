@@ -3,8 +3,9 @@
 //! This module defines the transport types and their configurations
 //! at an abstract level. The actual implementations are in `alloy-transport`.
 
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
 
 /// Supported transport types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

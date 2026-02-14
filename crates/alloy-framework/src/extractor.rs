@@ -4,7 +4,7 @@
 //! can be extracted from an [`AlloyContext`] for use as handler parameters.
 
 use crate::error::ExtractError;
-use alloy_core::integration::bot::downcast_bot;
+use alloy_core::bot::downcast_bot;
 use alloy_core::{AlloyContext, Bot, BoxedBot, BoxedEvent, Event, EventContext};
 
 /// A trait for types that can be extracted from an [`AlloyContext`].

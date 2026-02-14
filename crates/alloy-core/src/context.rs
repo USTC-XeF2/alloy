@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::foundation::event::BoxedEvent;
-use crate::integration::bot::BoxedBot;
+use crate::bot::BoxedBot;
+use crate::event::BoxedEvent;
 
 /// The context object passed to handlers during event processing.
 ///

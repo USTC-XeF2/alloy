@@ -6,62 +6,53 @@
 //! specific framework design pattern. Higher-level constructs like dispatchers,
 //! matchers, and convenience functions are in [`alloy-framework`].
 //!
-//! ## Architecture Layers
+//! ## Core Components
 //!
-//! ### Foundation Layer
+//! ### Messages
+//! - **MessageSegment**, **Message**: Cross-protocol message abstraction
 //!
-//! Core abstractions and type system:
-//! - **Event System**: Type-erased events with runtime downcasting ([`Event`], [`BoxedEvent`])
-//! - **Context Management**: Event propagation and state ([`AlloyContext`])
-//! - **Message Abstractions**: Cross-protocol communication ([`Message`], [`MessageSegment`])
+//! ### Transport
+//! - **Capabilities**: Protocol-agnostic transport traits
+//! - **TransportContext**: Capability discovery and registration
+//! - **Connections**: Connection lifecycle and configuration
 //!
-//! ### Integration Layer
+//! ### Events
+//! - **Event**: Type-erased event trait for protocol-specific types
+//! - **EventType**: Event classification system
+//! - **EventContext**: Wrapper for extracted event data
 //!
-//! External system interfaces:
-//! - **Adapter System**: Protocol implementations ([`Adapter`])
-//! - **Bot Management**: Bot lifecycle and state ([`Bot`])
-//! - **Capability System**: Transport capabilities ([`TransportContext`])
-//! - **Transport Config**: Configuration types for transports
+//! ### Bots
+//! - **Bot**: Protocol-agnostic bot trait
+//! - **BotManager**: Runtime bot lifecycle management
+//!
+//! ### Context
+//! - **AlloyContext**: Event context with propagation control and bot access
+//!
+//! ### Adapters
+//! - **Adapter**: Protocol implementation trait
+//! - **AdapterContext**: Transport capability access for adapters
 
-// Architectural layers
-pub mod foundation;
-pub mod integration;
+// Core modules
+pub mod adapter;
+pub mod bot;
+pub mod context;
+pub mod error;
+pub mod event;
+pub mod message;
+pub mod transport;
 
-// Re-export foundation types
-pub use foundation::{
-    AdapterError, AdapterResult, AlloyContext, AsText, BoxedEvent, Event, EventContext, EventType,
-    Message, MessageSegment, RichTextSegment, TransportError, TransportResult,
+// Re-export core types for public API
+pub use adapter::{Adapter, AdapterContext, BoxedAdapter, ConfigurableAdapter};
+pub use bot::{Bot, BotManager, BotMessage, BoxedBot, downcast_bot};
+pub use context::AlloyContext;
+pub use error::{
+    AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };
-
-// Re-export integration types
-pub use integration::{
-    Adapter,
-    AdapterContext,
-    ApiError,
-    ApiResult,
-    Bot,
-    BotManager,
-    BoxedAdapter,
-    BoxedBot,
-    // Capability types needed by transports
-    BoxedConnectionHandler,
-    ClientConfig,
-    ConfigurableAdapter,
-    ConnectionHandle,
-    ConnectionHandler,
-    ConnectionInfo,
-    HttpClientCapability,
-    HttpClientConfig,
-    HttpServerCapability,
-    HttpServerConfig,
-    ListenerHandle,
-    // Transport configuration types (used by runtime and adapters)
-    RetryConfig,
-    TransportConfig,
-    TransportContext,
-    TransportType,
-    WsClientCapability,
-    WsClientConfig,
-    WsServerCapability,
-    WsServerConfig,
+pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
+pub use message::{Message, MessageSegment, RichTextSegment};
+pub use transport::{
+    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo,
+    HttpClientCapability, HttpClientConfig, HttpServerCapability, HttpServerConfig, ListenerHandle,
+    MessageHandler, RetryConfig, TransportConfig, TransportContext, TransportType,
+    WsClientCapability, WsClientConfig, WsServerCapability, WsServerConfig,
 };
