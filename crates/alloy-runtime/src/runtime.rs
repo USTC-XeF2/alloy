@@ -233,23 +233,20 @@ impl AlloyRuntime {
         let adapter_name = A::name();
 
         // Try to get config from file, otherwise use default
-        let config: A::Config = match self.config.adapters.get(adapter_name) {
-            Some(config_value) => {
-                // Deserialize from config
-                config_value.clone().deserialize().map_err(|e| {
-                    RuntimeError::AdapterConfigDeserialize(format!(
-                        "Failed to deserialize config for adapter '{adapter_name}': {e}"
-                    ))
-                })?
-            }
-            None => {
-                // Use default configuration
-                warn!(
-                    adapter = adapter_name,
-                    "No configuration found for adapter, using default"
-                );
-                Default::default()
-            }
+        let config: A::Config = if let Some(config_value) = self.config.adapters.get(adapter_name) {
+            // Deserialize from config
+            config_value.clone().deserialize().map_err(|e| {
+                RuntimeError::AdapterConfigDeserialize(format!(
+                    "Failed to deserialize config for adapter '{adapter_name}': {e}"
+                ))
+            })?
+        } else {
+            // Use default configuration
+            warn!(
+                adapter = adapter_name,
+                "No configuration found for adapter, using default"
+            );
+            Default::default()
         };
 
         // Create adapter from its config

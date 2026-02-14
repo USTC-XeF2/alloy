@@ -190,7 +190,7 @@ impl std::str::FromStr for ImageSegment {
             .with(|reg| reg.borrow().as_ref().and_then(|r| r.images.get(s).cloned()));
         match value {
             Some(v) => Ok(ImageSegment { value: v }),
-            None => Err(format!("not a valid image segment: {}", s)),
+            None => Err(format!("not a valid image segment: {s}")),
         }
     }
 }
@@ -252,7 +252,7 @@ impl std::str::FromStr for AtSegment {
             CURRENT_REGISTRY.with(|reg| reg.borrow().as_ref().and_then(|r| r.ats.get(s).cloned()));
         match value {
             Some(v) => Ok(AtSegment { value: v }),
-            None => Err(format!("not a valid at segment: {}", s)),
+            None => Err(format!("not a valid at segment: {s}")),
         }
     }
 }
@@ -342,7 +342,7 @@ fn rich_text_shell_split(segments: &[RichTextSegment]) -> (Vec<String>, HandleRe
                 args.extend(sub_args);
             }
             RichTextSegment::Image(reference) => {
-                let placeholder = format!("{}{}", IMAGE_PLACEHOLDER_PREFIX, img_counter);
+                let placeholder = format!("{IMAGE_PLACEHOLDER_PREFIX}{img_counter}");
                 img_counter += 1;
                 registry
                     .images
@@ -350,7 +350,7 @@ fn rich_text_shell_split(segments: &[RichTextSegment]) -> (Vec<String>, HandleRe
                 args.push(placeholder);
             }
             RichTextSegment::At(user_id) => {
-                let placeholder = format!("{}{}", AT_PLACEHOLDER_PREFIX, at_counter);
+                let placeholder = format!("{AT_PLACEHOLDER_PREFIX}{at_counter}");
                 at_counter += 1;
                 registry.ats.insert(placeholder.clone(), user_id.clone());
                 args.push(placeholder);
@@ -474,7 +474,7 @@ where
             let (args, registry) = rich_text_shell_split(&rich_text);
 
             // Check if first argument matches "/{command_name}"
-            let expected_cmd = format!("/{}", command_name);
+            let expected_cmd = format!("/{command_name}");
             if args.is_empty() || args[0].to_lowercase() != expected_cmd.to_lowercase() {
                 return false;
             }

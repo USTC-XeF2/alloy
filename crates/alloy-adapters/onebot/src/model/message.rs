@@ -105,7 +105,7 @@ impl OneBotMessageExt for Message<Segment> {
 ///
 /// Use with `#[serde(with = "crate::model::message::serde_message")]` on message fields.
 pub mod serde_message {
-    use super::*;
+    use super::{Deserialize, Serializer, Message, Segment, Serialize, Deserializer};
 
     pub fn serialize<S>(msg: &Message<Segment>, serializer: S) -> Result<S::Ok, S::Error>
     where

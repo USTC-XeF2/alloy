@@ -194,7 +194,7 @@ impl<S: MessageSegment> Message<S> {
     /// Converts each platform-specific segment into a [`RichTextSegment`]
     /// using [`MessageSegment::as_rich_text()`].
     pub fn extract_rich_text(&self) -> Vec<RichTextSegment> {
-        self.iter().map(|seg| seg.as_rich_text()).collect()
+        self.iter().map(MessageSegment::as_rich_text).collect()
     }
 
     /// Returns a display string representation of the entire message.

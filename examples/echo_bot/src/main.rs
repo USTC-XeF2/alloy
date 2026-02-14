@@ -9,11 +9,12 @@
 //! cargo run --package echo-bot
 //! ```
 
+use std::sync::Arc;
+
 use alloy::prelude::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use anyhow::Result;
 use clap::Parser;
-use std::sync::Arc;
 use tracing::{error, info};
 
 // --- Command Definitions ---

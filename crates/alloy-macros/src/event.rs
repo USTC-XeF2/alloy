@@ -222,14 +222,14 @@ fn generate_struct_impl(
                     "#[event] requires a field marked with #[event(parent)]",
                 )
             })?;
-            generate_child_event(
+            Ok(generate_child_event(
                 name,
                 event_name.as_deref(),
                 event_type.as_deref(),
                 &pf_ident,
                 &pf_ty,
                 message_field,
-            )
+            ))
         }
     }
 }
@@ -325,7 +325,7 @@ fn generate_child_event(
     parent_field_ident: &Ident,
     parent_ty: &Type,
     message_field: Option<(Ident, Type)>,
-) -> syn::Result<TokenStream> {
+) -> TokenStream {
     // ── event_type ──
     let event_type_impl = match event_type {
         Some(t) => {
@@ -454,9 +454,9 @@ fn generate_child_event(
         }
     };
 
-    Ok(quote! {
+    quote! {
         #deref_impls
         #event_impl
         #from_event_impl
-    })
+    }
 }
