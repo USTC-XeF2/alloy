@@ -128,6 +128,12 @@ pub enum ApiError {
     Other(String),
 }
 
+impl From<serde_json::Error> for ApiError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::SerializationError(err.to_string())
+    }
+}
+
 // =============================================================================
 // Result Type Aliases
 // =============================================================================

@@ -75,76 +75,23 @@ pub use config::{
 
 // Re-export segment types
 pub use model::segment::{
-    AnonymousData,
-    AtData,
-    ContactData,
-    DiceData,
-    FaceData,
-    ForwardData,
-    ImageData,
-    JsonData,
-    LocationData,
-    MusicData,
-    NodeData,
-    PokeData,
-    RecordData,
-    ReplyData,
-    RpsData,
-    Segment,
-    ShakeData,
-    ShareData,
-    TextData,
-    VideoData,
-    XmlData,
-    // CQ code utilities
-    escape_cq_text,
-    escape_cq_value,
-    unescape_cq_text,
-    unescape_cq_value,
+    AnonymousData, AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData,
+    LocationData, MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment,
+    ShakeData, ShareData, TextData, VideoData, XmlData,
 };
 
 // Re-export message type and extension trait
-pub use model::message::{OneBotMessage, OneBotMessageExt, parse_cq_string};
+pub use model::message::{OneBotMessage, OneBotMessageExt};
+
+// Re-export types
+pub use model::types::{Anonymous, Sender};
 
 // Re-export event types
 pub use model::event::{
-    Anonymous,
-    ClientStatusEvent,
-    Device,
-    EssenceEvent,
-    FriendAddEvent,
-    FriendRecallEvent,
-    FriendRequestEvent,
-    GroupAdminEvent,
-    GroupBanEvent,
-    GroupCardEvent,
-    GroupDecreaseEvent,
-    GroupIncreaseEvent,
-    GroupMessageEvent,
-    GroupRecallEvent,
-    GroupRequestEvent,
-    GroupUploadEvent,
-    HeartbeatEvent,
-    HonorEvent,
-    LifecycleEvent,
-    LuckyKingEvent,
-    // Message types
-    MessageEvent,
-    // Meta types
-    MetaEventEvent,
-    // Notice types
-    NoticeEvent,
-    NotifyEvent,
-    OfflineFile,
-    OfflineFileEvent,
-    // Root event
-    OneBotEvent,
-    PokeEvent,
-    PrivateMessageEvent,
-    // Request types
-    RequestEvent,
-    Sender,
-    UploadedFile,
-    // Parsing helper
-    parse_onebot_event,
+    ClientStatusEvent, Device, EssenceEvent, FriendAddEvent, FriendRecallEvent, FriendRequestEvent,
+    GroupAdminEvent, GroupBanEvent, GroupCardEvent, GroupDecreaseEvent, GroupIncreaseEvent,
+    GroupMessageEvent, GroupRecallEvent, GroupRequestEvent, GroupUploadEvent, HeartbeatEvent,
+    HonorEvent, LifecycleEvent, LuckyKingEvent, MessageEvent, MetaEventEvent, NoticeEvent,
+    NotifyEvent, OfflineFile, OfflineFileEvent, OneBotEvent, PokeEvent, PrivateMessageEvent,
+    RequestEvent, UploadedFile,
 };

@@ -29,7 +29,7 @@
 use alloy_core::Message;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::segment::Segment;
+use super::segment::{Segment, unescape_cq_text, unescape_cq_value};
 
 // ============================================================================
 // Type Alias
@@ -318,19 +318,6 @@ fn cq_to_segment(func: &str, params: &[(String, String)]) -> Option<Segment> {
         })),
         _ => None,
     }
-}
-
-/// Unescapes CQ code text.
-fn unescape_cq_text(text: &str) -> String {
-    text.replace("&#91;", "[")
-        .replace("&#93;", "]")
-        .replace("&#44;", ",")
-        .replace("&amp;", "&")
-}
-
-/// Unescapes CQ code parameter value.
-fn unescape_cq_value(value: &str) -> String {
-    unescape_cq_text(value)
 }
 
 // ============================================================================

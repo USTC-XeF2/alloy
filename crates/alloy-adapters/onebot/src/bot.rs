@@ -34,6 +34,9 @@ use tokio::time::{Duration, timeout};
 use tracing::{debug, trace};
 
 use crate::model::event::{GroupMessageEvent, PrivateMessageEvent};
+use crate::model::message::OneBotMessage;
+use crate::model::segment::Segment;
+use crate::model::types::Sender;
 use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
 
 // =============================================================================
@@ -104,8 +107,7 @@ impl OneBotBot {
         trace!(request = %request, "API request");
 
         // Send request
-        let request_bytes = serde_json::to_vec(&request)
-            .map_err(|e| ApiError::SerializationError(e.to_string()))?;
+        let request_bytes = serde_json::to_vec(&request)?;
 
         self.connection.send(request_bytes).await?;
 
@@ -195,21 +197,15 @@ impl OneBotBot {
     ///
     /// # Arguments
     /// * `user_id` - Target user's QQ number
-    /// * `message` - Message content (CQ code or plain text)
+    /// * `message` - Message content as OneBotMessage
     /// * `auto_escape` - Whether to treat message as plain text (not parse CQ codes)
-    pub async fn send_private_msg(
-        &self,
-        user_id: i64,
-        message: impl Into<String>,
-        auto_escape: bool,
-    ) -> ApiResult<i64> {
+    pub async fn send_private_msg(&self, user_id: i64, message: OneBotMessage) -> ApiResult<i64> {
         let result = self
             .call_api_internal(
                 "send_private_msg",
                 json!({
                     "user_id": user_id,
-                    "message": message.into(),
-                    "auto_escape": auto_escape
+                    "message": message
                 }),
             )
             .await?;
@@ -224,21 +220,15 @@ impl OneBotBot {
     ///
     /// # Arguments
     /// * `group_id` - Target group number
-    /// * `message` - Message content (CQ code or plain text)
+    /// * `message` - Message content as OneBotMessage
     /// * `auto_escape` - Whether to treat message as plain text (not parse CQ codes)
-    pub async fn send_group_msg(
-        &self,
-        group_id: i64,
-        message: impl Into<String>,
-        auto_escape: bool,
-    ) -> ApiResult<i64> {
+    pub async fn send_group_msg(&self, group_id: i64, message: OneBotMessage) -> ApiResult<i64> {
         let result = self
             .call_api_internal(
                 "send_group_msg",
                 json!({
                     "group_id": group_id,
-                    "message": message.into(),
-                    "auto_escape": auto_escape
+                    "message": message
                 }),
             )
             .await?;
@@ -257,12 +247,10 @@ impl OneBotBot {
         message_type: Option<&str>,
         user_id: Option<i64>,
         group_id: Option<i64>,
-        message: impl Into<String>,
-        auto_escape: bool,
+        message: OneBotMessage,
     ) -> ApiResult<i64> {
         let mut params = json!({
-            "message": message.into(),
-            "auto_escape": auto_escape
+            "message": message
         });
 
         if let Some(mt) = message_type {
@@ -306,7 +294,7 @@ impl OneBotBot {
             )
             .await?;
 
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets a forwarded message.
@@ -551,7 +539,7 @@ impl OneBotBot {
     /// Gets login info.
     pub async fn get_login_info(&self) -> ApiResult<LoginInfo> {
         let result = self.call_api_internal("get_login_info", json!({})).await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets stranger info.
@@ -565,13 +553,13 @@ impl OneBotBot {
                 }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets the friend list.
     pub async fn get_friend_list(&self) -> ApiResult<Vec<FriendInfo>> {
         let result = self.call_api_internal("get_friend_list", json!({})).await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets group info.
@@ -585,13 +573,13 @@ impl OneBotBot {
                 }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets the group list.
     pub async fn get_group_list(&self) -> ApiResult<Vec<GroupInfo>> {
         let result = self.call_api_internal("get_group_list", json!({})).await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets group member info.
@@ -611,7 +599,7 @@ impl OneBotBot {
                 }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets the group member list.
@@ -624,7 +612,7 @@ impl OneBotBot {
                 }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets group honor info.
@@ -679,7 +667,7 @@ impl OneBotBot {
                 }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     // =========================================================================
@@ -740,7 +728,7 @@ impl OneBotBot {
     /// Gets the running status.
     pub async fn get_status(&self) -> ApiResult<Status> {
         let result = self.call_api_internal("get_status", json!({})).await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Gets version info.
@@ -748,7 +736,7 @@ impl OneBotBot {
         let result = self
             .call_api_internal("get_version_info", json!({}))
             .await?;
-        serde_json::from_value(result).map_err(|e| ApiError::SerializationError(e.to_string()))
+        Ok(serde_json::from_value(result)?)
     }
 
     /// Restarts the OneBot implementation.
@@ -785,24 +773,22 @@ impl Bot for OneBotBot {
     }
 
     async fn call_api(&self, action: &str, params: &str) -> ApiResult<Value> {
-        let params: Value = serde_json::from_str(params)
-            .map_err(|e| ApiError::SerializationError(e.to_string()))?;
+        let params: Value = serde_json::from_str(params)?;
         self.call_api_internal(action, params).await
     }
 
     async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<i64> {
+        // Convert string message to OneBotMessage
+        let onebot_msg: OneBotMessage = Segment::text(message).into();
+
         // Try to downcast to GroupMessageEvent first (most specific)
         if let Some(group_msg) = event.as_any().downcast_ref::<GroupMessageEvent>() {
-            return self
-                .send_group_msg(group_msg.group_id, message, false)
-                .await;
+            return self.send_group_msg(group_msg.group_id, onebot_msg).await;
         }
 
         // Try PrivateMessageEvent
         if let Some(private_msg) = event.as_any().downcast_ref::<PrivateMessageEvent>() {
-            return self
-                .send_private_msg(private_msg.user_id, message, false)
-                .await;
+            return self.send_private_msg(private_msg.user_id, onebot_msg).await;
         }
 
         // Fallback: parse raw_json
@@ -810,14 +796,13 @@ impl Bot for OneBotBot {
             .raw_json()
             .ok_or_else(|| ApiError::MissingSession("No raw JSON in event".into()))?;
 
-        let parsed: Value = serde_json::from_str(raw_json)
-            .map_err(|e| ApiError::SerializationError(e.to_string()))?;
+        let parsed: Value = serde_json::from_str(raw_json)?;
 
         // Try to detect from available fields
         if let Some(group_id) = parsed.get("group_id").and_then(Value::as_i64) {
-            self.send_group_msg(group_id, message, false).await
+            self.send_group_msg(group_id, onebot_msg.clone()).await
         } else if let Some(user_id) = parsed.get("user_id").and_then(Value::as_i64) {
-            self.send_private_msg(user_id, message, false).await
+            self.send_private_msg(user_id, onebot_msg).await
         } else {
             Err(ApiError::MissingSession(
                 "Cannot determine message target".into(),
@@ -841,8 +826,9 @@ pub struct GetMsgResponse {
     pub message_type: String,
     pub message_id: i32,
     pub real_id: i32,
-    pub sender: Value,
-    pub message: Value,
+    pub sender: Sender,
+    #[serde(with = "crate::model::message::serde_message")]
+    pub message: OneBotMessage,
 }
 
 /// Login info.

@@ -4,38 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::message::OneBotMessage;
 use super::segment::Segment;
-
-/// Sender information in API responses.
-///
-/// This is a simplified sender type that works for both private and group messages.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ApiSender {
-    /// The sender's QQ number.
-    #[serde(default)]
-    pub user_id: i64,
-    /// The sender's nickname.
-    #[serde(default)]
-    pub nickname: String,
-    /// The sender's sex (male, female, unknown).
-    #[serde(default)]
-    pub sex: String,
-    /// The sender's age.
-    #[serde(default)]
-    pub age: i32,
-    /// Group card (for group messages).
-    #[serde(default)]
-    pub card: Option<String>,
-    /// Group level (for group messages).
-    #[serde(default)]
-    pub level: Option<String>,
-    /// Group role (for group messages).
-    #[serde(default)]
-    pub role: Option<String>,
-    /// Group title (for group messages).
-    #[serde(default)]
-    pub title: Option<String>,
-}
+use super::types::Sender;
 
 /// A generic API response from OneBot v11.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,11 +103,12 @@ pub struct GetMsgResponse {
     #[serde(default)]
     pub real_id: Option<i32>,
     /// The sender information.
-    pub sender: ApiSender,
+    pub sender: Sender,
     /// The time the message was sent.
     pub time: i64,
     /// The message content.
-    pub message: Vec<Segment>,
+    #[serde(with = "super::message::serde_message")]
+    pub message: OneBotMessage,
     /// The raw message string.
     pub raw_message: String,
 }

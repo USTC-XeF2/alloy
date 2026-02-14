@@ -164,6 +164,7 @@ pub trait MessageSegment: Debug + Clone + Send + Sync + 'static {
 ///
 /// - `S`: The segment type, must implement [`MessageSegment`]
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Message<S: MessageSegment> {
     #[serde(bound(deserialize = "S: Deserialize<'de>"))]
     segments: Vec<S>,
