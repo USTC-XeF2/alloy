@@ -34,7 +34,7 @@ use crate::integration::bot::BoxedBot;
 ///     ctx.stop_propagation();
 ///     
 ///     // Access the bot to send messages
-///     ctx.bot().send(ctx.event().inner().as_ref(), "Hello!").await.ok();
+///     ctx.bot().send(ctx.event().deref(), "Hello!").await.ok();
 /// }
 /// ```
 pub struct AlloyContext {

@@ -404,7 +404,7 @@ impl ConnectionHandler for OneBotConnectionHandler {
             trace!(bot_id = %bot_id, "Received heartbeat");
         } else if event_name.starts_with("onebot.meta_event.lifecycle") {
             // Downcast to get lifecycle sub_type for logging
-            if let Some(lc) = boxed_event.downcast_ref::<LifecycleEvent>() {
+            if let Some(lc) = boxed_event.as_any().downcast_ref::<LifecycleEvent>() {
                 debug!(bot_id = %bot_id, sub_type = ?lc.sub_type, "Received lifecycle event");
             }
         } else {

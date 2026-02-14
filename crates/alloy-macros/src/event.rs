@@ -4,9 +4,8 @@
 //!
 //! `#[derive(BotEvent)]` generates:
 //!
-//! 1. `impl Event` — event metadata + delegation to parent
-//! 2. `impl FromEvent` — JSON validation + deserialization
-//! 3. `impl Deref[Mut]` — auto-generated when a parent field exists
+//! 1. `impl Event` — event metadata + downgrade_any method for parent chain traversal
+//! 2. `impl Deref[Mut]` — auto-generated when a parent field exists
 //!
 //! # Root events: `#[root_event(...)]`
 //!
@@ -276,14 +275,13 @@ fn generate_root_event(
         };
     }
 
-    let from_event_impl = quote! {
-        impl ::alloy_core::FromEvent for #name {
-            fn from_event(root: &dyn ::alloy_core::Event) -> Option<Self> {
-                if let Some(e) = root.as_any().downcast_ref::<Self>() {
-                    return Some(e.clone());
-                }
-                let json = root.raw_json()?;
-                ::serde_json::from_str(json).ok()
+    let downgrade_any_impl = quote! {
+        fn downgrade_any(&self, type_id: ::std::any::TypeId) -> Option<Box<dyn ::std::any::Any>> {
+            // Root event: only matches self
+            if type_id == ::std::any::TypeId::of::<Self>() {
+                Some(Box::new(self.clone()))
+            } else {
+                None
             }
         }
     };
@@ -302,6 +300,7 @@ fn generate_root_event(
                 self
             }
 
+            #downgrade_any_impl
             #raw_json_impl
             #segment_type_impl
             #get_message_impl
@@ -310,7 +309,6 @@ fn generate_root_event(
 
     Ok(quote! {
         #event_impl
-        #from_event_impl
     })
 }
 
@@ -424,16 +422,15 @@ fn generate_child_event(
         }
     };
 
-    // ── FromEvent ──
-    let from_event_impl = quote! {
-        impl ::alloy_core::FromEvent for #name {
-            fn from_event(root: &dyn ::alloy_core::Event) -> Option<Self> {
-                if let Some(e) = root.as_any().downcast_ref::<Self>() {
-                    return Some(e.clone());
-                }
-                let json = root.raw_json()?;
-                ::serde_json::from_str(json).ok()
+    // ── DowngradeAny ──
+    let downgrade_any_impl = quote! {
+        fn downgrade_any(&self, type_id: ::std::any::TypeId) -> Option<Box<dyn ::std::any::Any>> {
+            // Check if it's self first
+            if type_id == ::std::any::TypeId::of::<Self>() {
+                return Some(Box::new(self.clone()));
             }
+            // Delegate to parent
+            <#parent_ty as ::alloy_core::Event>::downgrade_any(&self.#parent_field_ident, type_id)
         }
     };
 
@@ -448,6 +445,7 @@ fn generate_child_event(
                 self
             }
 
+            #downgrade_any_impl
             #raw_json_impl
             #segment_type_impl
             #get_message_impl
@@ -457,6 +455,5 @@ fn generate_child_event(
     quote! {
         #deref_impls
         #event_impl
-        #from_event_impl
     }
 }

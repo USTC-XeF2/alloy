@@ -2,7 +2,7 @@
 //!
 //! This crate provides:
 //!
-//! - `#[derive(BotEvent)]` - Generates Event, FromEvent, Deref/DerefMut implementations
+//! - `#[derive(BotEvent)]` - Generates Event, Deref/DerefMut implementations
 //!
 //! # Parent-in-Child Event Design
 //!
@@ -55,8 +55,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// Generates:
 /// - `impl Event` — `event_name()`, `platform()`, `event_type()`, `as_any()`,
-///   and optionally `raw_json()`, `get_message()`.
-/// - `impl FromEvent` — with optional JSON field validation.
+///   `downgrade_any()`, and optionally `raw_json()`, `get_message()`.
 /// - `impl Deref<Target = Parent>` + `DerefMut` — when `#[event(parent)]` field exists.
 ///
 /// # Root events: `#[root_event(…)]`

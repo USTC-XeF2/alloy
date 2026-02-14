@@ -5,7 +5,7 @@
 
 use crate::error::ExtractError;
 use alloy_core::integration::bot::downcast_bot;
-use alloy_core::{AlloyContext, Bot, BoxedBot, BoxedEvent, Event, EventContext, FromEvent};
+use alloy_core::{AlloyContext, Bot, BoxedBot, BoxedEvent, Event, EventContext};
 
 /// A trait for types that can be extracted from an [`AlloyContext`].
 ///
@@ -68,10 +68,10 @@ impl<T: FromContext> FromContext for Option<T> {
     }
 }
 
-/// Implementation for extracting `EventContext<T>` where `T: FromEvent`.
+/// Implementation for extracting `EventContext<T>` where `T: Event`.
 ///
-/// This is the Clap-like pattern where handlers can request events at any
-/// level of the hierarchy:
+/// This enables handlers to request events at any level of the hierarchy
+/// through the parent delegation mechanism via `DowngradeAny`:
 ///
 /// ```rust,ignore
 /// use alloy_core::EventContext;
@@ -83,13 +83,10 @@ impl<T: FromContext> FromContext for Option<T> {
 ///
 /// // Extract an intermediate event type
 /// async fn on_notice(event: EventContext<NoticeEvent>) {
-///     match &event.inner {
-///         NoticeType::Poke(p) => println!("Poke: {}", p.target_id),
-///         _ => {}
-///     }
+///     println!("Notice: {}", event.event_name());
 /// }
 /// ```
-impl<T: FromEvent + Clone + Event> FromContext for EventContext<T> {
+impl<T: Event + Clone + 'static> FromContext for EventContext<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         ctx.event()
             .extract::<T>()

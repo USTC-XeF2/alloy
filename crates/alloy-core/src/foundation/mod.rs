@@ -13,5 +13,5 @@ pub mod message;
 
 pub use context::AlloyContext;
 pub use error::{AdapterError, AdapterResult, TransportError, TransportResult};
-pub use event::{AsText, BoxedEvent, Event, EventContext, EventType, FromEvent};
+pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
 pub use message::{Message, MessageSegment, RichTextSegment};

@@ -146,7 +146,7 @@ mod tests {
     use alloy_core::{Event, MessageSegment};
     use async_trait::async_trait;
     use serde_json::Value;
-    use std::any::Any;
+    use std::any::{Any, TypeId};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug, Clone)]
@@ -166,6 +166,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct TestEvent {
         name: &'static str,
     }
@@ -181,6 +182,14 @@ mod tests {
 
         fn as_any(&self) -> &dyn Any {
             self
+        }
+
+        fn downgrade_any(&self, type_id: TypeId) -> Option<Box<dyn Any>> {
+            if type_id == TypeId::of::<Self>() {
+                Some(Box::new(self.clone()))
+            } else {
+                None
+            }
         }
 
         type Segment = TestSegment;

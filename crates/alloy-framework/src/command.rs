@@ -38,6 +38,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 use clap::Parser;
 use clap::error::ErrorKind;
@@ -501,9 +502,9 @@ where
                             if should_reply_help {
                                 let help_text = err.to_string();
                                 let bot = ctx.bot_arc();
-                                let event = ctx.event().inner().clone();
+                                let event = ctx.event().clone();
                                 tokio::spawn(async move {
-                                    let _ = bot.send(event.as_ref(), &help_text).await;
+                                    let _ = bot.send(event.deref(), &help_text).await;
                                 });
                             }
                         }
@@ -511,10 +512,10 @@ where
                             // Other parse errors
                             if should_reply_error {
                                 let bot = ctx.bot_arc();
-                                let event = ctx.event().inner().clone();
+                                let event = ctx.event().clone();
                                 let error_msg = err.to_string();
                                 tokio::spawn(async move {
-                                    let _ = bot.send(event.as_ref(), &error_msg).await;
+                                    let _ = bot.send(event.deref(), &error_msg).await;
                                 });
                             }
                         }

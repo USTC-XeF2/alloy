@@ -4,16 +4,15 @@
 //!
 //! - [`Event`] - Base trait for all events
 //! - [`EventType`] - Event type classification (message, notice, request, meta)
-//! - [`FromEvent`] - Trait for extracting typed events
 //! - [`EventContext<T>`] - Wrapper providing access to extracted event data
 //!
-//! # Clap-like Event Extraction
+//! # Hierarchical Event Extraction
 //!
-//! The event system supports a Clap-like pattern where events can be extracted
-//! at any level of the hierarchy:
+//! The event system supports downgrades where events can be extracted
+//! at any level of the hierarchy through parent delegation:
 //!
 //! ```rust,ignore
-//! use alloy_core::{Event, FromEvent, EventContext};
+//! use alloy_core::{Event, EventContext};
 //!
 //! // Extract the most specific event type
 //! async fn on_poke(event: EventContext<Poke>) {
@@ -26,10 +25,12 @@
 //! }
 //! ```
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
+
+use super::message::{Message, MessageSegment, RichTextSegment};
 
 // ============================================================================
 // Event Type Classification
@@ -113,7 +114,7 @@ pub trait AsText: Send + Sync {
     /// Returns a vector of [`RichTextSegment`] representing the full message
     /// content including images, mentions, and text. For non-message events,
     /// returns an empty vector.
-    fn get_rich_text(&self) -> Vec<super::message::RichTextSegment>;
+    fn get_rich_text(&self) -> Vec<RichTextSegment>;
 }
 
 // ============================================================================
@@ -123,8 +124,8 @@ pub trait AsText: Send + Sync {
 /// The base trait for all events in the Alloy framework.
 ///
 /// Events are type-erased using `dyn Event` and can be downcast to concrete
-/// types using `as_any()`. Raw JSON is preserved to enable Clap-like extraction
-/// at any hierarchy level via `FromEvent`.
+/// types using `as_any()`. Events can also be downgraded to parent types
+/// using the `downgrade_any()` method.
 ///
 /// All events automatically implement [`AsText`], which provides the
 /// `get_plain_text()` and `get_rich_text()` methods in a type-safe way.
@@ -161,9 +162,21 @@ pub trait Event: AsText + Any + Send + Sync {
 
     /// Returns the raw JSON representation of this event, if available.
     ///
-    /// This is essential for `FromEvent` to re-parse events at different
-    /// hierarchy levels without losing information.
+    /// This is preserved for debugging and logging purposes.
     fn raw_json(&self) -> Option<&str> {
+        None
+    }
+
+    /// Attempts to downgrade to any type identified by `TypeId`, returned as `Box<dyn Any>`.
+    ///
+    /// This follows the parent chain:
+    /// 1. If the event's type matches the target `TypeId`, returns `Some(boxed_clone)`
+    /// 2. If the event has a parent, delegates to the parent's `downgrade_any`
+    /// 3. Otherwise, returns `None` (type not in parent chain)
+    ///
+    /// This ensures an event can only be converted to itself or one of its
+    /// ancestors in the event hierarchy.
+    fn downgrade_any(&self, _type_id: TypeId) -> Option<Box<dyn Any>> {
         None
     }
 
@@ -176,7 +189,7 @@ pub trait Event: AsText + Any + Send + Sync {
     /// Messages are represented as `Message<Self::Segment>`.
     ///
     /// This is gated by `Self: Sized` so that `dyn Event` remains object-safe.
-    type Segment: super::message::MessageSegment
+    type Segment: MessageSegment
     where
         Self: Sized;
 
@@ -185,7 +198,7 @@ pub trait Event: AsText + Any + Send + Sync {
     /// Only available on concrete (sized) event types, not through `dyn Event`.
     /// For message events, adapters should return the concrete message.
     /// For non-message events, returns an empty message by default.
-    fn get_message(&self) -> &super::message::Message<Self::Segment>
+    fn get_message(&self) -> &Message<Self::Segment>
     where
         Self: Sized,
     {
@@ -211,41 +224,9 @@ impl<E: Event> AsText for E {
         self.get_message().extract_plain_text()
     }
 
-    fn get_rich_text(&self) -> Vec<super::message::RichTextSegment> {
+    fn get_rich_text(&self) -> Vec<RichTextSegment> {
         self.get_message().extract_rich_text()
     }
-}
-
-// ============================================================================
-// Event Extraction
-// ============================================================================
-
-/// Trait for extracting typed events from a root event.
-///
-/// This enables Clap-like pattern matching where handlers can request
-/// events at any level of the hierarchy. Implementations typically:
-///
-/// 1. Try to parse from `raw_json()` for maximum flexibility
-/// 2. Fall back to downcasting for directly attached events
-///
-/// # Derive Macro
-///
-/// Use `#[derive(BotEvent)]` to auto-generate implementations:
-///
-/// ```rust,ignore
-/// #[derive(Clone, Serialize, Deserialize, BotEvent)]
-/// #[event(platform = "onebot", parent = "MessageEvent")]
-/// pub struct PrivateMessage {
-///     pub time: i64,
-///     pub self_id: i64,
-///     pub user_id: i64,
-/// }
-/// ```
-pub trait FromEvent: Sized + Clone {
-    /// Attempts to extract this event type from the root event.
-    ///
-    /// Returns `Some(Self)` if successful, `None` otherwise.
-    fn from_event(root: &dyn Event) -> Option<Self>;
 }
 
 // ============================================================================
@@ -344,19 +325,15 @@ impl BoxedEvent {
         }
     }
 
-    /// Returns the inner `Arc<dyn Event>`.
-    pub fn inner(&self) -> &Arc<dyn Event> {
-        &self.inner
-    }
-
-    /// Attempts to downcast to a concrete event type.
-    pub fn downcast_ref<E: Event + 'static>(&self) -> Option<&E> {
-        self.inner.as_any().downcast_ref()
-    }
-
-    /// Attempts to extract a typed event using `FromEvent`.
-    pub fn extract<E: FromEvent + Event>(&self) -> Option<EventContext<E>> {
-        E::from_event(self.inner.as_ref()).map(EventContext::new)
+    /// Attempts to extract a typed event using the event's parent chain.
+    ///
+    /// This uses the `TypeId`-based downgrade mechanism to traverse the parent
+    /// chain and find the matching event type.
+    pub fn extract<E: Event + Clone + 'static>(&self) -> Option<EventContext<E>> {
+        self.inner
+            .downgrade_any(TypeId::of::<E>())
+            .and_then(|boxed| boxed.downcast::<E>().ok())
+            .map(|boxed| EventContext::new(*boxed))
     }
 }
 

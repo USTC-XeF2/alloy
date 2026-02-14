@@ -33,7 +33,7 @@ use tokio::sync::{RwLock, oneshot};
 use tokio::time::{Duration, timeout};
 use tracing::{debug, trace};
 
-use crate::model::event::{GroupMessageEvent, MessageEvent, PrivateMessageEvent};
+use crate::model::event::{GroupMessageEvent, PrivateMessageEvent};
 use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
 
 // =============================================================================
@@ -49,7 +49,7 @@ pub struct OneBotBot {
     /// Connection handle for sending messages.
     connection: ConnectionHandle,
     /// Pending API call responses.
-    pending_calls: Arc<RwLock<HashMap<String, oneshot::Sender<Value>>>>,
+    pending_calls: Arc<RwLock<HashMap<u64, oneshot::Sender<Value>>>>,
     /// Echo counter for generating unique echo IDs.
     echo_counter: AtomicU64,
     /// API call timeout duration.
@@ -80,15 +80,9 @@ impl OneBotBot {
         })
     }
 
-    /// Generates a unique echo ID for API calls.
-    fn next_echo(&self) -> String {
-        let counter = self.echo_counter.fetch_add(1, Ordering::SeqCst);
-        format!("alloy_{counter}")
-    }
-
     /// Internal method to call an API and wait for response.
     async fn call_api_internal(&self, action: &str, params: Value) -> ApiResult<Value> {
-        let echo = self.next_echo();
+        let echo = self.echo_counter.fetch_add(1, Ordering::SeqCst);
 
         // Create channel for response
         let (tx, rx) = oneshot::channel();
@@ -96,7 +90,7 @@ impl OneBotBot {
         // Register pending call
         {
             let mut pending = self.pending_calls.write().await;
-            pending.insert(echo.clone(), tx);
+            pending.insert(echo, tx);
         }
 
         // Build request
@@ -156,9 +150,9 @@ impl OneBotBot {
     ///
     /// This should be called by the adapter when receiving messages from the server.
     pub async fn handle_response(&self, response: &Value) {
-        if let Some(echo) = response.get("echo").and_then(|v| v.as_str()) {
+        if let Some(echo) = response.get("echo").and_then(Value::as_u64) {
             let mut pending = self.pending_calls.write().await;
-            if let Some(tx) = pending.remove(echo) {
+            if let Some(tx) = pending.remove(&echo) {
                 let _ = tx.send(response.clone());
             }
         }
@@ -812,31 +806,6 @@ impl Bot for OneBotBot {
             return self
                 .send_private_msg(private_msg.user_id, message, false)
                 .await;
-        }
-
-        // Try generic MessageEvent and infer from message_type
-        if let Some(msg) = event.as_any().downcast_ref::<MessageEvent>() {
-            match msg.message_type.as_str() {
-                "group" => {
-                    // Need to get group_id from raw JSON as fallback
-                    if let Some(raw) = event.raw_json() {
-                        let parsed: Value = serde_json::from_str(raw)
-                            .map_err(|e| ApiError::SerializationError(e.to_string()))?;
-                        let group_id =
-                            parsed
-                                .get("group_id")
-                                .and_then(Value::as_i64)
-                                .ok_or_else(|| {
-                                    ApiError::MissingSession("No group_id in event".into())
-                                })?;
-                        return self.send_group_msg(group_id, message, false).await;
-                    }
-                }
-                "private" => {
-                    return self.send_private_msg(msg.user_id, message, false).await;
-                }
-                _ => {}
-            }
         }
 
         // Fallback: parse raw_json
