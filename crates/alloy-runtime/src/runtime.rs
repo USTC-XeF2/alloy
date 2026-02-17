@@ -27,13 +27,16 @@ use std::sync::Arc;
 
 use tokio::signal;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, span, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
-use alloy_core::{AdapterBridge, BoxedAdapter, BoxedEvent, ConfigurableAdapter, TransportContext};
-use alloy_framework::{Dispatcher, Matcher};
+use alloy_core::{
+    AdapterBridge, BoxedAdapter, BoxedBot, BoxedEvent, ConfigurableAdapter, Dispatcher,
+    TransportContext,
+};
+use alloy_framework::{AlloyContext, Matcher};
 
 /// The main Alloy runtime that orchestrates adapters and bots.
 ///
@@ -68,8 +71,8 @@ pub struct AlloyRuntime {
     config: AlloyConfig,
     /// Map of adapter name to adapter instance.
     adapters: Arc<RwLock<HashMap<String, BoxedAdapter>>>,
-    /// The event dispatcher.
-    dispatcher: Arc<RwLock<Dispatcher>>,
+    /// Registered matchers for event dispatching.
+    matchers: Arc<RwLock<Vec<Matcher>>>,
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges (populated after init).
@@ -142,7 +145,7 @@ impl AlloyRuntime {
         Self {
             config: config.clone(),
             adapters: Arc::new(RwLock::new(HashMap::new())),
-            dispatcher: Arc::new(RwLock::new(Dispatcher::new())),
+            matchers: Arc::new(RwLock::new(Vec::new())),
             transport_context: transport_ctx,
             adapter_bridges: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(RwLock::new(false)),
@@ -247,13 +250,13 @@ impl AlloyRuntime {
         Ok(())
     }
 
-    /// Registers a matcher with the dispatcher.
+    /// Registers a matcher for event dispatching.
     ///
     /// Matchers are checked in the order they are added. Each matcher
     /// contains multiple handlers and a check rule.
     pub async fn register_matcher(&self, matcher: Matcher) {
-        let mut dispatcher = self.dispatcher.write().await;
-        dispatcher.add(matcher);
+        let mut matchers = self.matchers.write().await;
+        matchers.push(matcher);
     }
 
     /// Registers multiple matchers at once.
@@ -272,15 +275,13 @@ impl AlloyRuntime {
     /// ]).await;
     /// ```
     pub async fn register_matchers(&self, matchers: Vec<Matcher>) {
-        let mut dispatcher = self.dispatcher.write().await;
-        for matcher in matchers {
-            dispatcher.add(matcher);
-        }
+        let mut matcher_list = self.matchers.write().await;
+        matcher_list.extend(matchers);
     }
 
-    /// Returns a reference to the dispatcher.
-    pub fn dispatcher(&self) -> &Arc<RwLock<Dispatcher>> {
-        &self.dispatcher
+    /// Returns the number of registered matchers.
+    pub async fn matcher_count(&self) -> usize {
+        self.matchers.read().await.len()
     }
 
     /// Returns whether the runtime is currently running.
@@ -293,15 +294,31 @@ impl AlloyRuntime {
     // =========================================================================
 
     /// Creates an event dispatcher for adapters.
-    fn create_event_dispatcher(
-        &self,
-    ) -> Arc<dyn Fn(BoxedEvent, alloy_core::BoxedBot) + Send + Sync> {
-        let dispatcher = Arc::clone(&self.dispatcher);
-        Arc::new(move |event: BoxedEvent, bot: alloy_core::BoxedBot| {
-            let dispatcher = Arc::clone(&dispatcher);
+    ///
+    /// This dispatcher function is called when events are received from the transport layer.
+    /// It dispatches events to all registered matchers, executing their handlers and
+    /// respecting blocking rules.
+    fn create_event_dispatcher(&self) -> Dispatcher {
+        let matchers = Arc::clone(&self.matchers);
+        Arc::new(move |event: BoxedEvent, bot: BoxedBot| {
+            let matchers = Arc::clone(&matchers);
             tokio::spawn(async move {
-                let d = dispatcher.read().await;
-                let _ = d.dispatch(event, bot).await;
+                let event_name = event.event_name();
+                let span = span!(tracing::Level::DEBUG, "dispatch", event_name = %event_name);
+                let _enter = span.enter();
+
+                let ctx = Arc::new(AlloyContext::new(event, bot));
+                let matcher_list = matchers.read().await;
+
+                for matcher in matcher_list.iter() {
+                    if matcher.execute(Arc::clone(&ctx)).await && matcher.is_blocking() {
+                        debug!(
+                            matcher = matcher.get_name().unwrap_or("unnamed"),
+                            "Blocking matcher matched, stopping dispatch"
+                        );
+                        break;
+                    }
+                }
             });
         })
     }
@@ -316,7 +333,6 @@ impl AlloyRuntime {
         for (name, adapter) in adapters.iter() {
             // Create adapter bridge
             let bridge = Arc::new(AdapterBridge::new(
-                name.clone(),
                 adapter.clone(),
                 self.create_event_dispatcher(),
                 self.transport_context.clone(),
@@ -358,8 +374,7 @@ impl AlloyRuntime {
             }
         }
 
-        let stats = self.stats().await;
-        info!("Runtime started: {}", stats);
+        info!("Runtime started");
 
         Ok(())
     }
@@ -447,17 +462,6 @@ impl AlloyRuntime {
             info!("Received Ctrl+C, shutting down");
         }
     }
-
-    /// Returns statistics about the runtime.
-    pub async fn stats(&self) -> RuntimeStats {
-        let adapters = self.adapters.read().await;
-        let running = *self.running.read().await;
-
-        RuntimeStats {
-            running,
-            adapter_count: adapters.len(),
-        }
-    }
 }
 
 impl Default for AlloyRuntime {
@@ -538,29 +542,5 @@ impl RuntimeBuilder {
 impl Default for RuntimeBuilder {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-// =============================================================================
-// RuntimeStats
-// =============================================================================
-
-/// Statistics about the runtime.
-#[derive(Debug, Clone)]
-pub struct RuntimeStats {
-    /// Whether the runtime is running.
-    pub running: bool,
-    /// Number of registered adapters.
-    pub adapter_count: usize,
-}
-
-impl std::fmt::Display for RuntimeStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Runtime: {} | Adapters: {}",
-            if self.running { "Running" } else { "Stopped" },
-            self.adapter_count
-        )
     }
 }

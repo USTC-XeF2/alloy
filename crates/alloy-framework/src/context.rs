@@ -8,8 +8,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use alloy_core::bot::BoxedBot;
-use alloy_core::event::BoxedEvent;
+use alloy_core::{BoxedBot, BoxedEvent};
 
 /// The context object passed to handlers during event processing.
 ///

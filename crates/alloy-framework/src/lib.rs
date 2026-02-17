@@ -3,7 +3,6 @@
 //! High-level framework components for building bot applications.
 //!
 //! This layer provides:
-//! - Event dispatching and routing
 //! - Matcher system for filtering and grouping handlers
 //! - Handler trait for Axum-style dependency injection
 //! - Convenience functions for common patterns (on_message, on_command, etc.)
@@ -13,7 +12,6 @@
 //! abstractions that aren't strictly necessary for the runtime.
 
 pub mod context;
-pub mod dispatcher;
 pub mod error;
 pub mod extractor;
 pub mod handler;
@@ -24,7 +22,6 @@ pub mod matcher_builders;
 pub mod command;
 
 pub use context::AlloyContext;
-pub use dispatcher::Dispatcher;
 pub use error::{ExtractError, ExtractResult};
 pub use extractor::FromContext;
 pub use handler::{

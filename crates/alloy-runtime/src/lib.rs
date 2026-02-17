@@ -71,4 +71,4 @@ pub use config::{
 };
 pub use error::{RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};
-pub use runtime::{AlloyRuntime, RuntimeBuilder, RuntimeStats};
+pub use runtime::{AlloyRuntime, RuntimeBuilder};

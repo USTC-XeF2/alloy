@@ -114,6 +114,12 @@ pub trait Adapter: Send + Sync {
 /// A boxed adapter trait object.
 pub type BoxedAdapter = Arc<dyn Adapter>;
 
+/// Event dispatcher callback type.
+///
+/// Receives events and the associated bot, then distributes them to registered handlers.
+/// Typically created by the runtime and passed to adapters via [`AdapterBridge`].
+pub type Dispatcher = Arc<dyn Fn(BoxedEvent, BoxedBot) + Send + Sync>;
+
 /// Trait for adapters that can be created from YAML configuration.
 ///
 /// Separates compile-time concerns (`Config` type, `from_config()`)
@@ -149,12 +155,11 @@ pub trait ConfigurableAdapter: Adapter {
 ///
 /// Each `AdapterBridge` manages bots for a specific adapter instance.
 pub struct AdapterBridge {
-    adapter_name: String,
     adapter: Arc<dyn Adapter>,
     /// Active bots by ID.
     bots: RwLock<HashMap<String, BoxedBot>>,
     /// Event dispatcher callback (always requires bot).
-    event_dispatcher: Arc<dyn Fn(BoxedEvent, BoxedBot) + Send + Sync>,
+    event_dispatcher: Dispatcher,
     /// Available transport capabilities.
     transport: TransportContext,
     /// Active listener handles (to keep them alive).
@@ -166,13 +171,11 @@ pub struct AdapterBridge {
 impl AdapterBridge {
     /// Creates a new adapter bridge.
     pub fn new(
-        adapter_name: String,
         adapter: Arc<dyn Adapter>,
-        event_dispatcher: Arc<dyn Fn(BoxedEvent, BoxedBot) + Send + Sync>,
+        event_dispatcher: Dispatcher,
         transport: TransportContext,
     ) -> Self {
         Self {
-            adapter_name,
             adapter,
             bots: RwLock::new(HashMap::new()),
             event_dispatcher,
@@ -185,11 +188,6 @@ impl AdapterBridge {
     /// Returns a reference to the transport context.
     pub fn transport(&self) -> &TransportContext {
         &self.transport
-    }
-
-    /// Returns the adapter name.
-    pub fn adapter_name(&self) -> &str {
-        &self.adapter_name
     }
 
     /// Registers a listener handle (keeps it alive).
@@ -222,7 +220,6 @@ impl AdapterBridge {
         } else {
             debug!(
                 bot_id = %bot_id,
-                adapter = %self.adapter_name,
                 "Bot registered"
             );
         }
@@ -249,7 +246,6 @@ impl AdapterBridge {
         self.unregister(bot_id).await;
         info!(
             bot_id = %bot_id,
-            adapter = %self.adapter_name,
             "Connection closed"
         );
     }

@@ -25,8 +25,15 @@
 //!     .init();
 //! ```
 
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+
+use tracing::warn;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::util::TryInitError;
+use tracing_subscriber::{EnvFilter, fmt};
+
 use crate::config::{LogFormat, LogOutput, LoggingConfig, SpanEventConfig};
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 /// Span event configuration for logging.
 ///
@@ -141,16 +148,6 @@ pub fn init_from_config(config: &LoggingConfig) {
     let _ = builder.try_init();
 }
 
-/// Try to initialize logging from configuration.
-///
-/// Returns an error if the subscriber has already been set.
-pub fn try_init_from_config(
-    config: &LoggingConfig,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let builder = LoggingBuilder::from_config(config);
-    builder.try_init()
-}
-
 // =============================================================================
 // Configuration-Based LoggingBuilder
 // =============================================================================
@@ -187,6 +184,9 @@ pub struct LoggingBuilder {
     with_thread_ids: bool,
     with_file: bool,
     with_line_number: bool,
+    file_path: Option<PathBuf>,
+    max_file_size: u64,
+    max_files: usize,
 }
 
 impl LoggingBuilder {
@@ -196,6 +196,8 @@ impl LoggingBuilder {
             format: LogFormat::Compact,
             output: LogOutput::Stdout,
             with_target: true,
+            max_file_size: 10 * 1024 * 1024, // 10 MB
+            max_files: 5,
             ..Default::default()
         }
     }
@@ -214,11 +216,16 @@ impl LoggingBuilder {
         // Set span events
         builder.span_events = SpanEvents::from(&config.span_events);
 
-        // Set display options - map schema field names to builder field names
+        // Set display options
         builder.with_target = true; // always show target
         builder.with_thread_ids = config.thread_ids;
         builder.with_file = config.file_location;
         builder.with_line_number = config.file_location;
+
+        // Set file options
+        builder.file_path.clone_from(&config.file_path);
+        builder.max_file_size = config.max_file_size;
+        builder.max_files = config.max_files as usize;
 
         // Add module filters
         for (module, level) in &config.filters {
@@ -297,21 +304,29 @@ impl LoggingBuilder {
         self
     }
 
+    /// Set file path for file output.
+    pub fn file_path(mut self, path: PathBuf) -> Self {
+        self.file_path = Some(path);
+        self
+    }
+
+    /// Set maximum file size before rotation.
+    pub fn max_file_size(mut self, size: u64) -> Self {
+        self.max_file_size = size;
+        self
+    }
+
+    /// Set maximum number of rotated files to keep.
+    pub fn max_files(mut self, count: usize) -> Self {
+        self.max_files = count;
+        self
+    }
+
     /// Build the filter from directives.
     fn build_filter(&self) -> EnvFilter {
-        // Start with the base level or default
-        let base_filter = if let Some(level) = self.level {
-            match level {
-                tracing::Level::TRACE => "trace",
-                tracing::Level::DEBUG => "debug",
-                tracing::Level::INFO => "info",
-                tracing::Level::WARN => "warn",
-                tracing::Level::ERROR => "error",
-            }
-            .to_string()
-        } else {
-            "info".to_string()
-        };
+        // Use tracing::Level's Display implementation (e.g., "INFO" -> lowercase "info")
+        let base_level = self.level.unwrap_or(tracing::Level::INFO);
+        let base_filter = base_level.to_string().to_lowercase();
 
         // Check for RUST_LOG environment variable first
         let mut filter =
@@ -333,168 +348,89 @@ impl LoggingBuilder {
     }
 
     /// Try to initialize the logging system, returning an error on failure.
-    pub fn try_init(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub fn try_init(self) -> Result<(), TryInitError> {
         let filter = self.build_filter();
         let span_events = self.span_events.to_fmt_span();
 
-        match (&self.format, &self.output) {
-            #[cfg(feature = "json")]
-            (LogFormat::Json, LogOutput::Stdout) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .json()
-                        .with_span_events(span_events)
-                        .with_writer(std::io::stdout),
-                )
-                .with(filter)
-                .try_init(),
-            #[cfg(feature = "json")]
-            (LogFormat::Json, LogOutput::Stderr) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .json()
-                        .with_span_events(span_events)
-                        .with_writer(std::io::stderr),
-                )
-                .with(filter)
-                .try_init(),
-            #[cfg(feature = "json")]
-            (LogFormat::Json, LogOutput::File) => {
-                tracing::warn!("File logging not yet implemented, falling back to stdout");
-                tracing_subscriber::registry()
-                    .with(
-                        fmt::layer()
-                            .json()
-                            .with_span_events(span_events)
-                            .with_writer(std::io::stdout),
-                    )
-                    .with(filter)
-                    .try_init()
-            }
-            #[cfg(not(feature = "json"))]
-            (LogFormat::Json, _) => {
-                tracing::warn!(
-                    "JSON format requested but 'json' feature not enabled, using compact format"
-                );
-                self.init_compact(filter, span_events)
-            }
-            (LogFormat::Compact, LogOutput::Stdout) => self.init_compact(filter, span_events),
-            (LogFormat::Compact, LogOutput::Stderr) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .compact()
-                        .with_span_events(span_events)
-                        .with_target(self.with_target)
-                        .with_thread_ids(self.with_thread_ids)
-                        .with_file(self.with_file)
-                        .with_line_number(self.with_line_number)
-                        .with_writer(std::io::stderr),
-                )
-                .with(filter)
-                .try_init(),
-            (LogFormat::Compact, LogOutput::File) => {
-                tracing::warn!("File logging not yet implemented, falling back to stdout");
-                self.init_compact(filter, span_events)
-            }
-            (LogFormat::Full, LogOutput::Stdout) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .with_span_events(span_events)
-                        .with_target(self.with_target)
-                        .with_thread_ids(self.with_thread_ids)
-                        .with_file(self.with_file)
-                        .with_line_number(self.with_line_number)
-                        .with_writer(std::io::stdout),
-                )
-                .with(filter)
-                .try_init(),
-            (LogFormat::Full, LogOutput::Stderr) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .with_span_events(span_events)
-                        .with_target(self.with_target)
-                        .with_thread_ids(self.with_thread_ids)
-                        .with_file(self.with_file)
-                        .with_line_number(self.with_line_number)
-                        .with_writer(std::io::stderr),
-                )
-                .with(filter)
-                .try_init(),
-            (LogFormat::Full, LogOutput::File) => {
-                tracing::warn!("File logging not yet implemented, falling back to stdout");
-                tracing_subscriber::registry()
-                    .with(
-                        fmt::layer()
-                            .with_span_events(span_events)
-                            .with_target(self.with_target)
-                            .with_writer(std::io::stdout),
-                    )
-                    .with(filter)
-                    .try_init()
-            }
-            // Pretty format
-            (LogFormat::Pretty, LogOutput::Stdout) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .pretty()
-                        .with_span_events(span_events)
-                        .with_target(self.with_target)
-                        .with_thread_ids(self.with_thread_ids)
-                        .with_file(self.with_file)
-                        .with_line_number(self.with_line_number)
-                        .with_writer(std::io::stdout),
-                )
-                .with(filter)
-                .try_init(),
-            (LogFormat::Pretty, LogOutput::Stderr) => tracing_subscriber::registry()
-                .with(
-                    fmt::layer()
-                        .pretty()
-                        .with_span_events(span_events)
-                        .with_target(self.with_target)
-                        .with_thread_ids(self.with_thread_ids)
-                        .with_file(self.with_file)
-                        .with_line_number(self.with_line_number)
-                        .with_writer(std::io::stderr),
-                )
-                .with(filter)
-                .try_init(),
-            // File output - for now, just use stdout with a warning
-            // TODO: Implement proper file logging with rotation
-            (LogFormat::Pretty, LogOutput::File) => {
-                tracing::warn!("File logging not yet implemented, falling back to stdout");
-                tracing_subscriber::registry()
-                    .with(
-                        fmt::layer()
-                            .pretty()
-                            .with_span_events(span_events)
-                            .with_target(self.with_target)
-                            .with_writer(std::io::stdout),
-                    )
-                    .with(filter)
-                    .try_init()
-            }
-        }
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-    }
-
-    fn init_compact(
-        &self,
-        filter: EnvFilter,
-        span_events: fmt::format::FmtSpan,
-    ) -> Result<(), tracing_subscriber::util::TryInitError> {
-        tracing_subscriber::registry()
-            .with(
-                fmt::layer()
-                    .compact()
+        // Macro to reduce repetition when configuring layers (non-JSON formats)
+        macro_rules! configure_layer {
+            ($layer:expr) => {
+                $layer
                     .with_span_events(span_events)
                     .with_target(self.with_target)
                     .with_thread_ids(self.with_thread_ids)
                     .with_file(self.with_file)
                     .with_line_number(self.with_line_number)
-                    .with_writer(std::io::stdout),
-            )
-            .with(filter)
-            .try_init()
+            };
+        }
+
+        // Helper macro to reduce repetition in format matching
+        macro_rules! init_with_writer {
+            ($writer:expr) => {
+                match &self.format {
+                    #[cfg(feature = "json")]
+                    LogFormat::Json => {
+                        let layer = fmt::layer()
+                            .json()
+                            .with_span_events(span_events)
+                            .with_writer($writer);
+                        tracing_subscriber::registry()
+                            .with(layer)
+                            .with(filter)
+                            .try_init()
+                    }
+                    #[cfg(not(feature = "json"))]
+                    LogFormat::Json => {
+                        warn!("JSON format requested but 'json' feature not enabled, using compact format");
+                        let layer = configure_layer!(fmt::layer().compact().with_writer($writer));
+                        tracing_subscriber::registry()
+                            .with(layer)
+                            .with(filter)
+                            .try_init()
+                    }
+                    LogFormat::Compact => {
+                        let layer = configure_layer!(fmt::layer().compact().with_writer($writer));
+                        tracing_subscriber::registry()
+                            .with(layer)
+                            .with(filter)
+                            .try_init()
+                    }
+                    LogFormat::Full => {
+                        let layer = configure_layer!(fmt::layer().with_writer($writer));
+                        tracing_subscriber::registry()
+                            .with(layer)
+                            .with(filter)
+                            .try_init()
+                    }
+                    LogFormat::Pretty => {
+                        let layer = configure_layer!(fmt::layer().pretty().with_writer($writer));
+                        tracing_subscriber::registry()
+                            .with(layer)
+                            .with(filter)
+                            .try_init()
+                    }
+                }
+            };
+        }
+
+        // Choose writer based on output configuration, then apply format
+        match &self.output {
+            LogOutput::Stdout => init_with_writer!(std::io::stdout),
+            LogOutput::Stderr => init_with_writer!(std::io::stderr),
+            LogOutput::File => {
+                if let Some(ref path) = self.file_path {
+                    let file_appender = tracing_appender::rolling::never(
+                        path.parent().unwrap_or_else(|| Path::new(".")),
+                        path.file_name().unwrap_or_else(|| OsStr::new("alloy.log")),
+                    );
+                    init_with_writer!(file_appender)
+                } else {
+                    warn!(
+                        "File output requested but no file path configured, falling back to stdout"
+                    );
+                    init_with_writer!(std::io::stdout)
+                }
+            }
+        }
     }
 }

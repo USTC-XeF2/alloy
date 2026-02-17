@@ -37,7 +37,7 @@ pub mod message;
 pub mod transport;
 
 // Re-export core types for public API
-pub use adapter::{Adapter, AdapterBridge, BoxedAdapter, ConfigurableAdapter};
+pub use adapter::{Adapter, AdapterBridge, BoxedAdapter, ConfigurableAdapter, Dispatcher};
 pub use bot::{Bot, BoxedBot};
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
