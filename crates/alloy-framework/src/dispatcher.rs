@@ -38,8 +38,9 @@ use std::sync::Arc;
 
 use tracing::{Level, debug, span};
 
+use crate::context::AlloyContext;
 use crate::matcher::Matcher;
-use alloy_core::{AlloyContext, BoxedBot, BoxedEvent};
+use alloy_core::{BoxedBot, BoxedEvent};
 
 /// The central event dispatcher for the Alloy framework.
 ///
@@ -201,10 +202,6 @@ mod tests {
     impl Bot for MockBot {
         fn id(&self) -> &str {
             "test-bot"
-        }
-
-        fn adapter_name(&self) -> &str {
-            "test"
         }
 
         async fn call_api(&self, _action: &str, _params: &str) -> ApiResult<Value> {

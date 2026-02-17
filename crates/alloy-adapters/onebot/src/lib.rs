@@ -20,34 +20,6 @@
 //!         access_token: ${BOT_TOKEN:-}
 //! ```
 //!
-//! ```rust,ignore
-//! use alloy_runtime::AlloyRuntime;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // Adapter auto-registers from config
-//!     let runtime = AlloyRuntime::new();
-//!     runtime.run().await
-//! }
-//! ```
-//!
-//! ## Programmatic Usage
-//!
-//! ```rust,ignore
-//! use alloy_adapter_onebot::{OneBotAdapter, OneBotConfig};
-//!
-//! // From config
-//! let config: OneBotConfig = runtime.config().extract_adapter("onebot")?;
-//! runtime.register_adapter(OneBotAdapter::from_config(config)).await;
-//!
-//! // Or build manually
-//! let adapter = OneBotAdapter::builder()
-//!     .ws_server("0.0.0.0:8080", "/ws")
-//!     .ws_client("ws://localhost:6700/ws", None)
-//!     .build();
-//! runtime.register_adapter(adapter).await;
-//! ```
-//!
 //! ## Event Hierarchy
 //!
 //! ```text
@@ -63,7 +35,7 @@ pub mod bot;
 pub mod config;
 pub mod model;
 
-pub use adapter::{OneBotAdapter, OneBotAdapterBuilder};
+pub use adapter::OneBotAdapter;
 pub use bot::{
     Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, OneBotBot,
     Status, StrangerInfo, VersionInfo,

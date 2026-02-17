@@ -38,16 +38,16 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 use clap::Parser;
 use clap::error::ErrorKind;
 
+use crate::context::AlloyContext;
 use crate::error::ExtractError;
 use crate::extractor::FromContext;
 use crate::handler::Handler;
 use crate::matcher::Matcher;
-use alloy_core::{AlloyContext, EventType, RichTextSegment};
+use alloy_core::{EventType, RichTextSegment};
 
 // Thread-local registry for resolving handles during clap's FromStr parsing.
 thread_local! {
@@ -496,29 +496,18 @@ where
                     true
                 }
                 Err(err) => {
-                    // Check error kind to handle help/version requests
-                    match err.kind() {
-                        ErrorKind::DisplayHelp => {
-                            if should_reply_help {
-                                let help_text = err.to_string();
-                                let bot = ctx.bot_arc();
-                                let event = ctx.event().clone();
-                                tokio::spawn(async move {
-                                    let _ = bot.send(event.deref(), &help_text).await;
-                                });
-                            }
-                        }
-                        _ => {
-                            // Other parse errors
-                            if should_reply_error {
-                                let bot = ctx.bot_arc();
-                                let event = ctx.event().clone();
-                                let error_msg = err.to_string();
-                                tokio::spawn(async move {
-                                    let _ = bot.send(event.deref(), &error_msg).await;
-                                });
-                            }
-                        }
+                    let should_reply = if err.kind() == ErrorKind::DisplayHelp {
+                        should_reply_help
+                    } else {
+                        should_reply_error
+                    };
+                    if should_reply {
+                        let bot = ctx.bot_arc();
+                        let event = ctx.event().clone();
+                        let msg = err.to_string();
+                        tokio::spawn(async move {
+                            let _ = bot.send(&*event, &msg).await;
+                        });
                     }
                     false
                 }

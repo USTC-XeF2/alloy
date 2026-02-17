@@ -17,6 +17,5 @@ pub use config::{
     WsClientConfig, WsServerConfig,
 };
 pub use connection::{
-    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    ListenerHandle, MessageHandler,
+    ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle, MessageHandler,
 };

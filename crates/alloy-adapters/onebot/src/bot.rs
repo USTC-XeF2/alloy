@@ -71,18 +71,6 @@ impl OneBotBot {
         })
     }
 
-    /// Sets the API call timeout.
-    pub fn with_timeout(self: Arc<Self>, timeout: Duration) -> Arc<Self> {
-        // We need to recreate since we can't mutate through Arc
-        Arc::new(Self {
-            id: self.id.clone(),
-            connection: self.connection.clone(),
-            pending_calls: Arc::clone(&self.pending_calls),
-            echo_counter: AtomicU64::new(self.echo_counter.load(Ordering::SeqCst)),
-            api_timeout: timeout,
-        })
-    }
-
     /// Internal method to call an API and wait for response.
     async fn call_api_internal(&self, action: &str, params: Value) -> ApiResult<Value> {
         let echo = self.echo_counter.fetch_add(1, Ordering::SeqCst);
@@ -768,10 +756,6 @@ impl Bot for OneBotBot {
         &self.id
     }
 
-    fn adapter_name(&self) -> &'static str {
-        "onebot"
-    }
-
     async fn call_api(&self, action: &str, params: &str) -> ApiResult<Value> {
         let params: Value = serde_json::from_str(params)?;
         self.call_api_internal(action, params).await
@@ -812,6 +796,10 @@ impl Bot for OneBotBot {
 
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+
+    async fn on_disconnect(&self) {
+        self.clear_pending_calls().await;
     }
 }
 

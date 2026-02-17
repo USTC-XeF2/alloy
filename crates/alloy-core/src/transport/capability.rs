@@ -35,7 +35,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use super::connection::{BoxedConnectionHandler, ClientConfig, ConnectionHandle, ListenerHandle};
+use super::connection::{ClientConfig, ConnectionHandle, ListenerHandle};
+use crate::adapter::AdapterBridge;
 use crate::error::TransportResult;
 
 // =============================================================================
@@ -55,7 +56,7 @@ pub trait WsServerCapability: Send + Sync {
         &self,
         addr: &str,
         path: &str,
-        handler: BoxedConnectionHandler,
+        handler: Arc<AdapterBridge>,
     ) -> TransportResult<ListenerHandle>;
 }
 
@@ -71,7 +72,7 @@ pub trait WsClientCapability: Send + Sync {
     async fn connect(
         &self,
         url: &str,
-        handler: BoxedConnectionHandler,
+        handler: Arc<AdapterBridge>,
         config: ClientConfig,
     ) -> TransportResult<ConnectionHandle>;
 }
@@ -88,7 +89,7 @@ pub trait HttpServerCapability: Send + Sync {
         &self,
         addr: &str,
         path: &str,
-        handler: BoxedConnectionHandler,
+        handler: Arc<AdapterBridge>,
     ) -> TransportResult<ListenerHandle>;
 }
 
@@ -102,6 +103,19 @@ pub trait HttpClientCapability: Send + Sync {
 
     /// Sends an HTTP GET request.
     async fn get(&self, url: &str) -> TransportResult<Value>;
+
+    /// Starts an HTTP client bot.
+    ///
+    /// Creates a bot that can send API calls via HTTP POST.
+    /// The bot is registered with the provided handler and can be used
+    /// to send messages, but will not receive events through this connection.
+    async fn start_client(
+        &self,
+        bot_id: &str,
+        api_url: &str,
+        access_token: Option<String>,
+        handler: Arc<AdapterBridge>,
+    ) -> TransportResult<ConnectionHandle>;
 }
 
 // =============================================================================

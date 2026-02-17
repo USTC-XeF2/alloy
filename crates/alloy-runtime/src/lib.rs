@@ -38,25 +38,16 @@
 //!
 //! # Manual Transport Configuration (Optional)
 //!
-//! You can also manually configure transport capabilities if needed:
+//! The transport context is automatically created with all available transport
+//! capabilities based on enabled cargo features (ws-server, http-server, etc).
 //!
 //! ```ignore
-//! use alloy_runtime::{AlloyRuntime, RuntimeResult};
-//! use alloy_core::TransportContext;
-//! use alloy_transport::websocket::WsServerCapabilityImpl;
+//! use alloy_runtime::AlloyRuntime;
 //!
 //! #[tokio::main]
-//! async fn main() -> RuntimeResult<()> {
+//! async fn main() {
 //!     let runtime = AlloyRuntime::new();
-//!     
-//!     // Optionally override with custom transport context
-//!     let ctx = TransportContext::new()
-//!         .with_ws_server(WsServerCapabilityImpl::new());
-//!     runtime.set_transport_context(ctx).await;
-//!     
-//!     runtime.run().await?;
-//!     
-//!     Ok(())
+//!     runtime.run().await.expect("Failed to run runtime");
 //! }
 //! ```
 //!

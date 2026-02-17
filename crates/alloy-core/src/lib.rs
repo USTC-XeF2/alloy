@@ -23,36 +23,30 @@
 //!
 //! ### Bots
 //! - **Bot**: Protocol-agnostic bot trait
-//! - **BotManager**: Runtime bot lifecycle management
-//!
-//! ### Context
-//! - **AlloyContext**: Event context with propagation control and bot access
 //!
 //! ### Adapters
 //! - **Adapter**: Protocol implementation trait
-//! - **AdapterContext**: Transport capability access for adapters
+//! - **AdapterBridge**: Transport capability access for adapters
 
 // Core modules
 pub mod adapter;
 pub mod bot;
-pub mod context;
 pub mod error;
 pub mod event;
 pub mod message;
 pub mod transport;
 
 // Re-export core types for public API
-pub use adapter::{Adapter, AdapterContext, BoxedAdapter, ConfigurableAdapter};
-pub use bot::{Bot, BotManager, BotMessage, BoxedBot, downcast_bot};
-pub use context::AlloyContext;
+pub use adapter::{Adapter, AdapterBridge, BoxedAdapter, ConfigurableAdapter};
+pub use bot::{Bot, BoxedBot};
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };
 pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
 pub use message::{Message, MessageSegment, RichTextSegment};
 pub use transport::{
-    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    HttpClientCapability, HttpClientConfig, HttpServerCapability, HttpServerConfig, ListenerHandle,
-    MessageHandler, RetryConfig, TransportConfig, TransportContext, TransportType,
-    WsClientCapability, WsClientConfig, WsServerCapability, WsServerConfig,
+    ClientConfig, ConnectionHandle, ConnectionInfo, HttpClientCapability, HttpClientConfig,
+    HttpServerCapability, HttpServerConfig, ListenerHandle, MessageHandler, RetryConfig,
+    TransportConfig, TransportContext, TransportType, WsClientCapability, WsClientConfig,
+    WsServerCapability, WsServerConfig,
 };

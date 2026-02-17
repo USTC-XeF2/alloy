@@ -57,8 +57,9 @@ use std::task::{Context, Poll};
 use tower::Service;
 use tracing::{debug, trace};
 
+use crate::context::AlloyContext;
 use crate::handler::{BoxedHandler, Handler, into_handler};
-use alloy_core::{AlloyContext, Event};
+use alloy_core::Event;
 
 /// A type-erased check function.
 pub type CheckFn = Arc<dyn Fn(&AlloyContext) -> bool + Send + Sync>;

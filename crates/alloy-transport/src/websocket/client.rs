@@ -1,5 +1,6 @@
 //! WebSocket client capability implementation.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,8 +12,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 use tracing::{debug, error, info, trace, warn};
 
 use alloy_core::{
-    BoxedConnectionHandler, ClientConfig, ConnectionHandle, ConnectionInfo, TransportError,
-    TransportResult, WsClientCapability,
+    AdapterBridge, ClientConfig, ConnectionHandle, ConnectionInfo, TransportError, TransportResult,
+    WsClientCapability,
 };
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -40,7 +41,7 @@ impl WsClientCapability for WsClientCapabilityImpl {
     async fn connect(
         &self,
         url: &str,
-        handler: BoxedConnectionHandler,
+        handler: Arc<AdapterBridge>,
         config: ClientConfig,
     ) -> TransportResult<ConnectionHandle> {
         let url = url.to_string();
@@ -64,14 +65,14 @@ impl WsClientCapability for WsClientCapabilityImpl {
         let (ws_tx, ws_rx) = ws_stream.split();
 
         // Get bot ID from handler
-        let bot_id = handler.on_connect(conn_info).await?;
+        let bot_id = handler.get_bot_id(conn_info).await?;
 
         info!(bot_id = %bot_id, url = %url, "WebSocket client connected");
 
         let handle = ConnectionHandle::new(bot_id.clone(), message_tx, shutdown_tx);
 
-        // Call on_ready with the connection handle
-        handler.on_ready(&bot_id, handle.clone()).await;
+        // Create and register the bot
+        handler.create_bot(&bot_id, handle.clone()).await;
 
         // Spawn connection manager task
         tokio::spawn(run_client_loop(
@@ -95,7 +96,7 @@ async fn run_client_loop(
     ws_rx: WsSource,
     mut message_rx: mpsc::Receiver<Vec<u8>>,
     mut shutdown_rx: watch::Receiver<bool>,
-    handler: BoxedConnectionHandler,
+    handler: Arc<AdapterBridge>,
     bot_id: String,
     url: String,
     config: ClientConfig,
@@ -247,7 +248,7 @@ async fn run_client_loop(
 /// Returns None if max retries exceeded, otherwise returns the result of reconnection attempt.
 async fn try_reconnect(
     url: &str,
-    handler: &BoxedConnectionHandler,
+    handler: &Arc<AdapterBridge>,
     bot_id: &str,
     config: &ClientConfig,
     retry_count: &mut u32,

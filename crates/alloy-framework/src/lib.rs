@@ -12,6 +12,7 @@
 //! The framework layer is built on top of core types but adds higher-level
 //! abstractions that aren't strictly necessary for the runtime.
 
+pub mod context;
 pub mod dispatcher;
 pub mod error;
 pub mod extractor;
@@ -22,6 +23,7 @@ pub mod matcher_builders;
 #[cfg(feature = "command")]
 pub mod command;
 
+pub use context::AlloyContext;
 pub use dispatcher::Dispatcher;
 pub use error::{ExtractError, ExtractResult};
 pub use extractor::FromContext;

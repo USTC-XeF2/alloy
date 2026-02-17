@@ -20,7 +20,7 @@ use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, trace, warn};
 
 use alloy_core::{
-    BoxedConnectionHandler, ConnectionHandle, ConnectionInfo, ListenerHandle, TransportResult,
+    AdapterBridge, ConnectionHandle, ConnectionInfo, ListenerHandle, TransportResult,
     WsServerCapability,
 };
 
@@ -43,7 +43,7 @@ impl Default for WsServerCapabilityImpl {
 /// Shared state for the WebSocket server.
 struct ServerState {
     /// Connection handler from the adapter.
-    handler: BoxedConnectionHandler,
+    handler: Arc<AdapterBridge>,
     /// Active connections (bot_id -> sender).
     connections: RwLock<HashMap<String, mpsc::Sender<Vec<u8>>>>,
 }
@@ -54,7 +54,7 @@ impl WsServerCapability for WsServerCapabilityImpl {
         &self,
         addr: &str,
         path: &str,
-        handler: BoxedConnectionHandler,
+        handler: Arc<AdapterBridge>,
     ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,
@@ -146,8 +146,8 @@ async fn handle_socket(
         conn_info = conn_info.with_metadata(key, value);
     }
 
-    // Call on_connect to get bot ID
-    let bot_id = match state.handler.on_connect(conn_info).await {
+    // Extract bot ID from connection metadata
+    let bot_id = match state.handler.get_bot_id(conn_info).await {
         Ok(id) => id,
         Err(e) => {
             error!(error = %e, remote_addr = %addr, "Failed to establish WebSocket connection");
@@ -167,8 +167,8 @@ async fn handle_socket(
     // Create ConnectionHandle for this connection
     let connection_handle = ConnectionHandle::new(bot_id.clone(), tx.clone(), shutdown_tx);
 
-    // Call on_ready with the connection handle
-    state.handler.on_ready(&bot_id, connection_handle).await;
+    // Create and register the bot
+    state.handler.create_bot(&bot_id, connection_handle).await;
 
     // Register the connection
     {

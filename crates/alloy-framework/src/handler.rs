@@ -34,8 +34,8 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::context::AlloyContext;
 use crate::extractor::FromContext;
-use alloy_core::AlloyContext;
 
 /// A type alias for a boxed, pinned future that is `Send`.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

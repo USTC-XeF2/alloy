@@ -3,9 +3,11 @@
 //! This module provides the [`FromContext`] trait, which defines how types
 //! can be extracted from an [`AlloyContext`] for use as handler parameters.
 
+use std::sync::Arc;
+
+use crate::context::AlloyContext;
 use crate::error::ExtractError;
-use alloy_core::bot::downcast_bot;
-use alloy_core::{AlloyContext, Bot, BoxedBot, BoxedEvent, Event, EventContext};
+use alloy_core::{Bot, BoxedBot, BoxedEvent, Event, EventContext};
 
 /// A trait for types that can be extracted from an [`AlloyContext`].
 ///
@@ -128,13 +130,14 @@ impl FromContext for BoxedBot {
 ///     bot.send_private_msg(12345, "Hello!", false).await.ok();
 /// }
 /// ```
-impl<T: Bot + 'static> FromContext for std::sync::Arc<T> {
+impl<T: Bot + 'static> FromContext for Arc<T> {
     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
         // Get the BoxedBot
         let boxed_bot = ctx.bot_arc();
 
         // Try to downcast to the concrete type
-        downcast_bot::<T>(boxed_bot).ok_or_else(|| ExtractError::BotTypeMismatch {
+        let any_arc = boxed_bot.as_any();
+        Arc::downcast::<T>(any_arc).map_err(|_| ExtractError::BotTypeMismatch {
             expected: std::any::type_name::<T>(),
         })
     }

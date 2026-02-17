@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::error::{TransportError, TransportResult};
@@ -17,33 +16,6 @@ use crate::event::BoxedEvent;
 ///
 /// The handler receives raw bytes and returns parsed events (if any).
 pub type MessageHandler = Arc<dyn Fn(&[u8]) -> Option<BoxedEvent> + Send + Sync>;
-
-/// A handler for connection lifecycle events.
-#[async_trait]
-pub trait ConnectionHandler: Send + Sync {
-    /// Called when a new connection is established.
-    ///
-    /// Returns a unique bot ID for this connection, or an error if connection setup fails.
-    async fn on_connect(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
-
-    /// Called after connection is established and handle is available.
-    ///
-    /// This is where you can create and register bot instances.
-    async fn on_ready(&self, _bot_id: &str, _connection: ConnectionHandle) {
-        // Default implementation does nothing
-    }
-
-    /// Called when data is received from a connection.
-    ///
-    /// Returns an event to dispatch, if the data represents one.
-    async fn on_message(&self, bot_id: &str, data: &[u8]) -> Option<BoxedEvent>;
-
-    /// Called when a connection is closed.
-    async fn on_disconnect(&self, bot_id: &str);
-
-    /// Called when a connection error occurs.
-    async fn on_error(&self, bot_id: &str, error: &str);
-}
 
 /// Information about a connection.
 #[derive(Debug, Clone)]
@@ -78,9 +50,6 @@ impl ConnectionInfo {
         self
     }
 }
-
-/// Boxed connection handler.
-pub type BoxedConnectionHandler = Arc<dyn ConnectionHandler>;
 
 // =============================================================================
 // Handles

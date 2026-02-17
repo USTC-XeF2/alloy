@@ -32,9 +32,7 @@ use tracing::{debug, error, info, warn};
 use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
-use alloy_core::{
-    AdapterContext, BotManager, BoxedAdapter, BoxedEvent, ConfigurableAdapter, TransportContext,
-};
+use alloy_core::{AdapterBridge, BoxedAdapter, BoxedEvent, ConfigurableAdapter, TransportContext};
 use alloy_framework::{Dispatcher, Matcher};
 
 /// The main Alloy runtime that orchestrates adapters and bots.
@@ -72,10 +70,10 @@ pub struct AlloyRuntime {
     adapters: Arc<RwLock<HashMap<String, BoxedAdapter>>>,
     /// The event dispatcher.
     dispatcher: Arc<RwLock<Dispatcher>>,
-    /// Transport context (populated before init).
-    transport_context: Arc<RwLock<Option<TransportContext>>>,
-    /// Adapter contexts (populated after init).
-    adapter_contexts: Arc<RwLock<Vec<AdapterContext>>>,
+    /// Transport context.
+    transport_context: TransportContext,
+    /// Adapter bridges (populated after init).
+    adapter_bridges: Arc<RwLock<HashMap<String, Arc<AdapterBridge>>>>,
     /// Whether the runtime is running.
     running: Arc<RwLock<bool>>,
 }
@@ -145,8 +143,8 @@ impl AlloyRuntime {
             config: config.clone(),
             adapters: Arc::new(RwLock::new(HashMap::new())),
             dispatcher: Arc::new(RwLock::new(Dispatcher::new())),
-            transport_context: Arc::new(RwLock::new(Some(transport_ctx))),
-            adapter_contexts: Arc::new(RwLock::new(Vec::new())),
+            transport_context: transport_ctx,
+            adapter_bridges: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(RwLock::new(false)),
         }
     }
@@ -199,15 +197,6 @@ impl AlloyRuntime {
         ctx
     }
 
-    /// Sets the transport context.
-    ///
-    /// This must be called before `init()` to provide transport capabilities
-    /// to adapters.
-    pub async fn set_transport_context(&self, ctx: TransportContext) {
-        let mut guard = self.transport_context.write().await;
-        *guard = Some(ctx);
-    }
-
     /// Registers an adapter with the runtime.
     ///
     /// The adapter can be configured via configuration in `alloy.yaml`, or
@@ -252,7 +241,6 @@ impl AlloyRuntime {
         // Create adapter from its config
         let adapter = A::from_config(config)?;
 
-        let adapter_name = A::name();
         let mut adapters = self.adapters.write().await;
         adapters.insert(adapter_name.to_string(), adapter);
         info!(adapter = adapter_name, "Registered adapter");
@@ -304,57 +292,38 @@ impl AlloyRuntime {
     // Adapter Management
     // =========================================================================
 
-    /// Gets an adapter by name.
-    async fn get_adapter(&self, name: &str) -> Option<BoxedAdapter> {
-        let adapters = self.adapters.read().await;
-        adapters.get(name).cloned()
-    }
-
-    /// Returns all registered adapter names.
-    async fn adapter_names(&self) -> Vec<String> {
-        let adapters = self.adapters.read().await;
-        adapters.keys().cloned().collect()
-    }
-
-    /// Creates a BotManager for event dispatching.
-    pub fn create_bot_manager(&self) -> Arc<BotManager> {
+    /// Creates an event dispatcher for adapters.
+    fn create_event_dispatcher(
+        &self,
+    ) -> Arc<dyn Fn(BoxedEvent, alloy_core::BoxedBot) + Send + Sync> {
         let dispatcher = Arc::clone(&self.dispatcher);
-
-        Arc::new(BotManager::new(Arc::new(
-            move |event: BoxedEvent, bot: alloy_core::BoxedBot| {
-                let dispatcher = Arc::clone(&dispatcher);
-                tokio::spawn(async move {
-                    let d = dispatcher.read().await;
-                    let _ = d.dispatch(event, bot).await;
-                });
-            },
-        )))
+        Arc::new(move |event: BoxedEvent, bot: alloy_core::BoxedBot| {
+            let dispatcher = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                let d = dispatcher.read().await;
+                let _ = d.dispatch(event, bot).await;
+            });
+        })
     }
 
     /// Initializes all registered adapters with transport capabilities.
     pub async fn init(&self) -> RuntimeResult<()> {
-        // Get transport context (use empty if not set)
-        let transport_ctx = {
-            let guard = self.transport_context.read().await;
-            guard.clone().unwrap_or_default()
-        };
+        let adapters = self.adapters.read().await;
+        debug!("Initializing {} adapter(s)", adapters.len());
 
-        let adapter_names = self.adapter_names().await;
-        debug!("Initializing {} adapter(s)", adapter_names.len());
+        let mut bridges = self.adapter_bridges.write().await;
 
-        let mut contexts = self.adapter_contexts.write().await;
+        for (name, adapter) in adapters.iter() {
+            // Create adapter bridge
+            let bridge = Arc::new(AdapterBridge::new(
+                name.clone(),
+                adapter.clone(),
+                self.create_event_dispatcher(),
+                self.transport_context.clone(),
+            ));
 
-        for name in adapter_names {
-            if self.get_adapter(&name).await.is_some() {
-                // Create bot manager for this adapter
-                let bot_manager = self.create_bot_manager();
-
-                // Create adapter context
-                let ctx = AdapterContext::new(transport_ctx.clone(), bot_manager);
-
-                debug!(adapter = %name, "Adapter context created");
-                contexts.push(ctx);
-            }
+            debug!(adapter = %name, "Adapter bridge created");
+            bridges.insert(name.clone(), bridge);
         }
 
         info!("Runtime initialized");
@@ -376,14 +345,12 @@ impl AlloyRuntime {
         info!("Starting Alloy runtime");
 
         // Start all adapters
-        let adapter_names = self.adapter_names().await;
-        let mut contexts = self.adapter_contexts.write().await;
+        let adapters = self.adapters.read().await;
+        let bridges = self.adapter_bridges.read().await;
 
-        for (idx, name) in adapter_names.iter().enumerate() {
-            if let Some(adapter) = self.get_adapter(name).await
-                && let Some(ctx) = contexts.get_mut(idx)
-            {
-                if let Err(e) = adapter.on_start(ctx).await {
+        for (name, adapter) in adapters.iter() {
+            if let Some(bridge) = bridges.get(name) {
+                if let Err(e) = adapter.on_start(bridge.clone()).await {
                     error!(adapter = %name, error = %e, "Failed to start adapter");
                     continue;
                 }
@@ -411,13 +378,12 @@ impl AlloyRuntime {
         info!("Stopping Alloy runtime");
 
         // Call on_shutdown for all adapters
-        let adapter_names = self.adapter_names().await;
-        let mut contexts = self.adapter_contexts.write().await;
+        let adapters = self.adapters.read().await;
+        let bridges = self.adapter_bridges.read().await;
 
-        for (i, name) in adapter_names.iter().enumerate() {
-            if let Some(adapter) = self.get_adapter(name).await
-                && let Some(ctx) = contexts.get_mut(i)
-                && let Err(e) = adapter.on_shutdown(ctx).await
+        for (name, adapter) in adapters.iter() {
+            if let Some(bridge) = bridges.get(name)
+                && let Err(e) = adapter.on_shutdown(bridge.clone()).await
             {
                 error!(adapter = %name, error = %e, "Error during adapter shutdown");
             }

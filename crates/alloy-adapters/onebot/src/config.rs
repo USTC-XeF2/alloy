@@ -262,6 +262,10 @@ pub struct HttpClientConfig {
     /// Whether this connection is enabled.
     pub enabled: bool,
 
+    /// Bot ID for this HTTP client.
+    /// Required since HTTP clients don't have incoming connections to extract ID from.
+    pub bot_id: String,
+
     /// HTTP API URL.
     pub api_url: String,
 
@@ -277,6 +281,7 @@ impl Default for HttpClientConfig {
         Self {
             name: "http-client".to_string(),
             enabled: true,
+            bot_id: "12345678".to_string(), // Default bot ID
             api_url: "http://127.0.0.1:5700".to_string(),
             access_token: None,
             timeout_ms: 30000,
