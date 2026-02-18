@@ -41,9 +41,8 @@
 //! async fn main() -> anyhow::Result<()> {
 //!     let runtime = AlloyRuntime::new();
 //!     
-//!     // Adapter is configured from alloy.yaml
-//!     let config: OneBotConfig = runtime.config().extract_adapter("onebot")?;
-//!     runtime.register_adapter(OneBotAdapter::from_config(config)).await;
+//!     // Adapter is automatically configured from alloy.yaml
+//!     runtime.register_adapter::<OneBotAdapter>().await?;
 //!     
 //!     // Register a matcher with handlers
 //!     runtime.register_matcher(

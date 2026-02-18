@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
         .await;
 
     // Start the bot and wait for it to finish.
-    runtime.run().await?;
+    runtime.run().await;
 
     Ok(())
 }

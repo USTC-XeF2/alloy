@@ -134,7 +134,7 @@ pub trait ConfigurableAdapter: Adapter {
         Self: Sized;
 
     /// Creates an adapter instance from its deserialized configuration.
-    fn from_config(config: Self::Config) -> AdapterResult<Arc<Self>>
+    fn from_config(config: Self::Config) -> Self
     where
         Self: Sized;
 }

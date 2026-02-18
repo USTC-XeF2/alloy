@@ -23,10 +23,11 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 
 use tokio::signal;
-use tokio::sync::RwLock;
+use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{debug, error, info, span, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
@@ -70,15 +71,15 @@ pub struct AlloyRuntime {
     /// The configuration.
     config: AlloyConfig,
     /// Map of adapter name to adapter instance.
-    adapters: Arc<RwLock<HashMap<String, BoxedAdapter>>>,
+    adapters: RwLock<HashMap<String, BoxedAdapter>>,
     /// Registered matchers for event dispatching.
-    matchers: Arc<RwLock<Vec<Matcher>>>,
+    matchers: Arc<AsyncRwLock<Vec<Matcher>>>,
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges (populated after init).
-    adapter_bridges: Arc<RwLock<HashMap<String, Arc<AdapterBridge>>>>,
+    adapter_bridges: RwLock<HashMap<String, Arc<AdapterBridge>>>,
     /// Whether the runtime is running.
-    running: Arc<RwLock<bool>>,
+    running: AtomicBool,
 }
 
 impl AlloyRuntime {
@@ -144,11 +145,11 @@ impl AlloyRuntime {
 
         Self {
             config: config.clone(),
-            adapters: Arc::new(RwLock::new(HashMap::new())),
-            matchers: Arc::new(RwLock::new(Vec::new())),
+            adapters: RwLock::new(HashMap::new()),
+            matchers: Arc::new(AsyncRwLock::new(Vec::new())),
             transport_context: transport_ctx,
-            adapter_bridges: Arc::new(RwLock::new(HashMap::new())),
-            running: Arc::new(RwLock::new(false)),
+            adapter_bridges: RwLock::new(HashMap::new()),
+            running: AtomicBool::new(false),
         }
     }
 
@@ -228,7 +229,7 @@ impl AlloyRuntime {
         let config: A::Config = if let Some(config_value) = self.config.adapters.get(adapter_name) {
             // Deserialize from config
             config_value.clone().deserialize().map_err(|e| {
-                RuntimeError::AdapterConfigDeserialize(format!(
+                RuntimeError(format!(
                     "Failed to deserialize config for adapter '{adapter_name}': {e}"
                 ))
             })?
@@ -242,10 +243,10 @@ impl AlloyRuntime {
         };
 
         // Create adapter from its config
-        let adapter = A::from_config(config)?;
+        let adapter = A::from_config(config);
 
-        let mut adapters = self.adapters.write().await;
-        adapters.insert(adapter_name.to_string(), adapter);
+        let mut adapters = self.adapters.write().unwrap();
+        adapters.insert(adapter_name.to_string(), Arc::new(adapter));
         info!(adapter = adapter_name, "Registered adapter");
         Ok(())
     }
@@ -285,13 +286,9 @@ impl AlloyRuntime {
     }
 
     /// Returns whether the runtime is currently running.
-    pub async fn is_running(&self) -> bool {
-        *self.running.read().await
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
     }
-
-    // =========================================================================
-    // Adapter Management
-    // =========================================================================
 
     /// Creates an event dispatcher for adapters.
     ///
@@ -324,11 +321,11 @@ impl AlloyRuntime {
     }
 
     /// Initializes all registered adapters with transport capabilities.
-    pub async fn init(&self) -> RuntimeResult<()> {
-        let adapters = self.adapters.read().await;
+    pub async fn init(&self) {
+        let adapters = self.adapters.read().unwrap();
         debug!("Initializing {} adapter(s)", adapters.len());
 
-        let mut bridges = self.adapter_bridges.write().await;
+        let mut bridges = self.adapter_bridges.write().unwrap();
 
         for (name, adapter) in adapters.iter() {
             // Create adapter bridge
@@ -343,26 +340,25 @@ impl AlloyRuntime {
         }
 
         info!("Runtime initialized");
-
-        Ok(())
     }
 
     /// Starts the runtime.
-    pub async fn start(&self) -> RuntimeResult<()> {
+    pub async fn start(&self) {
+        // Try to set running to true (compare and swap)
+        if self
+            .running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
         {
-            let mut running = self.running.write().await;
-            if *running {
-                warn!("Runtime is already running");
-                return Ok(());
-            }
-            *running = true;
+            warn!("Runtime is already running");
+            return;
         }
 
         info!("Starting Alloy runtime");
 
         // Start all adapters
-        let adapters = self.adapters.read().await;
-        let bridges = self.adapter_bridges.read().await;
+        let adapters = self.adapters.read().unwrap();
+        let bridges = self.adapter_bridges.read().unwrap();
 
         for (name, adapter) in adapters.iter() {
             if let Some(bridge) = bridges.get(name) {
@@ -375,26 +371,25 @@ impl AlloyRuntime {
         }
 
         info!("Runtime started");
-
-        Ok(())
     }
 
     /// Stops the runtime and all adapters.
-    pub async fn stop(&self) -> RuntimeResult<()> {
+    pub async fn stop(&self) {
+        // Try to set running to false (compare and swap)
+        if self
+            .running
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
         {
-            let mut running = self.running.write().await;
-            if !*running {
-                warn!("Runtime is not running");
-                return Ok(());
-            }
-            *running = false;
+            warn!("Runtime is not running");
+            return;
         }
 
         info!("Stopping Alloy runtime");
 
         // Call on_shutdown for all adapters
-        let adapters = self.adapters.read().await;
-        let bridges = self.adapter_bridges.read().await;
+        let adapters = self.adapters.read().unwrap();
+        let bridges = self.adapter_bridges.read().unwrap();
 
         for (name, adapter) in adapters.iter() {
             if let Some(bridge) = bridges.get(name)
@@ -405,38 +400,32 @@ impl AlloyRuntime {
         }
 
         info!("Runtime stopped");
-
-        Ok(())
     }
 
     /// Runs the runtime until a shutdown signal is received.
-    pub async fn run(&self) -> RuntimeResult<()> {
-        self.init().await?;
-        self.start().await?;
+    pub async fn run(&self) {
+        self.init().await;
+        self.start().await;
 
         info!("Alloy runtime is now running. Press Ctrl+C to stop.");
 
         // Wait for shutdown signal
         self.wait_for_shutdown().await;
 
-        self.stop().await?;
-
-        Ok(())
+        self.stop().await;
     }
 
     /// Runs the runtime with a custom shutdown future.
-    pub async fn run_until<F>(&self, shutdown: F) -> RuntimeResult<()>
+    pub async fn run_until<F>(&self, shutdown: F)
     where
         F: std::future::Future<Output = ()>,
     {
-        self.init().await?;
-        self.start().await?;
+        self.init().await;
+        self.start().await;
 
         shutdown.await;
 
-        self.stop().await?;
-
-        Ok(())
+        self.stop().await;
     }
 
     /// Waits for shutdown signals (Ctrl+C or SIGTERM).

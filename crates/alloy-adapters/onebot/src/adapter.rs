@@ -268,7 +268,7 @@ impl ConfigurableAdapter for OneBotAdapter {
         "onebot"
     }
 
-    fn from_config(config: Self::Config) -> AdapterResult<Arc<Self>> {
-        Ok(Arc::new(Self { config }))
+    fn from_config(config: Self::Config) -> Self {
+        Self { config }
     }
 }
