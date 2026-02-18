@@ -31,16 +31,16 @@
 // Core modules
 pub mod adapter;
 pub mod bot;
+pub mod bridge;
 pub mod error;
 pub mod event;
 pub mod message;
 pub mod transport;
 
 // Re-export core types for public API
-pub use adapter::{
-    Adapter, AdapterBridge, AdapterContext, BoxedAdapter, ConfigurableAdapter, Dispatcher,
-};
+pub use adapter::{Adapter, AdapterContext, BoxedAdapter, ConfigurableAdapter, Dispatcher};
 pub use bot::{Bot, BoxedBot};
+pub use bridge::AdapterBridge;
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };

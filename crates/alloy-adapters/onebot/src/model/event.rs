@@ -23,7 +23,7 @@
 //! ├── RequestEvent {}                                    ← type = "request"
 //! │   ├── FriendRequestEvent
 //! │   └── GroupRequestEvent
-//! └── MetaEventEvent {}                                  ← type = "meta"
+//! └── MetaEvent {}                                       ← type = "meta"
 //!     ├── LifecycleEvent
 //!     └── HeartbeatEvent
 //! ```
@@ -401,7 +401,7 @@ pub struct GroupRequestEvent {
 /// Meta event base — matches any event with `post_type = "meta_event"`.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(name = "meta_event", type = "meta")]
-pub struct MetaEventEvent {
+pub struct MetaEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: OneBotEvent,
@@ -514,7 +514,7 @@ pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
             match meta_type {
                 "lifecycle" => attach_raw!(LifecycleEvent),
                 "heartbeat" => attach_raw!(HeartbeatEvent),
-                _ => attach_raw!(MetaEventEvent),
+                _ => attach_raw!(MetaEvent),
             }
         }
         _ => {

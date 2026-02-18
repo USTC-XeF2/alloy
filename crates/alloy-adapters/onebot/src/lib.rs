@@ -63,7 +63,7 @@ pub use model::event::{
     ClientStatusEvent, Device, EssenceEvent, FriendAddEvent, FriendRecallEvent, FriendRequestEvent,
     GroupAdminEvent, GroupBanEvent, GroupCardEvent, GroupDecreaseEvent, GroupIncreaseEvent,
     GroupMessageEvent, GroupRecallEvent, GroupRequestEvent, GroupUploadEvent, HeartbeatEvent,
-    HonorEvent, LifecycleEvent, LuckyKingEvent, MessageEvent, MetaEventEvent, NoticeEvent,
-    NotifyEvent, OfflineFile, OfflineFileEvent, OneBotEvent, PokeEvent, PrivateMessageEvent,
-    RequestEvent, UploadedFile,
+    HonorEvent, LifecycleEvent, LuckyKingEvent, MessageEvent, MetaEvent, NoticeEvent, NotifyEvent,
+    OfflineFile, OfflineFileEvent, OneBotEvent, PokeEvent, PrivateMessageEvent, RequestEvent,
+    UploadedFile,
 };

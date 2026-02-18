@@ -331,7 +331,7 @@ fn generate_child_event(
                 "message" => quote! { ::alloy_core::EventType::Message },
                 "notice" => quote! { ::alloy_core::EventType::Notice },
                 "request" => quote! { ::alloy_core::EventType::Request },
-                "meta" | "meta_event" => quote! { ::alloy_core::EventType::Meta },
+                "meta" => quote! { ::alloy_core::EventType::Meta },
                 _ => quote! { ::alloy_core::EventType::Other },
             };
             quote! { fn event_type(&self) -> ::alloy_core::EventType { #variant } }

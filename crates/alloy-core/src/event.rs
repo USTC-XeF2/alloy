@@ -26,6 +26,7 @@
 //! ```
 
 use std::any::{Any, TypeId};
+use std::convert::Infallible;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -55,14 +56,14 @@ pub enum EventType {
 }
 
 impl FromStr for EventType {
-    type Err = ();
+    type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.to_lowercase().as_str() {
             "message" => EventType::Message,
             "notice" => EventType::Notice,
             "request" => EventType::Request,
-            "meta" | "meta_event" => EventType::Meta,
+            "meta" => EventType::Meta,
             _ => EventType::Other,
         })
     }
