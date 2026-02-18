@@ -49,8 +49,8 @@ use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::{LifecycleEvent, parse_onebot_event};
 use alloy_core::{
-    Adapter, AdapterBridge, AdapterResult, BoxedBot, BoxedEvent, ClientConfig, ConfigurableAdapter,
-    ConnectionHandle, ConnectionInfo, TransportError, TransportResult,
+    Adapter, AdapterContext, AdapterResult, BoxedBot, BoxedEvent, ClientConfig,
+    ConfigurableAdapter, ConnectionHandle, ConnectionInfo, TransportError, TransportResult,
 };
 
 /// The OneBot v11 adapter.
@@ -90,7 +90,7 @@ impl Adapter for OneBotAdapter {
         OneBotBot::new(bot_id, connection)
     }
 
-    async fn on_message(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent> {
+    async fn parse_event(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent> {
         let bot_id = bot.id();
 
         // Parse the message as JSON first
@@ -143,7 +143,7 @@ impl Adapter for OneBotAdapter {
         Some(boxed_event)
     }
 
-    async fn on_start(&self, bridge: Arc<AdapterBridge>) -> AdapterResult<()> {
+    async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
         let enabled_count = self.config.enabled_count();
         if enabled_count == 0 {
             warn!("No enabled connections in OneBot adapter configuration");
@@ -159,7 +159,7 @@ impl Adapter for OneBotAdapter {
         for conn_config in self.config.enabled_connections() {
             match conn_config {
                 ConnectionConfig::WsServer(ws_config) => {
-                    if let Some(ws_server) = bridge.transport().ws_server() {
+                    if let Some(ws_server) = ctx.transport().ws_server() {
                         let addr = ws_config.bind_addr();
                         info!(
                             name = %ws_config.name,
@@ -168,9 +168,9 @@ impl Adapter for OneBotAdapter {
                             "Starting WebSocket server"
                         );
                         let handle = ws_server
-                            .listen(&addr, &ws_config.path, bridge.clone())
+                            .listen(&addr, &ws_config.path, ctx.clone().as_connection_handler())
                             .await?;
-                        bridge.add_listener(handle).await;
+                        ctx.add_listener(handle).await;
                     } else {
                         warn!(
                             "WebSocket server capability not available, skipping ws-server config"
@@ -179,7 +179,7 @@ impl Adapter for OneBotAdapter {
                 }
 
                 ConnectionConfig::WsClient(ws_config) => {
-                    if let Some(ws_client) = bridge.transport().ws_client() {
+                    if let Some(ws_client) = ctx.transport().ws_client() {
                         let token = ws_config
                             .access_token
                             .as_ref()
@@ -197,9 +197,9 @@ impl Adapter for OneBotAdapter {
                             ClientConfig::default()
                         };
                         let handle = ws_client
-                            .connect(&ws_config.url, bridge.clone(), config)
+                            .connect(&ws_config.url, ctx.clone().as_connection_handler(), config)
                             .await?;
-                        bridge.add_connection(handle).await;
+                        ctx.add_connection(handle).await;
                     } else {
                         warn!(
                             "WebSocket client capability not available, skipping ws-client config"
@@ -208,7 +208,7 @@ impl Adapter for OneBotAdapter {
                 }
 
                 ConnectionConfig::HttpServer(http_config) => {
-                    if let Some(http_server) = bridge.transport().http_server() {
+                    if let Some(http_server) = ctx.transport().http_server() {
                         let addr = http_config.bind_addr();
                         info!(
                             name = %http_config.name,
@@ -217,9 +217,13 @@ impl Adapter for OneBotAdapter {
                             "Starting HTTP webhook server"
                         );
                         let handle = http_server
-                            .listen(&addr, &http_config.path, bridge.clone())
+                            .listen(
+                                &addr,
+                                &http_config.path,
+                                ctx.clone().as_connection_handler(),
+                            )
                             .await?;
-                        bridge.add_listener(handle).await;
+                        ctx.add_listener(handle).await;
                     } else {
                         warn!("HTTP server capability not available, skipping http-server config");
                     }
@@ -229,7 +233,7 @@ impl Adapter for OneBotAdapter {
                     // HTTP client bots are created in the transport layer.
                     // They can send API calls but don't receive events via this connection.
                     // Events come from a separate HTTP server or WS connection.
-                    if let Some(http_client) = bridge.transport().http_client() {
+                    if let Some(http_client) = ctx.transport().http_client() {
                         let bot_id = http_config.bot_id.clone();
                         let api_url = http_config.api_url.clone();
                         let access_token = http_config
@@ -247,9 +251,14 @@ impl Adapter for OneBotAdapter {
                         );
 
                         let handle = http_client
-                            .start_client(&bot_id, &api_url, access_token, bridge.clone())
+                            .start_client(
+                                &bot_id,
+                                &api_url,
+                                access_token,
+                                ctx.clone().as_connection_handler(),
+                            )
                             .await?;
-                        bridge.add_connection(handle).await;
+                        ctx.add_connection(handle).await;
                     } else {
                         warn!("HTTP client capability not available, skipping http-client config");
                     }

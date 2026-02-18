@@ -12,8 +12,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 use tracing::{debug, error, info, trace, warn};
 
 use alloy_core::{
-    AdapterBridge, ClientConfig, ConnectionHandle, ConnectionInfo, TransportError, TransportResult,
-    WsClientCapability,
+    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError,
+    TransportResult, WsClientCapability,
 };
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -41,7 +41,7 @@ impl WsClientCapability for WsClientCapabilityImpl {
     async fn connect(
         &self,
         url: &str,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
         config: ClientConfig,
     ) -> TransportResult<ConnectionHandle> {
         let url = url.to_string();
@@ -96,7 +96,7 @@ async fn run_client_loop(
     ws_rx: WsSource,
     mut message_rx: mpsc::Receiver<Vec<u8>>,
     mut shutdown_rx: watch::Receiver<bool>,
-    handler: Arc<AdapterBridge>,
+    handler: Arc<dyn ConnectionHandler>,
     bot_id: String,
     url: String,
     config: ClientConfig,
@@ -248,7 +248,7 @@ async fn run_client_loop(
 /// Returns None if max retries exceeded, otherwise returns the result of reconnection attempt.
 async fn try_reconnect(
     url: &str,
-    handler: &Arc<AdapterBridge>,
+    handler: &Arc<dyn ConnectionHandler>,
     bot_id: &str,
     config: &ClientConfig,
     retry_count: &mut u32,

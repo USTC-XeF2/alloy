@@ -111,13 +111,13 @@ async fn main() -> Result<()> {
 
     // Register the OneBot adapter.
     // The adapter will automatically use the connection settings defined in the configuration.
-    runtime.register_adapter::<OneBotAdapter>().await?;
+    runtime.register_adapter::<OneBotAdapter>()?;
 
     // Register matchers to define how the bot should respond to events.
     runtime
         .register_matchers(vec![
             // A non-blocking matcher that logs every message received.
-            on_message().block(false).handler(logging_handler),
+            on_message().handler(logging_handler),
             // Command matchers use `on_command` to bridge message text and structured data.
             // They automatically handle prefix stripping and parsing.
             on_command::<EchoCommand>("echo").handler(echo_handler),

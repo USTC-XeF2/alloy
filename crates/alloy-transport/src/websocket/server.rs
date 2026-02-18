@@ -20,7 +20,7 @@ use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, trace, warn};
 
 use alloy_core::{
-    AdapterBridge, ConnectionHandle, ConnectionInfo, ListenerHandle, TransportResult,
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportResult,
     WsServerCapability,
 };
 
@@ -43,7 +43,7 @@ impl Default for WsServerCapabilityImpl {
 /// Shared state for the WebSocket server.
 struct ServerState {
     /// Connection handler from the adapter.
-    handler: Arc<AdapterBridge>,
+    handler: Arc<dyn ConnectionHandler>,
     /// Active connections (bot_id -> sender).
     connections: RwLock<HashMap<String, mpsc::Sender<Vec<u8>>>>,
 }
@@ -54,7 +54,7 @@ impl WsServerCapability for WsServerCapabilityImpl {
         &self,
         addr: &str,
         path: &str,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,

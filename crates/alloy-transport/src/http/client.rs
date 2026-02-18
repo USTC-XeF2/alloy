@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{info, trace, warn};
 
 use alloy_core::{
-    AdapterBridge, ConnectionHandle, HttpClientCapability, TransportError, TransportResult,
+    ConnectionHandle, ConnectionHandler, HttpClientCapability, TransportError, TransportResult,
 };
 
 /// HTTP client capability implementation.
@@ -108,7 +108,7 @@ impl HttpClientCapability for HttpClientCapabilityImpl {
         bot_id: &str,
         api_url: &str,
         access_token: Option<String>,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ConnectionHandle> {
         let bot_id = bot_id.to_string();
         let api_url = api_url.to_string();

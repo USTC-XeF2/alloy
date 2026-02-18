@@ -22,7 +22,7 @@ use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, trace, warn};
 
 use alloy_core::{
-    AdapterBridge, ConnectionHandle, ConnectionInfo, HttpServerCapability, ListenerHandle,
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpServerCapability, ListenerHandle,
     TransportResult,
 };
 
@@ -45,7 +45,7 @@ impl Default for HttpServerCapabilityImpl {
 /// Shared state for the HTTP server.
 struct ServerState {
     /// Connection handler from the adapter.
-    handler: Arc<AdapterBridge>,
+    handler: Arc<dyn ConnectionHandler>,
     /// Track known bots and their connection handles.
     /// The ConnectionHandle allows adapters to implement custom push strategies (SSE, etc.)
     known_bots: RwLock<HashMap<String, ConnectionHandle>>,
@@ -57,7 +57,7 @@ impl HttpServerCapability for HttpServerCapabilityImpl {
         &self,
         addr: &str,
         path: &str,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,

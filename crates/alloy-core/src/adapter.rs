@@ -7,13 +7,22 @@
 //!
 //! The [`AdapterBridge`] sits between the transport layer and the adapter,
 //! handling common bot lifecycle (registration, event dispatch, cleanup) automatically.
+//! Its methods are organized into three traits to clarify who may call what:
+//!
+//! | Trait | Caller | Methods |
+//! |---|---|---|
+//! | [`ConnectionHandler`](crate::transport::ConnectionHandler) | transport 层 | `get_bot_id`, `create_bot`, `on_message`, `on_disconnect`, `on_error` |
+//! | [`AdapterContext`] | adapter 自身 | `transport`, `add_listener`, `add_connection`, `get_bot` |
+//! | (直接方法) | runtime | `on_start`, `on_shutdown`, `bot_ids`, `bot_count` |
 //!
 //! # Architecture
 //!
 //! ```text
-//! Transport ←→ AdapterBridge ←→ Adapter (protocol-specific)
+//! Transport ←→ Arc<dyn ConnectionHandler>
+//!                     ↕ (implemented by AdapterBridge)
+//! Adapter  ←→ Arc<dyn AdapterContext>
 //!                     ↕
-//!                Bot lifecycle
+//! Runtime  ←→ Arc<AdapterBridge>
 //! ```
 //!
 //! # Example
@@ -33,10 +42,10 @@
 //!         parse_onebot_event(data).ok()
 //!     }
 //!
-//!     async fn on_start(&self, bridge: Arc<AdapterBridge>) -> AdapterResult<()> {
-//!         if let Some(ws) = bridge.transport().ws_server() {
-//!             let handle = ws.listen("0.0.0.0:8080", "/ws", bridge.clone()).await?;
-//!             bridge.add_listener(handle).await;
+//!     async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
+//!         if let Some(ws) = ctx.transport().ws_server() {
+//!             let handle = ws.listen("0.0.0.0:8080", "/ws", ctx.as_connection_handler()).await?;
+//!             ctx.add_listener(handle).await;
 //!         }
 //!         Ok(())
 //!     }
@@ -51,9 +60,38 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::bot::BoxedBot;
-use crate::error::{AdapterResult, TransportError, TransportResult};
+use crate::error::{AdapterResult, TransportResult};
 use crate::event::BoxedEvent;
-use crate::transport::{ConnectionHandle, ConnectionInfo, ListenerHandle, TransportContext};
+use crate::transport::{
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportContext,
+};
+
+// =============================================================================
+// AdapterContext Trait — called by adapter implementations
+// =============================================================================
+
+/// Interface exposed to [`Adapter`] implementations during `on_start`.
+///
+/// Adapters receive `Arc<dyn AdapterContext>` and use it to access transport
+/// capabilities, register listeners/connections, and query active bots.
+#[async_trait]
+pub trait AdapterContext: Send + Sync {
+    /// Returns a reference to the transport capability context.
+    fn transport(&self) -> &TransportContext;
+
+    /// Registers a listener handle, keeping it alive for the adapter's lifetime.
+    async fn add_listener(&self, handle: ListenerHandle);
+
+    /// Registers an outbound connection handle.
+    async fn add_connection(&self, handle: ConnectionHandle);
+
+    /// Returns a bot by ID, or `None` if not found.
+    async fn get_bot(&self, id: &str) -> Option<BoxedBot>;
+
+    /// Casts this context to a `ConnectionHandler` reference for passing to
+    /// transport capabilities (e.g., `ws_server.listen(..., ctx.as_connection_handler())`).
+    fn as_connection_handler(self: Arc<Self>) -> Arc<dyn ConnectionHandler>;
+}
 
 // =============================================================================
 // Adapter Trait
@@ -61,12 +99,11 @@ use crate::transport::{ConnectionHandle, ConnectionInfo, ListenerHandle, Transpo
 
 /// The core adapter trait.
 ///
-/// Adapters bridge protocol-specific implementations (like OneBot) with
-/// the Alloy framework. Each adapter implements both protocol hooks
-/// (bot ID extraction, bot creation, message parsing) and lifecycle management.
-///
-/// Protocol hooks are called by [`AdapterBridge`] automatically.
-/// The adapter only needs to implement the protocol-specific logic.
+/// An adapter provides the protocol-specific logic:
+/// - **Protocol hooks**: Bot ID extraction, bot creation, message parsing
+///   — these are called internally by [`AdapterBridge`] via [`TransportCallback`].
+/// - **Lifecycle**: `on_start` / `on_shutdown`
+///   — receives [`AdapterContext`] for transport access.
 #[async_trait]
 pub trait Adapter: Send + Sync {
     /// Extract a bot ID from connection metadata.
@@ -79,7 +116,6 @@ pub trait Adapter: Send + Sync {
     /// Create a bot instance for a new connection.
     ///
     /// Called after [`get_bot_id`](Self::get_bot_id) succeeds.
-    /// The returned bot is automatically registered with the [`BotManager`].
     fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) -> BoxedBot;
 
     /// Parse an incoming message into an event.
@@ -88,25 +124,25 @@ pub trait Adapter: Send + Sync {
     /// Return `None` for non-event messages (e.g., API responses).
     /// The bot is provided for protocol-specific handling
     /// (e.g., forwarding API responses to the bot instance).
-    async fn on_message(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent>;
+    async fn parse_event(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent>;
 
     /// Called when the adapter should start.
     ///
-    /// Use the bridge to access transport capabilities and register listeners.
+    /// Use the context to access transport capabilities and register listeners.
     ///
     /// ```rust,ignore
-    /// async fn on_start(&self, bridge: Arc<AdapterBridge>) -> AdapterResult<()> {
-    ///     if let Some(ws_server) = bridge.transport().ws_server() {
-    ///         let handle = ws_server.listen("0.0.0.0:8080", "/ws", bridge.clone()).await?;
-    ///         bridge.add_listener(handle).await;
+    /// async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
+    ///     if let Some(ws_server) = ctx.transport().ws_server() {
+    ///         let handle = ws_server.listen("0.0.0.0:8080", "/ws", ctx.as_connection_handler()).await?;
+    ///         ctx.add_listener(handle).await;
     ///     }
     ///     Ok(())
     /// }
     /// ```
-    async fn on_start(&self, bridge: Arc<AdapterBridge>) -> AdapterResult<()>;
+    async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()>;
 
     /// Called when the adapter is shutting down.
-    async fn on_shutdown(&self, _bridge: Arc<AdapterBridge>) -> AdapterResult<()> {
+    async fn on_shutdown(&self, _ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
         Ok(())
     }
 }
@@ -143,22 +179,21 @@ pub trait ConfigurableAdapter: Adapter {
 // Adapter Bridge
 // =============================================================================
 
-/// Bridge between the transport layer and an [`Adapter`].
+/// Central bridge that wires together the runtime, the transport layer, and an adapter.
 ///
-/// Handles bot lifecycle and provides access to transport capabilities:
-/// - **Bot lifecycle**: register, unregister, get, dispatch events
-/// - **Transport access**: provides TransportContext for starting listeners/clients
-/// - **Resource management**: tracks listeners and connections
+/// - Implements [`TransportCallback`] — transport implementations call it when
+///   connections are established or data arrives.
+/// - Implements [`AdapterContext`] — adapters call it during `on_start` to register
+///   listeners and access transport capabilities.
+/// - Exposes runtime-facing methods (`on_start`, `on_shutdown`, `bot_ids`, `bot_count`)
+///   directly, since the runtime holds `Arc<AdapterBridge>`.
 ///
-/// Created by the runtime and passed to adapters via [`Adapter::on_start`].
-/// Transport capabilities accept `Arc<AdapterBridge>` for callbacks.
-///
-/// Each `AdapterBridge` manages bots for a specific adapter instance.
+/// Each `AdapterBridge` manages bots for exactly one adapter instance.
 pub struct AdapterBridge {
     adapter: Arc<dyn Adapter>,
     /// Active bots by ID.
     bots: RwLock<HashMap<String, BoxedBot>>,
-    /// Event dispatcher callback (always requires bot).
+    /// Event dispatcher callback.
     event_dispatcher: Dispatcher,
     /// Available transport capabilities.
     transport: TransportContext,
@@ -185,121 +220,105 @@ impl AdapterBridge {
         }
     }
 
-    /// Returns a reference to the transport context.
-    pub fn transport(&self) -> &TransportContext {
+    // =========================================================================
+    // Runtime-facing methods
+    // =========================================================================
+
+    /// Starts the adapter (delegates to [`Adapter::on_start`]).
+    pub async fn on_start(self: &Arc<Self>) -> AdapterResult<()> {
+        let ctx: Arc<dyn AdapterContext> = self.clone();
+        self.adapter.on_start(ctx).await
+    }
+
+    /// Shuts down the adapter (delegates to [`Adapter::on_shutdown`]).
+    pub async fn on_shutdown(self: &Arc<Self>) -> AdapterResult<()> {
+        let ctx: Arc<dyn AdapterContext> = self.clone();
+        self.adapter.on_shutdown(ctx).await
+    }
+
+    /// Returns the IDs of all active bots.
+    pub async fn bot_ids(&self) -> Vec<String> {
+        self.bots.read().await.keys().cloned().collect()
+    }
+
+    /// Returns the count of active bots.
+    pub async fn bot_count(&self) -> usize {
+        self.bots.read().await.len()
+    }
+}
+
+// =============================================================================
+// ConnectionHandler impl — called by transport layer
+// =============================================================================
+
+#[async_trait]
+impl ConnectionHandler for AdapterBridge {
+    async fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String> {
+        self.adapter.get_bot_id(conn_info).await
+    }
+
+    async fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) {
+        // Check if bot already exists before creating
+        {
+            let bots = self.bots.read().await;
+            if bots.contains_key(bot_id) {
+                warn!(bot_id = %bot_id, "Bot already exists, not registering");
+                return;
+            }
+        }
+
+        let bot = self.adapter.create_bot(bot_id, connection);
+        let mut bots = self.bots.write().await;
+        bots.insert(bot_id.to_string(), bot);
+        debug!(bot_id = %bot_id, "Bot registered");
+    }
+
+    async fn on_message(&self, bot_id: &str, data: &[u8]) -> Option<BoxedEvent> {
+        let bot = self.bots.read().await.get(bot_id).cloned()?;
+        let event = self.adapter.parse_event(&bot, data).await?;
+        (self.event_dispatcher)(event.clone(), bot);
+        Some(event)
+    }
+
+    async fn on_disconnect(&self, bot_id: &str) {
+        if let Some(bot) = self.bots.read().await.get(bot_id).cloned() {
+            bot.on_disconnect().await;
+        }
+        self.bots.write().await.remove(bot_id);
+        info!(bot_id = %bot_id, "Connection closed");
+    }
+
+    async fn on_error(&self, bot_id: &str, error: &str) {
+        warn!(bot_id = %bot_id, error = %error);
+    }
+}
+
+// =============================================================================
+// AdapterContext impl — called by adapter implementations
+// =============================================================================
+
+#[async_trait]
+impl AdapterContext for AdapterBridge {
+    fn transport(&self) -> &TransportContext {
         &self.transport
     }
 
-    /// Registers a listener handle (keeps it alive).
-    pub async fn add_listener(&self, handle: ListenerHandle) {
+    async fn add_listener(&self, handle: ListenerHandle) {
         self.listeners.write().await.push(handle);
     }
 
-    /// Registers a connection handle.
-    pub async fn add_connection(&self, handle: ConnectionHandle) {
+    async fn add_connection(&self, handle: ConnectionHandle) {
         self.connections
             .write()
             .await
             .insert(handle.id.clone(), handle);
     }
 
-    /// Extracts a bot ID from connection metadata.
-    ///
-    /// Delegates to [`Adapter::get_bot_id`].
-    pub async fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String> {
-        self.adapter.get_bot_id(conn_info).await
+    async fn get_bot(&self, id: &str) -> Option<BoxedBot> {
+        self.bots.read().await.get(id).cloned()
     }
 
-    /// Creates and registers a bot for this connection.
-    ///
-    /// Calls [`Adapter::create_bot`] then registers the bot.
-    pub async fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) {
-        let bot = self.adapter.create_bot(bot_id, connection.clone());
-        if let Err(e) = self.register(bot_id.to_string(), bot).await {
-            warn!(bot_id = %bot_id, error = %e, "Failed to register bot");
-        } else {
-            debug!(
-                bot_id = %bot_id,
-                "Bot registered"
-            );
-        }
-    }
-
-    /// Called when data is received from a connection.
-    pub async fn on_message(&self, bot_id: &str, data: &[u8]) -> Option<BoxedEvent> {
-        let bot = if let Some(bot) = self.get_bot(bot_id).await {
-            bot
-        } else {
-            warn!(bot_id = %bot_id, "Received message but bot not found");
-            return None;
-        };
-        let event = self.adapter.on_message(&bot, data).await?;
-        self.dispatch_event(bot_id, event.clone()).await;
-        Some(event)
-    }
-
-    /// Called when a connection is closed.
-    pub async fn on_disconnect(&self, bot_id: &str) {
-        if let Some(bot) = self.get_bot(bot_id).await {
-            bot.on_disconnect().await;
-        }
-        self.unregister(bot_id).await;
-        info!(
-            bot_id = %bot_id,
-            "Connection closed"
-        );
-    }
-
-    /// Called when a connection error occurs.
-    pub async fn on_error(&self, bot_id: &str, error: &str) {
-        warn!(bot_id = %bot_id, error = %error);
-    }
-
-    // =========================================================================
-    // Bot Management (formerly BotManager methods)
-    // =========================================================================
-
-    /// Registers a new bot.
-    async fn register(&self, id: String, bot: BoxedBot) -> TransportResult<()> {
-        let mut bots = self.bots.write().await;
-        if bots.contains_key(&id) {
-            return Err(TransportError::BotAlreadyExists { id });
-        }
-        bots.insert(id, bot);
-        Ok(())
-    }
-
-    /// Gets the bot instance by ID.
-    pub async fn get_bot(&self, id: &str) -> Option<BoxedBot> {
-        let bots = self.bots.read().await;
-        bots.get(id).cloned()
-    }
-
-    /// Unregisters a bot.
-    async fn unregister(&self, id: &str) {
-        let mut bots = self.bots.write().await;
-        bots.remove(id);
-    }
-
-    /// Dispatches an event with the associated bot.
-    async fn dispatch_event(&self, bot_id: &str, event: BoxedEvent) -> bool {
-        if let Some(bot) = self.get_bot(bot_id).await {
-            (self.event_dispatcher)(event, bot);
-            return true;
-        }
-        warn!(bot_id = %bot_id, "Cannot dispatch event: bot not found");
-        false
-    }
-
-    /// Returns the IDs of all active bots.
-    pub async fn bot_ids(&self) -> Vec<String> {
-        let bots = self.bots.read().await;
-        bots.keys().cloned().collect()
-    }
-
-    /// Returns the count of active bots.
-    pub async fn bot_count(&self) -> usize {
-        let bots = self.bots.read().await;
-        bots.len()
+    fn as_connection_handler(self: Arc<Self>) -> Arc<dyn ConnectionHandler> {
+        self
     }
 }

@@ -448,7 +448,7 @@ pub struct HeartbeatEvent {
 
 /// Parses raw JSON into the most specific `BoxedEvent`.
 ///
-/// The adapter calls this from `parse_event` / `on_message`.
+/// The adapter calls this from `parse_event`.
 pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
     // Pre-parse to extract type discriminators
     let v: Value = serde_json::from_str(raw)?;

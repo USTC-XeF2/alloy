@@ -35,9 +35,37 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use super::connection::{ClientConfig, ConnectionHandle, ListenerHandle};
-use crate::adapter::AdapterBridge;
+use super::connection::{ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle};
 use crate::error::TransportResult;
+use crate::event::BoxedEvent;
+
+// =============================================================================
+// Connection Handler
+// =============================================================================
+
+/// Interface for handling connection lifecycle events from transport implementations.
+///
+/// When a transport connection is established, data arrives, or a connection closes,
+/// the transport layer calls methods on this handler to drive the bot lifecycle.
+///
+/// [`AdapterBridge`](crate::adapter::AdapterBridge) is the built-in implementation.
+#[async_trait]
+pub trait ConnectionHandler: Send + Sync {
+    /// Extract a bot ID from connection metadata when a new connection arrives.
+    async fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
+
+    /// Create and register a bot for a new connection.
+    async fn create_bot(&self, bot_id: &str, connection: ConnectionHandle);
+
+    /// Process incoming data from a connection, returning a parsed event if one was produced.
+    async fn on_message(&self, bot_id: &str, data: &[u8]) -> Option<BoxedEvent>;
+
+    /// Called when a connection is closed.
+    async fn on_disconnect(&self, bot_id: &str);
+
+    /// Called when a connection error occurs.
+    async fn on_error(&self, bot_id: &str, error: &str);
+}
 
 // =============================================================================
 // Transport Capabilities
@@ -56,7 +84,7 @@ pub trait WsServerCapability: Send + Sync {
         &self,
         addr: &str,
         path: &str,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ListenerHandle>;
 }
 
@@ -72,7 +100,7 @@ pub trait WsClientCapability: Send + Sync {
     async fn connect(
         &self,
         url: &str,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
         config: ClientConfig,
     ) -> TransportResult<ConnectionHandle>;
 }
@@ -89,7 +117,7 @@ pub trait HttpServerCapability: Send + Sync {
         &self,
         addr: &str,
         path: &str,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ListenerHandle>;
 }
 
@@ -114,7 +142,7 @@ pub trait HttpClientCapability: Send + Sync {
         bot_id: &str,
         api_url: &str,
         access_token: Option<String>,
-        handler: Arc<AdapterBridge>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ConnectionHandle>;
 }
 

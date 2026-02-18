@@ -37,7 +37,9 @@ pub mod message;
 pub mod transport;
 
 // Re-export core types for public API
-pub use adapter::{Adapter, AdapterBridge, BoxedAdapter, ConfigurableAdapter, Dispatcher};
+pub use adapter::{
+    Adapter, AdapterBridge, AdapterContext, BoxedAdapter, ConfigurableAdapter, Dispatcher,
+};
 pub use bot::{Bot, BoxedBot};
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
@@ -45,8 +47,8 @@ pub use error::{
 pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
 pub use message::{Message, MessageSegment, RichTextSegment};
 pub use transport::{
-    ClientConfig, ConnectionHandle, ConnectionInfo, HttpClientCapability, HttpClientConfig,
-    HttpServerCapability, HttpServerConfig, ListenerHandle, MessageHandler, RetryConfig,
-    TransportConfig, TransportContext, TransportType, WsClientCapability, WsClientConfig,
-    WsServerCapability, WsServerConfig,
+    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpClientCapability,
+    HttpClientConfig, HttpServerCapability, HttpServerConfig, ListenerHandle, MessageHandler,
+    RetryConfig, TransportConfig, TransportContext, TransportType, WsClientCapability,
+    WsClientConfig, WsServerCapability, WsServerConfig,
 };

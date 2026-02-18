@@ -9,8 +9,8 @@ pub mod connection;
 
 // Re-export commonly used types
 pub use capability::{
-    HttpClientCapability, HttpServerCapability, TransportContext, WsClientCapability,
-    WsServerCapability,
+    ConnectionHandler, HttpClientCapability, HttpServerCapability, TransportContext,
+    WsClientCapability, WsServerCapability,
 };
 pub use config::{
     HttpClientConfig, HttpServerConfig, RetryConfig, TransportConfig, TransportType,
