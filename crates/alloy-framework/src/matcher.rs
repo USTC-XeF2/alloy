@@ -229,7 +229,7 @@ impl Matcher {
                 handler_index = i,
                 "Executing handler"
             );
-            handler.call(Arc::clone(&ctx)).await;
+            handler(ctx.clone()).await;
         }
 
         true

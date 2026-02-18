@@ -15,7 +15,7 @@ use alloy::prelude::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use anyhow::Result;
 use clap::Parser;
-use tracing::{error, info};
+use tracing::info;
 
 // --- Command Definitions ---
 
@@ -52,17 +52,8 @@ async fn logging_handler(event: EventContext<MessageEvent>) {
 }
 
 /// Handles the `/echo` command by sending the provided text back to the source.
-async fn echo_handler(
-    event: EventContext<MessageEvent>,
-    bot: Arc<OneBotBot>,
-    cmd: CommandArgs<EchoCommand>,
-) {
-    let content = cmd.text.join(" ");
-    if !content.is_empty()
-        && let Err(e) = bot.send(event.as_event(), &content).await
-    {
-        error!("Failed to send echo reply: {:?}", e);
-    }
+async fn echo_handler(cmd: CommandArgs<EchoCommand>) -> Result<String> {
+    Ok(cmd.text.join(" ")) // Empty string results in no message sent
 }
 
 /// Displays information about the current group and optionally queries a specific member.
@@ -74,49 +65,38 @@ async fn info_handler(
     event: EventContext<GroupMessageEvent>,
     bot: Arc<OneBotBot>,
     cmd: CommandArgs<InfoCommand>,
-) {
-    let info_text = if let Some(user_id) = &cmd.user {
-        // Parse user ID and query member information
-        match user_id.parse::<i64>() {
-            Ok(parsed_id) => {
-                match bot
-                    .get_group_member_info(event.group_id, parsed_id, false)
-                    .await
-                {
-                    Ok(member) => {
-                        format!(
-                            "Member Info\n\
-                             • Name: {}\n\
-                             • User ID: {}\n\
-                             • Title: {}\n\
-                             • Joined: {}",
-                            member.nickname, member.user_id, member.title, member.join_time
-                        )
-                    }
-                    Err(e) => {
-                        error!("Failed to query member info: {:?}", e);
-                        "Failed to query member information".to_string()
-                    }
-                }
-            }
-            Err(_) => "Invalid user ID".to_string(),
-        }
+) -> Result<String> {
+    if let Some(user_id) = &cmd.user {
+        // Parse user ID - user input error, return as message
+        let Ok(parsed_id) = user_id.parse::<i64>() else {
+            return Ok(format!("Invalid User ID: {user_id}"));
+        };
+
+        // Query member information - API error, let framework handle it
+        let member = bot
+            .get_group_member_info(event.group_id, parsed_id, false)
+            .await?;
+
+        Ok(format!(
+            "Member Info\n\
+             • Name: {}\n\
+             • User ID: {}\n\
+             • Title: {}\n\
+             • Joined: {}",
+            member.nickname, member.user_id, member.title, member.join_time
+        ))
     } else {
         // Display group information
         let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
-        format!(
+        Ok(format!(
             "Group Info\n\
              • Group ID: {}\n\
              • From: {} ({})\n\
              • Message ID: {}\n\
              • Type: {}",
             event.group_id, nickname, event.user_id, event.message_id, event.message_type
-        )
-    };
-
-    if let Err(e) = bot.send(event.as_event(), &info_text).await {
-        error!("Failed to send message: {:?}", e);
+        ))
     }
 }
 

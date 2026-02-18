@@ -30,15 +30,70 @@
 //! ```
 
 use std::future::Future;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use async_trait::async_trait;
+use tracing::error;
 
 use crate::context::AlloyContext;
 use crate::extractor::FromContext;
 
-/// A type alias for a boxed, pinned future that is `Send`.
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+// ============================================================================
+// IntoHandlerResponse - Convert handler return values into responses
+// ============================================================================
+
+/// A trait for types that can be converted into handler responses.
+///
+/// This trait allows handlers to return different types:
+/// - `()` - No response
+/// - `Result<(), E>` - Log errors
+/// - `Result<String, E>` - Send message on Ok, log errors on Err
+#[async_trait]
+pub trait IntoHandlerResponse: Send {
+    /// Convert this value into a response.
+    async fn into_response(self, ctx: Arc<AlloyContext>);
+}
+
+/// Implementation for `()` - no response needed.
+#[async_trait]
+impl IntoHandlerResponse for () {
+    async fn into_response(self, _ctx: Arc<AlloyContext>) {
+        // No action needed
+    }
+}
+
+/// Implementation for `Result<(), E>` - log errors using `error!()`.
+#[async_trait]
+impl<E: std::fmt::Display + Send + 'static> IntoHandlerResponse for Result<(), E> {
+    async fn into_response(self, _ctx: Arc<AlloyContext>) {
+        if let Err(e) = self {
+            error!("Handler error: {}", e);
+        }
+    }
+}
+
+/// Implementation for `Result<String, E>` - send message on Ok, log errors on Err.
+#[async_trait]
+impl<E: std::fmt::Display + Send + 'static> IntoHandlerResponse for Result<String, E> {
+    async fn into_response(self, ctx: Arc<AlloyContext>) {
+        match self {
+            Ok(msg) => {
+                if !msg.is_empty() {
+                    let bot = ctx.bot_arc();
+                    let event = ctx.event();
+                    // BoxedEvent derefs to &dyn Event
+                    if let Err(e) = bot.send(&**event, &msg).await {
+                        error!("Failed to send message: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Handler error: {}", e);
+            }
+        }
+    }
+}
 
 // ============================================================================
 // Handler Trait
@@ -53,77 +108,51 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ///
 /// This trait is automatically implemented for async functions that:
 /// - Take 0-16 parameters that implement [`FromContext`]
-/// - Return `()` (the return value is ignored)
+/// - Return `()`, `Result<(), E>`, or `Result<String, E>`
+///
+/// # Return Types
+///
+/// - `()` - No response
+/// - `Result<(), E>` - Errors are logged using `error!()`
+/// - `Result<String, E>` - Ok(String) sends a message, Err(E) is logged
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// // These are all valid handlers:
-/// async fn no_params() {}
-/// async fn one_param(event: EventContext<MessageEvent>) {}
-/// async fn two_params(msg: EventContext<MessageEvent>, state: State<AppState>) {}
-/// ```
-pub trait Handler<T>: Clone + Send + Sync + 'static {
-    /// The type of future calling this handler returns.
-    type Future: Future<Output = ()> + Send + 'static;
-
-    /// Call the handler with the given context.
-    fn call(self, ctx: Arc<AlloyContext>) -> Self::Future;
-}
-
-// ============================================================================
-// IntoHandler - Convert functions into Handler trait objects
-// ============================================================================
-
-/// A wrapper that converts a function into a boxed handler.
+/// // No return value
+/// async fn simple_handler(event: EventContext<MessageEvent>) {
+///     println!("Message: {}", event.get_plain_text());
+/// }
 ///
-/// This is used internally to store handlers in collections while maintaining
-/// type erasure.
-pub struct HandlerFn<F, T> {
-    f: F,
-    _marker: PhantomData<fn() -> T>,
+/// // Return Result<(), Error>
+/// async fn result_handler(event: EventContext<MessageEvent>) -> Result<(), anyhow::Error> {
+///     // Process event...
+///     Ok(())
+/// }
+///
+/// // Return Result<String, Error> - automatically sends the message
+/// async fn reply_handler(event: EventContext<MessageEvent>) -> Result<String, anyhow::Error> {
+///     Ok(format!("You said: {}", event.get_plain_text()))
+/// }
+/// ```
+#[async_trait]
+pub trait Handler<T>: Clone + Send + Sync + 'static {
+    /// Call the handler with the given context.
+    async fn call(self, ctx: Arc<AlloyContext>);
 }
 
-impl<F, T> HandlerFn<F, T> {
-    /// Creates a new handler function wrapper.
-    pub fn new(f: F) -> Self {
-        Self {
-            f,
-            _marker: PhantomData,
-        }
-    }
-}
+// ============================================================================
+// BoxedHandler - Type-erased handler stored in collections
+// ============================================================================
 
-impl<F: Clone, T> Clone for HandlerFn<F, T> {
-    fn clone(&self) -> Self {
-        Self {
-            f: self.f.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
+/// A type alias for a boxed, pinned future that is `Send`.
+pub type BoxFuture<T = ()> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// A type-erased handler that can be stored in collections.
-pub type BoxedHandler = Arc<dyn ErasedHandler + Send + Sync>;
-
-/// Type-erased handler trait for dynamic dispatch.
-pub trait ErasedHandler: Send + Sync {
-    /// Execute the handler with the given context.
-    fn call(&self, ctx: Arc<AlloyContext>) -> BoxFuture<'static, ()>;
-}
-
-impl<F, T> ErasedHandler for HandlerFn<F, T>
-where
-    F: Handler<T> + Send + Sync,
-    T: 'static,
-{
-    fn call(&self, ctx: Arc<AlloyContext>) -> BoxFuture<'static, ()> {
-        let f = self.f.clone();
-        Box::pin(async move {
-            f.call(ctx).await;
-        })
-    }
-}
+///
+/// Internally a closure that captures the original handler and calls it
+/// with a cloned copy on each invocation.
+pub type BoxedHandler = Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture + Send + Sync>;
 
 /// Convert a handler function into a boxed handler.
 pub fn into_handler<F, T>(f: F) -> BoxedHandler
@@ -131,54 +160,41 @@ where
     F: Handler<T> + Send + Sync + 'static,
     T: 'static,
 {
-    Arc::new(HandlerFn::new(f))
+    Arc::new(move |ctx| f.clone().call(ctx))
 }
 
 // ============================================================================
 // Handler implementations for functions (Axum-style)
 // ============================================================================
 
-// Implementation for functions with no parameters
-impl<F, Fut> Handler<()> for F
-where
-    F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    type Future = Fut;
-
-    fn call(self, _ctx: Arc<AlloyContext>) -> Self::Future {
-        (self)()
-    }
-}
-
 /// Macro to generate Handler implementations for functions with different arities.
 macro_rules! impl_handler {
     (
         $($ty:ident),*
     ) => {
-        #[allow(non_snake_case, unused_mut, unused_variables)]
-        impl<F, Fut, $($ty,)*> Handler<($($ty,)*)> for F
+        #[allow(non_snake_case)]
+        #[async_trait]
+        impl<F, Fut, Res, $($ty,)*> Handler<($($ty,)*)> for F
         where
             F: FnOnce($($ty,)*) -> Fut + Clone + Send + Sync + 'static,
-            Fut: Future<Output = ()> + Send + 'static,
+            Fut: Future<Output = Res> + Send + 'static,
+            Res: IntoHandlerResponse + 'static,
             $( $ty: FromContext + Send + 'static, )*
         {
-            type Future = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+            async fn call(self, ctx: Arc<AlloyContext>) {
+                $(
+                    let Ok($ty) = $ty::from_context(&ctx) else { return };
+                )*
 
-            fn call(self, ctx: Arc<AlloyContext>) -> Self::Future {
-                Box::pin(async move {
-                    $(
-                        let Ok($ty) = $ty::from_context(&ctx) else { return };
-                    )*
-
-                    (self)($($ty,)*).await;
-                })
+                let res = (self)($($ty,)*).await;
+                res.into_response(ctx).await;
             }
         }
     };
 }
 
-// Generate implementations for 1-16 parameters
+// Generate implementations for 0-16 parameters
+impl_handler!();
 impl_handler!(T1);
 impl_handler!(T1, T2);
 impl_handler!(T1, T2, T3);
@@ -197,69 +213,5 @@ impl_handler!(
     T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15
 );
 impl_handler!(
-    T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16
-);
-
-// ============================================================================
-// CanExtract - Check if parameters can be extracted
-// ============================================================================
-
-/// Trait for checking if a handler's parameters can be extracted from context.
-pub trait CanExtract<T> {
-    /// Returns true if all parameters can be extracted from the context.
-    fn can_extract(ctx: &AlloyContext) -> bool;
-}
-
-// Implementation for no parameters
-impl<F> CanExtract<()> for F
-where
-    F: Clone + Send + Sync + 'static,
-{
-    fn can_extract(_ctx: &AlloyContext) -> bool {
-        true
-    }
-}
-
-/// Macro to generate CanExtract implementations.
-macro_rules! impl_can_extract {
-    (
-        $($ty:ident),*
-    ) => {
-        #[allow(non_snake_case, unused_variables)]
-        impl<F, $($ty,)*> CanExtract<($($ty,)*)> for F
-        where
-            F: Clone + Send + Sync + 'static,
-            $( $ty: FromContext + 'static, )*
-        {
-            fn can_extract(ctx: &AlloyContext) -> bool {
-                $(
-                    if $ty::from_context(ctx).is_err() {
-                        return false;
-                    }
-                )*
-                true
-            }
-        }
-    };
-}
-
-impl_can_extract!(T1);
-impl_can_extract!(T1, T2);
-impl_can_extract!(T1, T2, T3);
-impl_can_extract!(T1, T2, T3, T4);
-impl_can_extract!(T1, T2, T3, T4, T5);
-impl_can_extract!(T1, T2, T3, T4, T5, T6);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
-impl_can_extract!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
-impl_can_extract!(
-    T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15
-);
-impl_can_extract!(
     T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16
 );

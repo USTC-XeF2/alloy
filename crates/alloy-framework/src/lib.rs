@@ -24,9 +24,7 @@ pub mod command;
 pub use context::AlloyContext;
 pub use error::{ExtractError, ExtractResult};
 pub use extractor::FromContext;
-pub use handler::{
-    BoxFuture, BoxedHandler, CanExtract, ErasedHandler, Handler, HandlerFn, into_handler,
-};
+pub use handler::{BoxedHandler, Handler, into_handler};
 pub use matcher::{CheckFn, Matcher, MatcherResponse};
 pub use matcher_builders::{on_message, on_meta, on_notice, on_request};
 
