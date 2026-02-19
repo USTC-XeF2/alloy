@@ -17,7 +17,8 @@ alloy-core = { path = "../alloy-core" }
 async-trait = "0.1.89"
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["macros"] }
-tower = "0.5.3"
+tower = { version = "0.5.3", features = ["filter"] }
+tower-layer = "0.3.3"
 tracing = "0.1.44"
 
 [dependencies.clap]

@@ -59,6 +59,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tower",
+ "tower-layer",
  "tracing",
 ]
 
@@ -85,6 +86,7 @@ dependencies = [
  "serde_yaml",
  "thiserror 2.0.18",
  "tokio",
+ "tower",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

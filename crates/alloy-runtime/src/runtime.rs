@@ -28,6 +28,8 @@ use std::sync::{Arc, RwLock};
 
 use tokio::signal;
 use tokio::sync::RwLock as AsyncRwLock;
+use tower::util::BoxCloneSyncService;
+use tower::{BoxError, Service};
 use tracing::{debug, error, info, span, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
@@ -36,7 +38,7 @@ use crate::logging;
 use alloy_core::{
     AdapterBridge, BoxedBot, BoxedEvent, ConfigurableAdapter, Dispatcher, TransportContext,
 };
-use alloy_framework::{AlloyContext, Matcher};
+use alloy_framework::{AlloyContext, BoxedHandlerService, EventSkipped};
 
 /// The main Alloy runtime that orchestrates adapters and bots.
 ///
@@ -69,8 +71,8 @@ use alloy_framework::{AlloyContext, Matcher};
 pub struct AlloyRuntime {
     /// The configuration.
     config: AlloyConfig,
-    /// Registered matchers for event dispatching.
-    matchers: Arc<AsyncRwLock<Vec<Matcher>>>,
+    /// Registered handler services for event dispatching.
+    services: Arc<AsyncRwLock<Vec<BoxedHandlerService>>>,
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges, created eagerly on registration.
@@ -142,7 +144,7 @@ impl AlloyRuntime {
 
         Self {
             config: config.clone(),
-            matchers: Arc::new(AsyncRwLock::new(Vec::new())),
+            services: Arc::new(AsyncRwLock::new(Vec::new())),
             transport_context: transport_ctx,
             bridges: RwLock::new(HashMap::new()),
             running: AtomicBool::new(false),
@@ -244,38 +246,40 @@ impl AlloyRuntime {
         Ok(())
     }
 
-    /// Registers a matcher for event dispatching.
+    /// Registers a handler service for event dispatching.
     ///
-    /// Matchers are checked in the order they are added. Each matcher
-    /// contains multiple handlers and a check rule.
-    pub async fn register_matcher(&self, matcher: Matcher) {
-        let mut matchers = self.matchers.write().await;
-        matchers.push(matcher);
-    }
-
-    /// Registers multiple matchers at once.
-    ///
-    /// This is a convenience method for adding multiple matchers in one call.
+    /// Accepts any tower [`Service`] compatible with `Arc<AlloyContext>` and
+    /// automatically boxes it. Services are called in the order they are
+    /// registered. A service can stop further dispatch by calling
+    /// [`AlloyContext::stop_propagation`].
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// use alloy::prelude::*;
     ///
-    /// runtime.register_matchers(vec![
-    ///     on_message().handler(log_handler),
-    ///     on_command::<EchoCommand>("echo").handler(echo_handler),
-    ///     on_command::<HelpCommand>("help").handler(help_handler),
-    /// ]).await;
+    /// runtime.register_service(
+    ///     on_message().handler(log_handler)
+    /// ).await;
     /// ```
-    pub async fn register_matchers(&self, matchers: Vec<Matcher>) {
-        let mut matcher_list = self.matchers.write().await;
-        matcher_list.extend(matchers);
+    pub async fn register_service<S>(&self, svc: S)
+    where
+        S: Service<Arc<AlloyContext>, Response = (), Error = BoxError>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        S::Future: Send + 'static,
+    {
+        self.services
+            .write()
+            .await
+            .push(BoxCloneSyncService::new(svc));
     }
 
-    /// Returns the number of registered matchers.
-    pub async fn matcher_count(&self) -> usize {
-        self.matchers.read().await.len()
+    /// Returns the number of registered services.
+    pub async fn service_count(&self) -> usize {
+        self.services.read().await.len()
     }
 
     /// Returns whether the runtime is currently running.
@@ -289,24 +293,26 @@ impl AlloyRuntime {
     /// It dispatches events to all registered matchers, executing their handlers and
     /// respecting blocking rules.
     fn create_event_dispatcher(&self) -> Dispatcher {
-        let matchers = Arc::clone(&self.matchers);
+        let services = Arc::clone(&self.services);
         Arc::new(move |event: BoxedEvent, bot: BoxedBot| {
-            let matchers = Arc::clone(&matchers);
+            let services = Arc::clone(&services);
             tokio::spawn(async move {
                 let event_name = event.event_name();
                 let span = span!(tracing::Level::DEBUG, "dispatch", event_name = %event_name);
                 let _enter = span.enter();
 
                 let ctx = Arc::new(AlloyContext::new(event, bot));
-                let matcher_list = matchers.read().await;
+                let service_list = services.read().await;
 
-                for matcher in matcher_list.iter() {
-                    if matcher.execute(Arc::clone(&ctx)).await && matcher.is_blocking() {
-                        debug!(
-                            matcher = matcher.get_name().unwrap_or("unnamed"),
-                            "Blocking matcher matched, stopping dispatch"
-                        );
+                for mut svc in service_list.iter().cloned() {
+                    if !ctx.is_propagating() {
+                        debug!("Propagation stopped, halting dispatch");
                         break;
+                    }
+                    if let Err(e) = svc.call(Arc::clone(&ctx)).await
+                        && !e.is::<EventSkipped>()
+                    {
+                        error!(error = %e, "Service returned an error");
                     }
                 }
             });

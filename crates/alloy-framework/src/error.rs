@@ -2,6 +2,14 @@
 
 use thiserror::Error;
 
+/// Returned by a filter predicate when an event does **not** match.
+///
+/// The runtime recognises this error and silently skips the service without
+/// logging anything. All other errors are treated as genuine failures.
+#[derive(Debug, Clone, Error)]
+#[error("event skipped by filter")]
+pub struct EventSkipped;
+
 /// Errors that can occur during context extraction.
 #[derive(Debug, Clone, Error)]
 pub enum ExtractError {

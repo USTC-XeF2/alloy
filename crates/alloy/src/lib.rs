@@ -10,19 +10,19 @@
 //!
 //! ## Architecture
 //!
-//! Alloy uses a hub-and-spoke architecture with Matcher-based dispatch:
+//! Alloy uses a tower-service-based dispatch pipeline:
 //!
 //! ```text
-//! ┌─────────────┐     ┌────────────┐     ┌───────────┐
-//! │   Runtime   │────▶│ Dispatcher │────▶│  Matcher  │──▶ handlers
-//! │  (Adapter)  │     │            │────▶│  Matcher  │──▶ handlers
-//! └─────────────┘     └────────────┘────▶│  Matcher  │──▶ handlers
-//!                                        └───────────┘
+//! ┌─────────────┐     ┌────────────┐     ┌──────────────────────────────┐
+//! │   Runtime   │────▶│ Dispatcher │────▶│  BoxedHandlerService         │──▶ handlers
+//! │  (Adapter)  │     │            │────▶│  (FilterLayer + HandlerSvc)  │──▶ handlers
+//! └─────────────┘     └────────────┘────▶│  ...                         │──▶ handlers
+//!                                        └──────────────────────────────┘
 //! ```
 //!
 //! - **Runtime**: Manages adapters, transports, and bot lifecycle
 //! - **Adapters**: Protocol implementations (OneBot, etc.)
-//! - **Matchers**: Check rules + multiple handlers, control blocking
+//! - **HandlerService**: Runs handlers; all checks are tower `Layer`s on top
 //! - **Handlers**: User-defined async functions (Axum-style)
 //!
 //! ## Quick Start
@@ -40,17 +40,15 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let runtime = AlloyRuntime::new();
-//!     
+//!
 //!     // Adapter is automatically configured from alloy.yaml
-//!     runtime.register_adapter::<OneBotAdapter>().await?;
-//!     
-//!     // Register a matcher with handlers
-//!     runtime.register_matcher(
-//!         Matcher::new()
-//!             .on::<MessageEvent>()
-//!             .handler(echo)
+//!     runtime.register_adapter::<OneBotAdapter>()?;
+//!
+//!     // Register a service: FilterLayer gates HandlerService
+//!     runtime.register_service(
+//!         on_message().handler(echo).into()
 //!     ).await;
-//!     
+//!
 //!     runtime.run().await
 //! }
 //! ```
@@ -61,31 +59,14 @@
 //! - `adapter-onebot`: Enable OneBot v11 adapter
 //! - `transport-ws`: Enable WebSocket transport
 //! - `transport-http`: Enable HTTP transport
-//!
-//! ## Matcher System
-//!
-//! Matchers group handlers with a common check rule:
-//!
-//! ```rust,ignore
-//! use alloy::prelude::*;
-//!
-//! // Create a matcher that handles MessageEvent and blocks further matchers
-//! let matcher = Matcher::new()
-//!     .on::<MessageEvent>()  // Only handle message events
-//!     .block(true)           // Block further matchers after this one
-//!     .handler(echo_handler)
-//!     .handler(log_handler);
-//! ```
 
-// Core types (includes Tower integration)
-pub use alloy_core::*;
-
-// Runtime
-pub use alloy_runtime;
+pub use alloy_core as core;
+pub use alloy_framework as framework;
+pub use alloy_runtime as runtime;
 
 // Optional: Re-export macros
 #[cfg(feature = "macros")]
-pub use alloy_macros;
+pub use alloy_macros as macros;
 
 /// Prelude module for convenient imports.
 ///
@@ -100,10 +81,10 @@ pub mod prelude {
 
     // Event system - for building handlers
     pub use alloy_core::{AsText, EventContext};
-    pub use alloy_framework::{Handler, Matcher};
+    pub use alloy_framework::{Handler, HandlerService, Layer, ServiceBuilder, ServiceBuilderExt};
 
-    // Matcher convenience functions (from framework layer)
-    pub use alloy_framework::{on_message, on_meta, on_notice, on_request};
+    // Route convenience functions (from framework layer)
+    pub use alloy_framework::{on, on_event_type, on_message};
 
     // Structured command support (requires "command" feature)
     #[cfg(feature = "command")]
