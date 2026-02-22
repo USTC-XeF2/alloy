@@ -94,7 +94,7 @@ pub mod macros;
 pub mod registry;
 pub mod service_ref;
 
-#[cfg(feature = "builtin")]
+#[cfg(feature = "builtin-plugins")]
 pub mod builtin;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────

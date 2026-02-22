@@ -30,8 +30,8 @@ use futures::future;
 use tokio::signal;
 use tracing::{error, info, warn};
 
-use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
-use crate::error::{RuntimeError, RuntimeResult};
+use crate::config::{AlloyConfig, ConfigLoader};
+use crate::error::{ConfigResult, RuntimeError, RuntimeResult};
 use crate::logging;
 use alloy_core::{AdapterBridge, ConfigurableAdapter, TransportContext};
 use alloy_framework::{PluginDescriptor, PluginManager};

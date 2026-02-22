@@ -16,7 +16,6 @@
 //! ```text
 //! AlloyConfig
 //! ├── logging: LoggingConfig       # Logging settings
-//! ├── runtime: RuntimeConfig       # Runtime behavior
 //! └── adapters: Map<String, Value> # Adapter-specific configs (dynamic)
 //! ```
 //!
@@ -40,11 +39,11 @@
 //!         url: ws://127.0.0.1:8080
 //! ```
 
-use figment::value::{Tag, Value};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::time::Duration;
+
+use figment::value::{Tag, Value};
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Root Configuration
@@ -59,9 +58,6 @@ use std::time::Duration;
 pub struct AlloyConfig {
     /// Logging configuration.
     pub logging: LoggingConfig,
-
-    /// Runtime configuration.
-    pub runtime: RuntimeConfig,
 
     /// Adapter-specific configurations.
     ///
@@ -128,12 +124,10 @@ impl AlloyConfig {
 /// Logging configuration.
 ///
 /// Supports multiple output formats, targets, and filtering options.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct LoggingConfig {
     /// Default log level.
-    ///
-    /// Can be: trace, debug, info, warn, error
     pub level: LogLevel,
 
     /// Output format.
@@ -143,6 +137,7 @@ pub struct LoggingConfig {
     pub output: LogOutput,
 
     /// Whether to include timestamps.
+    #[serde(default = "default_timestamps")]
     pub timestamps: bool,
 
     /// Whether to include source file location.
@@ -175,23 +170,8 @@ pub struct LoggingConfig {
     pub max_files: u32,
 }
 
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            level: LogLevel::Info,
-            format: LogFormat::Pretty,
-            output: LogOutput::Stdout,
-            timestamps: true,
-            file_location: false,
-            thread_ids: false,
-            thread_names: false,
-            span_events: SpanEventConfig::default(),
-            filters: HashMap::new(),
-            file_path: None,
-            max_file_size: default_max_file_size(),
-            max_files: default_max_files(),
-        }
-    }
+fn default_timestamps() -> bool {
+    true
 }
 
 fn default_max_file_size() -> u64 {
@@ -248,15 +228,16 @@ impl std::fmt::Display for LogLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
-    /// Human-readable pretty format.
-    #[default]
-    Pretty,
     /// Compact single-line format.
+    #[default]
     Compact,
-    /// JSON format for structured logging.
-    Json,
     /// Full verbose format.
     Full,
+    /// Human-readable pretty format.
+    Pretty,
+    /// JSON format for structured logging.
+    #[cfg(feature = "json-log")]
+    Json,
 }
 
 /// Log output target.
@@ -310,59 +291,4 @@ impl SpanEventConfig {
         exit: true,
         close: true,
     };
-}
-
-// =============================================================================
-// Runtime Configuration
-// =============================================================================
-
-/// Runtime behavior configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RuntimeConfig {
-    /// Graceful shutdown timeout in seconds.
-    #[serde(default = "default_shutdown_timeout")]
-    pub shutdown_timeout_secs: u64,
-
-    /// Enable metrics collection.
-    #[serde(default)]
-    pub enable_metrics: bool,
-
-    /// Metrics server port (only when metrics enabled).
-    #[serde(default = "default_metrics_port")]
-    pub metrics_port: u16,
-
-    /// Event channel buffer size.
-    #[serde(default = "default_event_buffer")]
-    pub event_buffer_size: usize,
-}
-
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            shutdown_timeout_secs: default_shutdown_timeout(),
-            enable_metrics: false,
-            metrics_port: default_metrics_port(),
-            event_buffer_size: default_event_buffer(),
-        }
-    }
-}
-
-impl RuntimeConfig {
-    /// Returns shutdown timeout as Duration.
-    pub fn shutdown_timeout(&self) -> Duration {
-        Duration::from_secs(self.shutdown_timeout_secs)
-    }
-}
-
-fn default_shutdown_timeout() -> u64 {
-    30
-}
-
-fn default_metrics_port() -> u16 {
-    9090
-}
-
-fn default_event_buffer() -> usize {
-    1024
 }

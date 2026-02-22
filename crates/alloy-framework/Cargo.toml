@@ -8,10 +8,10 @@ authors = { workspace = true }
 license = { workspace = true }
 
 [features]
-default = ["builtin"]
+default = []
 
 command = ["dep:clap"]
-builtin = []
+builtin-plugins = []
 
 [dependencies]
 alloy-core = { workspace = true }

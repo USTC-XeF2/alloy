@@ -63,11 +63,8 @@ pub use alloy_framework as framework;
 pub use alloy_runtime as runtime;
 
 // Built-in plugins
-pub use alloy_framework::plugin::builtin as builtin_plugin;
-
-// Optional: Re-export macros
-#[cfg(feature = "macros")]
-pub use alloy_macros as macros;
+#[cfg(feature = "builtin-plugins")]
+pub use alloy_framework::plugin::builtin as builtin_plugins;
 
 /// Prelude module for convenient imports.
 ///

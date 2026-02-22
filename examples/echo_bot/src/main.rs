@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use alloy::builtin_plugin::storage::{STORAGE_PLUGIN, StorageService};
+use alloy::builtin_plugins::storage::{STORAGE_PLUGIN, StorageService};
 use alloy::prelude::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use anyhow::Result;
@@ -135,7 +135,7 @@ async fn signin_handler(
 }
 
 /// The echo bot plugin with command handlers for echo, info, and signin.
-pub static ECHO_PLUGIN: PluginDescriptor = define_plugin! {
+static ECHO_PLUGIN: PluginDescriptor = define_plugin! {
     name: "echo_bot",
     depends_on: [StorageService],
     handlers: [

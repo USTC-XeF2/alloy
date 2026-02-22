@@ -10,8 +10,12 @@ license = { workspace = true }
 [features]
 default = []
 
+# Config format features
+toml-config = ["figment/toml"]
+yaml-config = ["figment/yaml"]
+
 # Logging features
-json = ["tracing-subscriber/json"]
+json-log = ["tracing-subscriber/json"]
 
 # Transport features (passed through to alloy-transport)
 ws-client = ["alloy-transport/ws-client"]
@@ -25,11 +29,10 @@ alloy-core = { workspace = true }
 alloy-framework = { workspace = true }
 alloy-transport = { workspace = true }
 dirs = "6.0.0"
-figment = { version = "0.10.19", features = ["yaml", "env"] }
+figment = { version = "0.10.19", features = ["env"] }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_yaml = "0.9.34"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "signal"] }
 tracing = { workspace = true }

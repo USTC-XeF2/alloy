@@ -64,11 +64,7 @@ pub mod error;
 pub mod logging;
 pub mod runtime;
 
-// Re-exports
-pub use config::{
-    AlloyConfig, ConfigError, ConfigLoader, ConfigResult, LogFormat, LogLevel, LogOutput,
-    LoggingConfig, RuntimeConfig,
-};
-pub use error::{RuntimeError, RuntimeResult};
+pub use config::{AlloyConfig, ConfigLoader, LogFormat, LogLevel, LogOutput, LoggingConfig};
+pub use error::{ConfigError, ConfigResult, RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};
 pub use runtime::{AlloyRuntime, RuntimeBuilder};

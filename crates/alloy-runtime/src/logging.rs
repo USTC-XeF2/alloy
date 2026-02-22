@@ -368,21 +368,12 @@ impl LoggingBuilder {
         macro_rules! init_with_writer {
             ($writer:expr) => {
                 match &self.format {
-                    #[cfg(feature = "json")]
+                    #[cfg(feature = "json-log")]
                     LogFormat::Json => {
                         let layer = fmt::layer()
                             .json()
                             .with_span_events(span_events)
                             .with_writer($writer);
-                        tracing_subscriber::registry()
-                            .with(layer)
-                            .with(filter)
-                            .try_init()
-                    }
-                    #[cfg(not(feature = "json"))]
-                    LogFormat::Json => {
-                        warn!("JSON format requested but 'json' feature not enabled, using compact format");
-                        let layer = configure_layer!(fmt::layer().compact().with_writer($writer));
                         tracing_subscriber::registry()
                             .with(layer)
                             .with(filter)
