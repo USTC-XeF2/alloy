@@ -24,59 +24,58 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
+use futures::future;
 use tokio::signal;
-use tokio::sync::RwLock as AsyncRwLock;
-use tower::util::BoxCloneSyncService;
-use tower::{BoxError, Service};
-use tracing::{debug, error, info, span, warn};
+use tracing::{error, info, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader, ConfigResult};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
-use alloy_core::{
-    AdapterBridge, BoxedBot, BoxedEvent, ConfigurableAdapter, Dispatcher, TransportContext,
-};
-use alloy_framework::{AlloyContext, BoxedHandlerService, EventSkipped};
+use alloy_core::{AdapterBridge, ConfigurableAdapter, TransportContext};
+use alloy_framework::{PluginDescriptor, PluginManager};
 
-/// The main Alloy runtime that orchestrates adapters and bots.
+/// The main Alloy runtime that orchestrates adapters, transports, and plugins.
 ///
 /// # Simple Usage
 ///
 /// ```rust,ignore
 /// use alloy_runtime::AlloyRuntime;
+/// use alloy::prelude::*;
 ///
 /// // Auto-loads config from alloy.yaml in current directory
 /// let runtime = AlloyRuntime::new();
 ///
-/// // Adapter is configured from alloy.yaml, no need to register manually
-/// runtime.register_matcher(my_matcher).await;
+/// // Register an adapter (configured from alloy.yaml)
+/// runtime.register_adapter::<OneBotAdapter>()?;
+///
+/// // Register a plugin that contains all your handlers
+/// runtime.register_plugin(define_plugin! {
+///     name: "echo",
+///     handlers: [on_message().handler(echo_handler)],
+/// }).await;
+///
 /// runtime.run().await;
 /// ```
 ///
 /// # Custom Configuration
 ///
 /// ```rust,ignore
-/// // Load from specific file
 /// let runtime = AlloyRuntime::builder()
 ///     .config_file("config/production.yaml")
 ///     .profile("production")
 ///     .build()?;
-///
-/// // Or use pre-loaded config
-/// let config = load_config_from_file("alloy.yaml")?;
-/// let runtime = AlloyRuntime::from_config(&config);
 /// ```
 pub struct AlloyRuntime {
     /// The configuration.
     config: AlloyConfig,
-    /// Registered handler services for event dispatching.
-    services: Arc<AsyncRwLock<Vec<BoxedHandlerService>>>,
+    /// Plugin manager — owns all plugins and drives event dispatch.
+    plugin_manager: Arc<PluginManager>,
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges, created eagerly on registration.
-    bridges: RwLock<HashMap<String, Arc<AdapterBridge>>>,
+    bridges: Mutex<HashMap<String, Arc<AdapterBridge>>>,
     /// Whether the runtime is running.
     running: AtomicBool,
 }
@@ -142,11 +141,19 @@ impl AlloyRuntime {
             "Runtime initialized from configuration"
         );
 
+        // Convert plugin configs from figment::value::Value to serde_json::Value
+        // so that PluginManager (in alloy-framework) stays free of figment.
+        let plugin_configs = config
+            .plugins
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap_or_default()))
+            .collect();
+
         Self {
             config: config.clone(),
-            services: Arc::new(AsyncRwLock::new(Vec::new())),
+            plugin_manager: Arc::new(PluginManager::new(plugin_configs)),
             transport_context: transport_ctx,
-            bridges: RwLock::new(HashMap::new()),
+            bridges: Mutex::new(HashMap::new()),
             running: AtomicBool::new(false),
         }
     }
@@ -169,7 +176,7 @@ impl AlloyRuntime {
         {
             use alloy_transport::websocket::WsServerCapabilityImpl;
             ctx = ctx.with_ws_server(Arc::new(WsServerCapabilityImpl::new()));
-            debug!("Registered WsServer capability");
+            tracing::debug!("Registered WsServer capability");
         }
 
         // Register WebSocket client capability
@@ -177,7 +184,7 @@ impl AlloyRuntime {
         {
             use alloy_transport::websocket::WsClientCapabilityImpl;
             ctx = ctx.with_ws_client(Arc::new(WsClientCapabilityImpl::new()));
-            debug!("Registered WsClient capability");
+            tracing::debug!("Registered WsClient capability");
         }
 
         // Register HTTP server capability
@@ -185,7 +192,7 @@ impl AlloyRuntime {
         {
             use alloy_transport::http::HttpServerCapabilityImpl;
             ctx = ctx.with_http_server(Arc::new(HttpServerCapabilityImpl::new()));
-            debug!("Registered HttpServer capability");
+            tracing::debug!("Registered HttpServer capability");
         }
 
         // Register HTTP client capability
@@ -193,7 +200,7 @@ impl AlloyRuntime {
         {
             use alloy_transport::http::HttpClientCapabilityImpl;
             ctx = ctx.with_http_client(Arc::new(HttpClientCapabilityImpl::new()));
-            debug!("Registered HttpClient capability");
+            tracing::debug!("Registered HttpClient capability");
         }
 
         ctx
@@ -234,89 +241,41 @@ impl AlloyRuntime {
         let adapter = Arc::new(A::from_config(config));
         let bridge = Arc::new(AdapterBridge::new(
             adapter,
-            self.create_event_dispatcher(),
+            self.plugin_manager.clone(),
             self.transport_context.clone(),
         ));
 
         self.bridges
-            .write()
+            .lock()
             .unwrap()
             .insert(adapter_name.to_string(), bridge);
         info!(adapter = adapter_name, "Registered adapter");
         Ok(())
     }
 
-    /// Registers a handler service for event dispatching.
+    /// Registers a plugin from a [`PluginDescriptor`].
     ///
-    /// Accepts any tower [`Service`] compatible with `Arc<AlloyContext>` and
-    /// automatically boxes it. Services are called in the order they are
-    /// registered. A service can stop further dispatch by calling
-    /// [`AlloyContext::stop_propagation`].
+    /// Delegates to the underlying [`PluginManager`].
     ///
-    /// # Example
+    /// Because [`PluginDescriptor`] is `Copy`, it can be stored in a `static`
+    /// and imported from any module or crate:
     ///
     /// ```rust,ignore
-    /// use alloy::prelude::*;
-    ///
-    /// runtime.register_service(
-    ///     on_message().handler(log_handler)
-    /// ).await;
+    /// use my_plugin::MY_PLUGIN;
+    /// runtime.register_plugin(MY_PLUGIN).await;
     /// ```
-    pub async fn register_service<S>(&self, svc: S)
-    where
-        S: Service<Arc<AlloyContext>, Response = (), Error = BoxError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        S::Future: Send + 'static,
-    {
-        self.services
-            .write()
-            .await
-            .push(BoxCloneSyncService::new(svc));
+    pub async fn register_plugin(&self, desc: PluginDescriptor) {
+        self.plugin_manager.register_plugin(desc).await;
     }
 
-    /// Returns the number of registered services.
-    pub async fn service_count(&self) -> usize {
-        self.services.read().await.len()
+    /// Returns the number of registered plugins.
+    pub async fn plugin_count(&self) -> usize {
+        self.plugin_manager.plugin_count().await
     }
 
     /// Returns whether the runtime is currently running.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
-    }
-
-    /// Creates an event dispatcher for adapters.
-    ///
-    /// This dispatcher function is called when events are received from the transport layer.
-    /// It dispatches events to all registered matchers, executing their handlers and
-    /// respecting blocking rules.
-    fn create_event_dispatcher(&self) -> Dispatcher {
-        let services = Arc::clone(&self.services);
-        Arc::new(move |event: BoxedEvent, bot: BoxedBot| {
-            let services = Arc::clone(&services);
-            tokio::spawn(async move {
-                let event_name = event.event_name();
-                let span = span!(tracing::Level::DEBUG, "dispatch", event_name = %event_name);
-                let _enter = span.enter();
-
-                let ctx = Arc::new(AlloyContext::new(event, bot));
-                let service_list = services.read().await;
-
-                for mut svc in service_list.iter().cloned() {
-                    if !ctx.is_propagating() {
-                        debug!("Propagation stopped, halting dispatch");
-                        break;
-                    }
-                    if let Err(e) = svc.call(Arc::clone(&ctx)).await
-                        && !e.is::<EventSkipped>()
-                    {
-                        error!(error = %e, "Service returned an error");
-                    }
-                }
-            });
-        })
     }
 
     /// Starts the runtime.
@@ -332,19 +291,37 @@ impl AlloyRuntime {
 
         info!("Starting Alloy runtime");
 
-        let bridges = self.bridges.read().unwrap();
-        for (name, bridge) in bridges.iter() {
-            if let Err(e) = bridge.on_start().await {
-                error!(adapter = %name, error = %e, "Failed to start adapter");
-            } else {
-                info!(adapter = %name, "Adapter started");
-            }
-        }
+        // 1. Start adapters in parallel.
+        let futures = self
+            .bridges
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(name, bridge)| {
+                let name = name.clone();
+                let bridge = bridge.clone();
+                async move {
+                    if let Err(e) = bridge.on_start().await {
+                        error!(adapter = %name, error = %e, "Failed to start adapter");
+                    } else {
+                        info!(adapter = %name, "Adapter started");
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        future::join_all(futures).await;
+
+        // 2. Load plugins in dependency order (topological sort).
+        self.plugin_manager.start_all().await;
 
         info!("Runtime started");
     }
 
-    /// Stops the runtime and all adapters.
+    /// Stops the runtime, all plugins, and all adapters.
+    ///
+    /// Shutdown order:
+    /// 1. Call [`Plugin::on_unload`] on every registered plugin.
+    /// 2. Shut down all registered adapters in parallel.
     pub async fn stop(&self) {
         if self
             .running
@@ -357,12 +334,26 @@ impl AlloyRuntime {
 
         info!("Stopping Alloy runtime");
 
-        let bridges = self.bridges.read().unwrap();
-        for (name, bridge) in bridges.iter() {
-            if let Err(e) = bridge.on_shutdown().await {
-                error!(adapter = %name, error = %e, "Error during adapter shutdown");
-            }
-        }
+        // 1. Unload plugins in reverse dependency order (dependents before providers).
+        self.plugin_manager.stop_all().await;
+
+        // 2. Shut down adapters in parallel.
+        let futures = self
+            .bridges
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(name, bridge)| {
+                let name = name.clone();
+                let bridge = bridge.clone();
+                async move {
+                    if let Err(e) = bridge.on_shutdown().await {
+                        error!(adapter = %name, error = %e, "Error during adapter shutdown");
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        future::join_all(futures).await;
 
         info!("Runtime stopped");
     }

@@ -1,81 +1,76 @@
 //! Context and extractor system for the Alloy framework.
 //!
-//! This module provides [`AlloyContext`], the central context object that wraps
-//! events and manages propagation state during handler execution.
+//! This module provides three context types that together model how an event
+//! is processed across multiple plugins:
+//!
+//! - [`BaseContext`] — the **shared** base for one dispatch cycle.  A single
+//!   `Arc<BaseContext>` is created per incoming event and passed to every
+//!   plugin.  It holds the event, the bot, the service snapshot, the
+//!   propagation flag, and the cross-plugin state map.
+//!
+//! - [`PluginContext`] — **plugin-specific** data attached per-plugin.
+//!   Currently holds only the plugin's config section, but serves as the
+//!   extension point for future per-plugin fields.
+//!
+//! - [`AlloyContext`] — the full context handed to handlers, combining an
+//!   `Arc<BaseContext>` with a `PluginContext`.  Calling
+//!   [`stop_propagation`](AlloyContext::stop_propagation) on any plugin's
+//!   `AlloyContext` writes through to the shared base, stopping the chain
+//!   for all subsequent plugins.
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
+use crate::plugin::PluginService;
 use alloy_core::{BoxedBot, BoxedEvent};
+use serde_json::Value;
 
-/// The context object passed to handlers during event processing.
+/// A read-only snapshot of all registered inter-plugin services.
 ///
-/// `AlloyContext` wraps a [`BoxedEvent`] and provides additional state management
-/// for controlling event propagation through the handler chain.
+/// Keyed by `TypeId` so handlers can retrieve services by their concrete type.
+/// Created by [`PluginManager`](crate::manager::PluginManager) once per
+/// dispatch and shared (via `Arc`) across every [`AlloyContext`] for that event.
+pub type ServiceSnapshot = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
+
+// =============================================================================
+// BaseContext — shared base, one per dispatch cycle
+// =============================================================================
+
+/// The shared base context for a single event dispatch cycle.
 ///
-/// # Thread Safety
+/// One `BaseContext` is created per incoming event and wrapped in an `Arc`
+/// that is cloned into every [`AlloyContext`] for that event.  This means:
 ///
-/// `AlloyContext` is designed to be shared across async tasks. The propagation
-/// state is managed using atomic operations for thread-safe access.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy_core::{AlloyContext, BoxedEvent};
-///
-/// async fn handle_event(ctx: &AlloyContext) {
-///     // Access the underlying event
-///     println!("Processing event: {:?}", ctx.event());
-///     
-///     // Stop further handlers from processing this event
-///     ctx.stop_propagation();
-///     
-///     // Access the bot to send messages
-///     ctx.bot().send(ctx.event().deref(), "Hello!").await.ok();
-/// }
-/// ```
-pub struct AlloyContext {
-    /// The wrapped event being processed.
+/// - Stopping propagation in one plugin is immediately visible to the dispatch
+///   loop and to all subsequent plugins.
+/// - State written by one plugin via [`AlloyContext::set_state`] is readable
+///   by later plugins via their own `AlloyContext`.
+/// - The event and bot are accessed without copying.
+pub struct BaseContext {
     event: BoxedEvent,
-    /// The bot associated with this event.
     bot: BoxedBot,
-    /// Flag indicating whether the event should continue propagating to other handlers.
+    services: Arc<ServiceSnapshot>,
+    /// Cleared by any handler that calls [`AlloyContext::stop_propagation`].
     is_propagating: AtomicBool,
-    /// Type-keyed state storage for passing data between matchers and handlers.
-    state: RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
+    /// Type-keyed state shared across all plugins for this event.
+    state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
 }
 
-impl AlloyContext {
-    /// Creates a new context wrapping the given event and bot.
-    ///
-    /// The context is initialized with propagation enabled, meaning subsequent
-    /// handlers will receive the event unless [`stop_propagation`](Self::stop_propagation)
-    /// is called.
-    ///
-    /// # Arguments
-    ///
-    /// * `event` - The boxed event to wrap.
-    /// * `bot` - The bot associated with this event.
-    ///
-    /// # Returns
-    ///
-    /// A new `AlloyContext` instance.
-    pub fn new(event: BoxedEvent, bot: BoxedBot) -> Self {
+impl BaseContext {
+    /// Creates a new shared event context.
+    pub fn new(event: BoxedEvent, bot: BoxedBot, services: Arc<ServiceSnapshot>) -> Self {
         Self {
             event,
             bot,
+            services,
             is_propagating: AtomicBool::new(true),
-            state: RwLock::new(HashMap::new()),
+            state: Mutex::new(HashMap::new()),
         }
     }
 
     /// Returns a reference to the underlying boxed event.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the [`BoxedEvent`].
     pub fn event(&self) -> &BoxedEvent {
         &self.event
     }
@@ -85,88 +80,195 @@ impl AlloyContext {
         &self.bot
     }
 
-    /// Returns a clone of the bot Arc.
+    /// Returns a clone of the bot `Arc`.
     pub fn bot_arc(&self) -> BoxedBot {
         self.bot.clone()
     }
 
-    /// Stops the event from propagating to further handlers.
-    ///
-    /// Once called, the dispatcher will not invoke any remaining handlers
-    /// for this event.
-    ///
-    /// # Thread Safety
-    ///
-    /// This operation is atomic and safe to call from any thread.
-    pub fn stop_propagation(&self) {
-        self.is_propagating.store(false, Ordering::SeqCst);
-    }
-
-    /// Checks if the event is still propagating.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the event should continue to subsequent handlers,
-    /// `false` if propagation has been stopped.
+    /// Returns `true` if the event is still propagating.
     pub fn is_propagating(&self) -> bool {
         self.is_propagating.load(Ordering::SeqCst)
     }
 
-    /// Stores a value in the context's type-keyed state.
-    ///
-    /// This allows matchers to store parsed data that handlers can later retrieve.
-    /// Only one value per type can be stored; subsequent calls will overwrite.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // In a matcher's check function:
-    /// ctx.set_state(MyParsedCommand { ... });
-    ///
-    /// // In a handler:
-    /// if let Some(cmd) = ctx.get_state::<MyParsedCommand>() {
-    ///     // Use the parsed command
-    /// }
-    /// ```
-    pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
-        let mut state = self.state.write().unwrap();
-        state.insert(TypeId::of::<T>(), Box::new(value));
+    pub(crate) fn stop_propagation(&self) {
+        self.is_propagating.store(false, Ordering::SeqCst);
     }
 
-    /// Retrieves a value from the context's type-keyed state.
-    ///
-    /// Returns `None` if no value of the given type has been stored.
-    pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
-        let state = self.state.read().unwrap();
-        state
+    pub(crate) fn set_state<T: Send + Sync + 'static>(&self, value: T) {
+        self.state
+            .lock()
+            .unwrap()
+            .insert(TypeId::of::<T>(), Box::new(value));
+    }
+
+    pub(crate) fn get_state<T: Clone + 'static>(&self) -> Option<T> {
+        self.state
+            .lock()
+            .unwrap()
             .get(&TypeId::of::<T>())
             .and_then(|v| v.downcast_ref::<T>())
             .cloned()
     }
 
-    /// Checks if a value of the given type exists in state.
-    pub fn has_state<T: 'static>(&self) -> bool {
-        let state = self.state.read().unwrap();
-        state.contains_key(&TypeId::of::<T>())
+    pub(crate) fn has_state<T: 'static>(&self) -> bool {
+        self.state.lock().unwrap().contains_key(&TypeId::of::<T>())
     }
 
-    /// Removes and returns a value from state.
-    pub fn take_state<T: 'static>(&self) -> Option<T> {
-        let mut state = self.state.write().unwrap();
-        state
+    pub(crate) fn take_state<T: 'static>(&self) -> Option<T> {
+        self.state
+            .lock()
+            .unwrap()
             .remove(&TypeId::of::<T>())
             .and_then(|v| v.downcast::<T>().ok())
             .map(|v| *v)
     }
+
+    pub(crate) fn get_service_raw(&self, type_id: TypeId) -> Option<Arc<dyn Any + Send + Sync>> {
+        self.services.get(&type_id).map(Arc::clone)
+    }
 }
 
-impl std::fmt::Debug for AlloyContext {
+impl std::fmt::Debug for BaseContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let state_count = self.state.read().map(|s| s.len()).unwrap_or(0);
-        f.debug_struct("AlloyContext")
+        let state_count = self.state.lock().map(|s| s.len()).unwrap_or(0);
+        f.debug_struct("BaseContext")
             .field("event", &self.event)
             .field("is_propagating", &self.is_propagating())
             .field("state_entries", &state_count)
-            .finish()
+            .finish_non_exhaustive()
+    }
+}
+
+// =============================================================================
+// PluginContext — per-plugin data, one per plugin per dispatch
+// =============================================================================
+
+/// Plugin-specific data carried alongside the shared [`BaseContext`].
+///
+/// Every plugin gets its own `PluginContext` for each event dispatch.
+/// This is intentionally a plain struct rather than a field on [`AlloyContext`]
+/// so that future per-plugin fields (e.g. per-plugin rate-limit state,
+/// per-plugin metadata) have a clear home without polluting the shared base.
+#[derive(Debug)]
+pub struct PluginContext {
+    /// The plugin's config section from `alloy.yaml` (or an empty object).
+    pub config: Arc<Value>,
+    // Future per-plugin fields go here.
+}
+
+// =============================================================================
+// AlloyContext — full context, handed to handlers
+// =============================================================================
+
+/// The full context object passed to handlers during event processing.
+///
+/// `AlloyContext` composes the **shared** [`BaseContext`] (base) with
+/// **plugin-specific** [`PluginContext`] data.  All plugins handling the same
+/// event share the same `Arc<BaseContext>`, so:
+///
+/// - Calling [`stop_propagation`](Self::stop_propagation) prevents subsequent
+///   plugins from running.
+/// - State written with [`set_state`](Self::set_state) is visible to plugins
+///   processed later in the same dispatch cycle.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// async fn handle(ctx: Arc<AlloyContext>) {
+///     println!("event: {:?}", ctx.event());
+///     ctx.stop_propagation();           // no further plugins will run
+///     ctx.bot().send(...).await.ok();
+/// }
+/// ```
+#[derive(Debug)]
+pub struct AlloyContext {
+    base: Arc<BaseContext>,
+    plugin: PluginContext,
+}
+
+impl AlloyContext {
+    /// Creates a new `AlloyContext` from a shared base and plugin-specific data.
+    pub fn new(base: Arc<BaseContext>, plugin: PluginContext) -> Self {
+        Self { base, plugin }
+    }
+
+    // ─── Shared base delegation ───────────────────────────────────────────────
+
+    /// Returns the shared [`BaseContext`].
+    pub fn base(&self) -> &Arc<BaseContext> {
+        &self.base
+    }
+
+    /// Returns a reference to the underlying boxed event.
+    pub fn event(&self) -> &BoxedEvent {
+        self.base.event()
+    }
+
+    /// Returns a reference to the bot.
+    pub fn bot(&self) -> &BoxedBot {
+        self.base.bot()
+    }
+
+    /// Returns a clone of the bot `Arc`.
+    pub fn bot_arc(&self) -> BoxedBot {
+        self.base.bot_arc()
+    }
+
+    /// Looks up a service by its concrete type.
+    ///
+    /// Returns `None` if no service of the given type is registered.
+    /// For ergonomic access, prefer [`ServiceRef<T>`](crate::plugin::ServiceRef)
+    /// as a handler parameter.
+    pub fn get_service<T: PluginService>(&self) -> Option<Arc<T>> {
+        self.base
+            .get_service_raw(TypeId::of::<T>())
+            .and_then(|arc| arc.downcast::<T>().ok())
+    }
+
+    /// Stops propagation of this event to subsequent plugins.
+    ///
+    /// Writes through to the shared [`EventContext`]; the dispatch loop checks
+    /// `is_propagating()` before handing the event to each next plugin.
+    pub fn stop_propagation(&self) {
+        self.base.stop_propagation();
+    }
+
+    /// Returns `true` if the event is still propagating.
+    pub fn is_propagating(&self) -> bool {
+        self.base.is_propagating()
+    }
+
+    /// Stores a value in the shared cross-plugin state map.
+    ///
+    /// Only one value per type can be stored; subsequent calls overwrite.
+    pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
+        self.base.set_state(value);
+    }
+
+    /// Retrieves a cloned value from the shared state map.
+    pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
+        self.base.get_state()
+    }
+
+    /// Returns `true` if a value of type `T` exists in state.
+    pub fn has_state<T: 'static>(&self) -> bool {
+        self.base.has_state::<T>()
+    }
+
+    /// Removes and returns a value from state.
+    pub fn take_state<T: 'static>(&self) -> Option<T> {
+        self.base.take_state()
+    }
+
+    // ─── Plugin-specific ──────────────────────────────────────────────────────
+
+    /// Returns the plugin's config section from `alloy.yaml`.
+    pub fn config(&self) -> &Arc<serde_json::Value> {
+        &self.plugin.config
+    }
+
+    /// Returns a reference to the plugin-specific context.
+    pub fn plugin_ctx(&self) -> &PluginContext {
+        &self.plugin
     }
 }

@@ -127,12 +127,6 @@ pub trait Adapter: Send + Sync {
 /// A boxed adapter trait object.
 pub type BoxedAdapter = Arc<dyn Adapter>;
 
-/// Event dispatcher callback type.
-///
-/// Receives events and the associated bot, then distributes them to registered handlers.
-/// Typically created by the runtime and passed to adapters via [`AdapterBridge`].
-pub type Dispatcher = Arc<dyn Fn(BoxedEvent, BoxedBot) + Send + Sync>;
-
 /// Trait for adapters that can be created from YAML configuration.
 ///
 /// Separates compile-time concerns (`Config` type, `from_config()`)

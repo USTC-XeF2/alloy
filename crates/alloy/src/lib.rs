@@ -10,46 +10,44 @@
 //!
 //! ## Architecture
 //!
-//! Alloy uses a tower-service-based dispatch pipeline:
+//! Alloy uses a plugin-based dispatch pipeline:
 //!
 //! ```text
-//! ┌─────────────┐     ┌────────────┐     ┌──────────────────────────────┐
-//! │   Runtime   │────▶│ Dispatcher │────▶│  BoxedHandlerService         │──▶ handlers
-//! │  (Adapter)  │     │            │────▶│  (FilterLayer + HandlerSvc)  │──▶ handlers
-//! └─────────────┘     └────────────┘────▶│  ...                         │──▶ handlers
-//!                                        └──────────────────────────────┘
+//! ┌─────────────┐     ┌────────────┐     ┌──────────────────────────────────────────┐
+//! │   Runtime   │────▶│ Dispatcher │────▶│ Plugin "echo"  (own task, own context)   │──▶ services
+//! │  (Adapter)  │     │            │────▶│ Plugin "admin" (own task, own context)   │──▶ services
+//! └─────────────┘     └────────────┘────▶│ Plugin ...     (own task, own context)   │──▶ services
+//!                                        └──────────────────────────────────────────┘
 //! ```
 //!
-//! - **Runtime**: Manages adapters, transports, and bot lifecycle
+//! - **Runtime**: Manages adapters, transports, and plugin lifecycle
 //! - **Adapters**: Protocol implementations (OneBot, etc.)
-//! - **HandlerService**: Runs handlers; all checks are tower `Layer`s on top
+//! - **Plugins**: Isolated event-handling units; each gets its own async task & context
+//! - **Services**: Tower services (FilterLayer + HandlerService) within a plugin
 //! - **Handlers**: User-defined async functions (Axum-style)
 //!
 //! ## Quick Start
 //!
 //! ```rust,ignore
 //! use alloy::prelude::*;
-//! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter, OneBotConfig};
+//! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter};
 //!
-//! async fn echo(event: EventContext<MessageEvent>) {
-//!     if let Some(content) = event.get_plain_text().strip_prefix("/echo ") {
-//!         info!("Echo: {}", content);
-//!     }
+//! async fn echo(event: EventContext<MessageEvent>) -> anyhow::Result<String> {
+//!     Ok(event.get_plain_text().to_string())
 //! }
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let runtime = AlloyRuntime::new();
-//!
-//!     // Adapter is automatically configured from alloy.yaml
 //!     runtime.register_adapter::<OneBotAdapter>()?;
 //!
-//!     // Register a service: FilterLayer gates HandlerService
-//!     runtime.register_service(
-//!         on_message().handler(echo).into()
-//!     ).await;
+//!     runtime.register_plugin(plugin! {
+//!         name: "echo_plugin",
+//!         services: [on_message().handler(echo)],
+//!     }).await;
 //!
-//!     runtime.run().await
+//!     runtime.run().await;
+//!     Ok(())
 //! }
 //! ```
 //!
@@ -63,6 +61,9 @@
 pub use alloy_core as core;
 pub use alloy_framework as framework;
 pub use alloy_runtime as runtime;
+
+// Built-in plugins
+pub use alloy_framework::plugin::builtin as builtin_plugin;
 
 // Optional: Re-export macros
 #[cfg(feature = "macros")]
@@ -78,6 +79,10 @@ pub use alloy_macros as macros;
 pub mod prelude {
     // Runtime - main entry point
     pub use alloy_runtime::AlloyRuntime;
+
+    // Plugin system - primary unit of event handling
+    pub use alloy_framework::define_plugin;
+    pub use alloy_framework::plugin::{PluginConfig, PluginDescriptor, PluginService, ServiceRef};
 
     // Event system - for building handlers
     pub use alloy_core::{AsText, EventContext};

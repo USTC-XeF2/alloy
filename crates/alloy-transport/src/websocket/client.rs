@@ -9,7 +9,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use alloy_core::{
     ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError,
@@ -131,18 +131,14 @@ async fn run_client_loop(
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         trace!(bot_id = %bot_id, len = text.len(), "Received text");
-                        if let Some(event) = handler.on_message(&bot_id, text.as_bytes()).await {
-                            debug!(bot_id = %bot_id, event = %event.event_name(), "Parsed event");
-                        }
+                        handler.on_message(&bot_id, text.as_bytes()).await;
                         // Reset retry on successful message
                         retry_count = 0;
                         current_delay = config.initial_delay;
                     }
                     Some(Ok(Message::Binary(data))) => {
                         trace!(bot_id = %bot_id, len = data.len(), "Received binary");
-                        if let Some(event) = handler.on_message(&bot_id, &data).await {
-                            debug!(bot_id = %bot_id, event = %event.event_name(), "Parsed event");
-                        }
+                        handler.on_message(&bot_id, &data).await;
                         retry_count = 0;
                         current_delay = config.initial_delay;
                     }
@@ -183,7 +179,6 @@ async fn run_client_loop(
                     }
                     Some(Err(e)) => {
                         warn!(bot_id = %bot_id, error = %e, "WebSocket error");
-                        handler.on_error(&bot_id, &e.to_string()).await;
 
                         if !config.auto_reconnect {
                             handler.on_disconnect(&bot_id).await;
@@ -281,7 +276,6 @@ async fn try_reconnect(
                 Duration::from_secs_f64(current_delay.as_secs_f64() * config.backoff_multiplier),
                 config.max_delay,
             );
-            handler.on_error(bot_id, &e.to_string()).await;
 
             // Return error but allow retry on next iteration
             Some(Err(()))

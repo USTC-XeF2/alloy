@@ -16,8 +16,8 @@ use axum::{
     routing::get,
 };
 use futures::{SinkExt, StreamExt};
-use tokio::sync::{RwLock, mpsc};
-use tracing::{debug, error, info, trace, warn};
+use tokio::sync::{Mutex, mpsc};
+use tracing::{error, info, trace, warn};
 
 use alloy_core::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportResult,
@@ -45,7 +45,7 @@ struct ServerState {
     /// Connection handler from the adapter.
     handler: Arc<dyn ConnectionHandler>,
     /// Active connections (bot_id -> sender).
-    connections: RwLock<HashMap<String, mpsc::Sender<Vec<u8>>>>,
+    connections: Mutex<HashMap<String, mpsc::Sender<Vec<u8>>>>,
 }
 
 #[async_trait]
@@ -58,7 +58,7 @@ impl WsServerCapability for WsServerCapabilityImpl {
     ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,
-            connections: RwLock::new(HashMap::new()),
+            connections: Mutex::new(HashMap::new()),
         });
 
         let path = if path.starts_with('/') {
@@ -96,7 +96,7 @@ impl WsServerCapability for WsServerCapabilityImpl {
                 _ = &mut shutdown_rx => {
                     info!("WebSocket server shutting down");
                     // Close all connections
-                    let connections = server_state.connections.read().await;
+                    let connections = server_state.connections.lock().await;
                     for (bot_id, _) in connections.iter() {
                         server_state.handler.on_disconnect(bot_id).await;
                     }
@@ -172,7 +172,7 @@ async fn handle_socket(
 
     // Register the connection
     {
-        let mut connections = state.connections.write().await;
+        let mut connections = state.connections.lock().await;
         connections.insert(bot_id.clone(), tx.clone());
     }
 
@@ -200,16 +200,11 @@ async fn handle_socket(
         match result {
             Ok(Message::Text(text)) => {
                 trace!(bot_id = %bot_id_recv, len = text.len(), "Received text message");
-                if let Some(event) = handler.on_message(&bot_id_recv, text.as_bytes()).await {
-                    debug!(bot_id = %bot_id_recv, event = %event.event_name(), "Parsed event from message");
-                    // Event is returned to the adapter's dispatcher via the handler
-                }
+                handler.on_message(&bot_id_recv, text.as_bytes()).await;
             }
             Ok(Message::Binary(data)) => {
                 trace!(bot_id = %bot_id_recv, len = data.len(), "Received binary message");
-                if let Some(event) = handler.on_message(&bot_id_recv, &data).await {
-                    debug!(bot_id = %bot_id_recv, event = %event.event_name(), "Parsed event from message");
-                }
+                handler.on_message(&bot_id_recv, &data).await;
             }
             Ok(Message::Ping(_)) => {
                 trace!(bot_id = %bot_id_recv, "Received ping");
@@ -223,7 +218,6 @@ async fn handle_socket(
             }
             Err(e) => {
                 warn!(bot_id = %bot_id_recv, error = %e, "WebSocket error");
-                handler.on_error(&bot_id_recv, &e.to_string()).await;
                 break;
             }
         }
@@ -234,7 +228,7 @@ async fn handle_socket(
 
     // Remove from connections
     {
-        let mut connections = state.connections.write().await;
+        let mut connections = state.connections.lock().await;
         connections.remove(&bot_id);
     }
 

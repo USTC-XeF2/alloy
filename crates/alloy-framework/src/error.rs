@@ -29,6 +29,13 @@ pub enum ExtractError {
         expected: &'static str,
     },
 
+    /// A required value was not found in the context state.
+    ///
+    /// Typically means the plugin's `config_type` was not declared, or
+    /// [`Plugin::init_config`] was not called before event dispatch.
+    #[error("required state not found in context (plugin config may not be configured)")]
+    MissingState,
+
     /// Custom extraction error.
     #[error("{0}")]
     Custom(String),

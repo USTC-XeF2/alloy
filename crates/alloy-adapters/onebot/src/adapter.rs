@@ -43,11 +43,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tracing::{debug, info, trace, warn};
+use tracing::{info, trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
-use crate::model::event::{LifecycleEvent, parse_onebot_event};
+use crate::model::event::parse_onebot_event;
 use alloy_core::{
     Adapter, AdapterContext, AdapterResult, BoxedBot, BoxedEvent, ClientConfig,
     ConfigurableAdapter, ConnectionHandle, ConnectionInfo, TransportError, TransportResult,
@@ -121,22 +121,6 @@ impl Adapter for OneBotAdapter {
                 return None;
             }
         };
-
-        // Log at appropriate level
-        let event_name = boxed_event.event_name();
-        if event_name == "onebot.meta_event.heartbeat" {
-            trace!(bot_id = %bot_id, "Received heartbeat");
-        } else if event_name.starts_with("onebot.meta_event.lifecycle") {
-            if let Some(lc) = boxed_event.as_any().downcast_ref::<LifecycleEvent>() {
-                debug!(bot_id = %bot_id, sub_type = ?lc.sub_type, "Received lifecycle event");
-            }
-        } else {
-            info!(
-                bot_id = %bot_id,
-                event = %event_name,
-                "Received event"
-            );
-        }
 
         Some(boxed_event)
     }
@@ -228,9 +212,6 @@ impl Adapter for OneBotAdapter {
                 }
 
                 ConnectionConfig::HttpClient(http_config) => {
-                    // HTTP client bots are created in the transport layer.
-                    // They can send API calls but don't receive events via this connection.
-                    // Events come from a separate HTTP server or WS connection.
                     if let Some(http_client) = ctx.transport().http_client() {
                         let bot_id = http_config.bot_id.clone();
                         let api_url = http_config.api_url.clone();

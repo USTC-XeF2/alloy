@@ -229,7 +229,7 @@ impl ConfigLoader {
         figment = figment.merge(user_figment);
 
         // Load config files
-        if let Some(ref path) = self.config_file {
+        if let Some(path) = self.config_file {
             // Load specific file
             if path.exists() {
                 info!(path = %path.display(), "Loading configuration file");

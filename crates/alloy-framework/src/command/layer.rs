@@ -4,12 +4,14 @@ use std::task::{Context, Poll};
 
 use clap::Parser;
 use clap::error::ErrorKind;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use tower::{BoxError, Layer, Service, ServiceBuilder};
 use tower_layer::{Identity, Stack};
 
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::handler::{BoxFuture, Handler};
+use crate::handler::Handler;
 use crate::service::{HandlerService, ServiceBuilderExt};
 use alloy_core::EventType;
 
@@ -199,7 +201,7 @@ where
 {
     type Response = ();
     type Error = BoxError;
-    type Future = BoxFuture<Result<(), Self::Error>>;
+    type Future = BoxFuture<'static, Result<(), Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -212,7 +214,7 @@ where
         let block = self.block;
         let mut inner = self.inner.clone();
 
-        Box::pin(async move {
+        async move {
             if ctx.event().event_type() != EventType::Message {
                 return Err(Box::new(EventSkipped) as BoxError);
             }
@@ -259,7 +261,8 @@ where
                     Ok(())
                 }
             }
-        })
+        }
+        .boxed()
     }
 }
 

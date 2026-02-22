@@ -18,8 +18,8 @@ use axum::{
     response::IntoResponse,
     routing::post,
 };
-use tokio::sync::{RwLock, mpsc, watch};
-use tracing::{debug, error, info, trace, warn};
+use tokio::sync::{Mutex, mpsc, watch};
+use tracing::{error, info, trace, warn};
 
 use alloy_core::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpServerCapability, ListenerHandle,
@@ -48,7 +48,7 @@ struct ServerState {
     handler: Arc<dyn ConnectionHandler>,
     /// Track known bots and their connection handles.
     /// The ConnectionHandle allows adapters to implement custom push strategies (SSE, etc.)
-    known_bots: RwLock<HashMap<String, ConnectionHandle>>,
+    known_bots: Mutex<HashMap<String, ConnectionHandle>>,
 }
 
 #[async_trait]
@@ -61,7 +61,7 @@ impl HttpServerCapability for HttpServerCapabilityImpl {
     ) -> TransportResult<ListenerHandle> {
         let state = Arc::new(ServerState {
             handler,
-            known_bots: RwLock::new(HashMap::new()),
+            known_bots: Mutex::new(HashMap::new()),
         });
 
         let path = if path.starts_with('/') {
@@ -99,7 +99,7 @@ impl HttpServerCapability for HttpServerCapabilityImpl {
                 _ = &mut shutdown_rx => {
                     info!("HTTP server shutting down");
                     // Disconnect all known bots
-                    let known = server_state.known_bots.read().await;
+                    let known = server_state.known_bots.lock().await;
                     for (bot_id, handle) in known.iter() {
                         handle.close();
                         server_state.handler.on_disconnect(bot_id).await;
@@ -141,50 +141,42 @@ async fn http_handler(
 
     // Create bot if first time seeing this bot_id
     {
-        let known = state.known_bots.read().await;
+        let mut known = state.known_bots.lock().await;
         if !known.contains_key(&bot_id) {
-            drop(known);
-            let mut known = state.known_bots.write().await;
-            // Double-check after acquiring write lock
-            if !known.contains_key(&bot_id) {
-                // Create channel for potential outgoing messages (SSE, webhooks, etc.)
-                let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-                let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+            // Create channel for potential outgoing messages (SSE, webhooks, etc.)
+            let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
+            let (shutdown_tx, _shutdown_rx) = watch::channel(false);
 
-                let connection_handle =
-                    ConnectionHandle::new(bot_id.clone(), message_tx, shutdown_tx);
+            let connection_handle = ConnectionHandle::new(bot_id.clone(), message_tx, shutdown_tx);
 
-                // Spawn task to handle outgoing messages
-                // Adapters can implement custom logic to consume these messages (e.g., SSE push)
-                let bot_id_clone = bot_id.clone();
-                tokio::spawn(async move {
-                    while let Some(data) = message_rx.recv().await {
-                        // Default behavior: log that message was sent but cannot be delivered
-                        // Adapters can override this by implementing custom HTTP response mechanisms
-                        warn!(
-                            bot_id = %bot_id_clone,
-                            len = data.len(),
-                            "HTTP bot sent message, but no delivery mechanism configured (consider implementing SSE)"
-                        );
-                    }
-                });
+            // Spawn task to handle outgoing messages
+            // Adapters can implement custom logic to consume these messages (e.g., SSE push)
+            let bot_id_clone = bot_id.clone();
+            tokio::spawn(async move {
+                while let Some(data) = message_rx.recv().await {
+                    // Default behavior: log that message was sent but cannot be delivered
+                    // Adapters can override this by implementing custom HTTP response mechanisms
+                    warn!(
+                        bot_id = %bot_id_clone,
+                        len = data.len(),
+                        "HTTP bot sent message, but no delivery mechanism configured (consider implementing SSE)"
+                    );
+                }
+            });
 
-                state
-                    .handler
-                    .create_bot(&bot_id, connection_handle.clone())
-                    .await;
-                known.insert(bot_id.clone(), connection_handle);
-                info!(bot_id = %bot_id, remote_addr = %addr, "HTTP bot created");
-            }
+            state
+                .handler
+                .create_bot(&bot_id, connection_handle.clone())
+                .await;
+            known.insert(bot_id.clone(), connection_handle);
+            info!(bot_id = %bot_id, remote_addr = %addr, "HTTP bot created");
         }
     }
 
     // Process the message
     trace!(bot_id = %bot_id, len = body.len(), "Received HTTP POST");
 
-    if let Some(event) = state.handler.on_message(&bot_id, &body).await {
-        debug!(bot_id = %bot_id, event = %event.event_name(), "Parsed event from HTTP POST");
-    }
+    state.handler.on_message(&bot_id, &body).await;
 
     // Return 200 OK
     (StatusCode::OK, "ok").into_response()

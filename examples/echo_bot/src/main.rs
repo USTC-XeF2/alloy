@@ -1,9 +1,9 @@
 //! Alloy Framework Echo Bot Example
 //!
-//! A simple bot demonstration using the Alloy framework, featuring message logging,
-//! basic commands, and group-specific handling.
+//! Demonstrates the plugin system, command parsing, and service interaction.
+//! Includes three commands: `/echo`, `/info`, and `/signin`.
 //!
-//! # Running the Example
+//! # Running
 //!
 //! ```bash
 //! cargo run --package echo-bot
@@ -11,22 +11,23 @@
 
 use std::sync::Arc;
 
+use alloy::builtin_plugin::storage::{STORAGE_PLUGIN, StorageService};
 use alloy::prelude::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use anyhow::Result;
 use clap::Parser;
+use time::OffsetDateTime;
+use time::macros::format_description;
 use tracing::info;
 
-// --- Command Definitions ---
-
-/// Arguments for the `/echo` command.
+/// Echo back the provided text.
 #[derive(Parser, Debug, Clone)]
 struct EchoCommand {
     /// The text to be echoed back.
     text: Vec<String>,
 }
 
-/// Arguments for the `/info` command.
+/// Display group or member information.
 #[derive(Parser, Debug, Clone)]
 struct InfoCommand {
     /// Optional user to query. Uses @mention syntax.
@@ -34,12 +35,11 @@ struct InfoCommand {
     user: Option<AtSegment>,
 }
 
-// --- Event Handlers ---
+/// Sign in once per calendar day (UTC). Records persisted to `signin.json`.
+#[derive(Parser, Debug, Clone)]
+struct SigninCommand {}
 
-/// A simple logging handler that records every incoming message.
-///
-/// This handler demonstrates how to use `EventContext<MessageEvent>` to access
-/// common message information like the sender's nickname and message content.
+/// Logs every incoming message.
 async fn logging_handler(event: EventContext<MessageEvent>) {
     let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
@@ -51,16 +51,12 @@ async fn logging_handler(event: EventContext<MessageEvent>) {
     );
 }
 
-/// Handles the `/echo` command by sending the provided text back to the source.
+/// Echoes the provided text back to the sender.
 async fn echo_handler(cmd: CommandArgs<EchoCommand>) -> Result<String> {
     Ok(cmd.text.join(" ")) // Empty string results in no message sent
 }
 
-/// Displays information about the current group and optionally queries a specific member.
-///
-/// This handler only works in group channels. If no user is specified with `--user`,
-/// it displays group information. If a user is specified (using @mention syntax),
-/// it queries member information via the OneBot API.
+/// Displays group information or member details (if `--user` is provided).
 async fn info_handler(
     event: EventContext<GroupMessageEvent>,
     bot: Arc<OneBotBot>,
@@ -100,37 +96,66 @@ async fn info_handler(
     }
 }
 
-// --- Main Application ---
+/// Records one sign-in per user per calendar day (UTC) to `signin.json`.
+async fn signin_handler(
+    event: EventContext<MessageEvent>,
+    storage: ServiceRef<StorageService>,
+) -> Result<String> {
+    use std::collections::HashMap;
+
+    let path = storage.data_dir().join("signin.json");
+
+    // Load existing records (user_id → last-signin-date).
+    let mut records: HashMap<String, String> = if path.exists() {
+        let text: String = tokio::fs::read_to_string(&path).await?;
+        serde_json::from_str(&text).unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
+    let user_id = event.user_id.to_string();
+
+    let format = format_description!("[year]-[month]-[day]");
+    let Some(today) = OffsetDateTime::now_local()
+        .ok()
+        .and_then(|dt| dt.format(format).ok())
+    else {
+        return Ok("获取当前日期失败，请稍后再试！".to_string());
+    };
+
+    if records.get(&user_id).is_some_and(|d| d == &today) {
+        return Ok("你今天已经签到过了！".to_string());
+    }
+
+    records.insert(user_id, today);
+    let json = serde_json::to_string_pretty(&records)?;
+    tokio::fs::write(&path, json).await?;
+
+    Ok("签到成功！".to_string())
+}
+
+/// The echo bot plugin with command handlers for echo, info, and signin.
+pub static ECHO_PLUGIN: PluginDescriptor = define_plugin! {
+    name: "echo_bot",
+    depends_on: [StorageService],
+    handlers: [
+        on_message().handler(logging_handler),
+        on_command::<EchoCommand>("echo").handler(echo_handler),
+        on_command::<InfoCommand>("info").handler(info_handler),
+        on_command::<SigninCommand>("signin").handler(signin_handler),
+    ],
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize the Alloy runtime.
-    // By default, it loads configuration from `alloy.yaml` in the current directory.
-    // Configuration can also be overridden via environment variables using the prefixed format.
+    // Initialize runtime and register adapter
     let runtime = AlloyRuntime::new();
-
-    // Register the OneBot adapter.
-    // The adapter will automatically use the connection settings defined in the configuration.
     runtime.register_adapter::<OneBotAdapter>()?;
 
-    // Register services to define how the bot should respond to events.
+    // Load plugins
+    runtime.register_plugin(STORAGE_PLUGIN).await;
+    runtime.register_plugin(ECHO_PLUGIN).await;
 
-    // A non-blocking service that logs every message received.
-    runtime
-        .register_service(on_message().handler(logging_handler))
-        .await;
-
-    // Command services use `on_command` to parse message text into structured data.
-    // They automatically handle prefix matching and argument parsing.
-    runtime
-        .register_service(on_command::<EchoCommand>("echo").handler(echo_handler))
-        .await;
-    runtime
-        .register_service(on_command::<InfoCommand>("info").handler(info_handler))
-        .await;
-
-    // Start the bot and wait for it to finish.
     runtime.run().await;
-
     Ok(())
 }

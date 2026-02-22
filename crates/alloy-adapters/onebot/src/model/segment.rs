@@ -22,16 +22,19 @@
 //! let face = Segment::face(178);
 //! ```
 
-use alloy_core::{MessageSegment as MessageSegmentTrait, RichTextSegment};
+use std::fmt::Write;
+
 use serde::{Deserialize, Serialize};
+
+use alloy_core::{MessageSegment as MessageSegmentTrait, RichTextSegment};
 
 // ============================================================================
 // Segment Enum - The main message segment type
 // ============================================================================
 
-/// A OneBot v11 message segment.
+/// A `OneBot` v11 message segment.
 ///
-/// This enum represents all possible segment types in the OneBot v11 protocol.
+/// This enum represents all possible segment types in the `OneBot` v11 protocol.
 /// Each variant contains the specific data for that segment type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
@@ -671,16 +674,16 @@ impl Segment {
             Segment::Image(data) => {
                 let mut cq = format!("[CQ:image,file={}", escape_cq_value(&data.file));
                 if let Some(ref t) = data.image_type {
-                    cq.push_str(&format!(",type={}", escape_cq_value(t)));
+                    write!(cq, ",type={}", escape_cq_value(t)).unwrap();
                 }
                 if let Some(ref c) = data.cache {
-                    cq.push_str(&format!(",cache={c}"));
+                    write!(cq, ",cache={c}").unwrap();
                 }
                 if let Some(ref p) = data.proxy {
-                    cq.push_str(&format!(",proxy={p}"));
+                    write!(cq, ",proxy={p}").unwrap();
                 }
                 if let Some(ref t) = data.timeout {
-                    cq.push_str(&format!(",timeout={t}"));
+                    write!(cq, ",timeout={t}").unwrap();
                 }
                 cq.push(']');
                 cq
@@ -688,16 +691,16 @@ impl Segment {
             Segment::Record(data) => {
                 let mut cq = format!("[CQ:record,file={}", escape_cq_value(&data.file));
                 if let Some(ref m) = data.magic {
-                    cq.push_str(&format!(",magic={m}"));
+                    write!(cq, ",magic={m}").unwrap();
                 }
                 if let Some(ref c) = data.cache {
-                    cq.push_str(&format!(",cache={c}"));
+                    write!(cq, ",cache={c}").unwrap();
                 }
                 if let Some(ref p) = data.proxy {
-                    cq.push_str(&format!(",proxy={p}"));
+                    write!(cq, ",proxy={p}").unwrap();
                 }
                 if let Some(ref t) = data.timeout {
-                    cq.push_str(&format!(",timeout={t}"));
+                    write!(cq, ",timeout={t}").unwrap();
                 }
                 cq.push(']');
                 cq
@@ -705,13 +708,13 @@ impl Segment {
             Segment::Video(data) => {
                 let mut cq = format!("[CQ:video,file={}", escape_cq_value(&data.file));
                 if let Some(ref c) = data.cache {
-                    cq.push_str(&format!(",cache={c}"));
+                    write!(cq, ",cache={c}").unwrap();
                 }
                 if let Some(ref p) = data.proxy {
-                    cq.push_str(&format!(",proxy={p}"));
+                    write!(cq, ",proxy={p}").unwrap();
                 }
                 if let Some(ref t) = data.timeout {
-                    cq.push_str(&format!(",timeout={t}"));
+                    write!(cq, ",timeout={t}").unwrap();
                 }
                 cq.push(']');
                 cq
@@ -737,10 +740,10 @@ impl Segment {
                     escape_cq_value(&data.title)
                 );
                 if let Some(ref c) = data.content {
-                    cq.push_str(&format!(",content={}", escape_cq_value(c)));
+                    write!(cq, ",content={}", escape_cq_value(c)).unwrap();
                 }
                 if let Some(ref i) = data.image {
-                    cq.push_str(&format!(",image={}", escape_cq_value(i)));
+                    write!(cq, ",image={}", escape_cq_value(i)).unwrap();
                 }
                 cq.push(']');
                 cq
@@ -751,10 +754,10 @@ impl Segment {
             Segment::Location(data) => {
                 let mut cq = format!("[CQ:location,lat={},lon={}", data.lat, data.lon);
                 if let Some(ref t) = data.title {
-                    cq.push_str(&format!(",title={}", escape_cq_value(t)));
+                    write!(cq, ",title={}", escape_cq_value(t)).unwrap();
                 }
                 if let Some(ref c) = data.content {
-                    cq.push_str(&format!(",content={}", escape_cq_value(c)));
+                    write!(cq, ",content={}", escape_cq_value(c)).unwrap();
                 }
                 cq.push(']');
                 cq
@@ -763,19 +766,19 @@ impl Segment {
                 if data.music_type == "custom" {
                     let mut cq = "[CQ:music,type=custom".to_string();
                     if let Some(ref u) = data.url {
-                        cq.push_str(&format!(",url={}", escape_cq_value(u)));
+                        write!(cq, ",url={}", escape_cq_value(u)).unwrap();
                     }
                     if let Some(ref a) = data.audio {
-                        cq.push_str(&format!(",audio={}", escape_cq_value(a)));
+                        write!(cq, ",audio={}", escape_cq_value(a)).unwrap();
                     }
                     if let Some(ref t) = data.title {
-                        cq.push_str(&format!(",title={}", escape_cq_value(t)));
+                        write!(cq, ",title={}", escape_cq_value(t)).unwrap();
                     }
                     if let Some(ref c) = data.content {
-                        cq.push_str(&format!(",content={}", escape_cq_value(c)));
+                        write!(cq, ",content={}", escape_cq_value(c)).unwrap();
                     }
                     if let Some(ref i) = data.image {
-                        cq.push_str(&format!(",image={}", escape_cq_value(i)));
+                        write!(cq, ",image={}", escape_cq_value(i)).unwrap();
                     }
                     cq.push(']');
                     cq
@@ -795,13 +798,13 @@ impl Segment {
                 } else {
                     let mut cq = "[CQ:node".to_string();
                     if let Some(ref u) = data.user_id {
-                        cq.push_str(&format!(",user_id={u}"));
+                        write!(cq, ",user_id={u}").unwrap();
                     }
                     if let Some(ref n) = data.nickname {
-                        cq.push_str(&format!(",nickname={}", escape_cq_value(n)));
+                        write!(cq, ",nickname={}", escape_cq_value(n)).unwrap();
                     }
                     if let Some(ref c) = data.content {
-                        cq.push_str(&format!(",content={}", escape_cq_value(c)));
+                        write!(cq, ",content={}", escape_cq_value(c)).unwrap();
                     }
                     cq.push(']');
                     cq

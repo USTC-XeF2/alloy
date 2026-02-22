@@ -377,7 +377,7 @@ pub struct RequestEvent {
 pub struct FriendRequestEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: RequestEvent,
     pub user_id: i64,
     #[serde(default)]
     pub comment: String,
@@ -389,7 +389,7 @@ pub struct FriendRequestEvent {
 pub struct GroupRequestEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: RequestEvent,
     pub group_id: i64,
     pub user_id: i64,
     #[serde(default)]
@@ -412,7 +412,7 @@ pub struct MetaEvent {
 pub struct LifecycleEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: MetaEvent,
     /// Sub-type ("enable", "disable", "connect").
     pub sub_type: String,
 }
@@ -439,7 +439,7 @@ pub struct HeartbeatStatus {
 pub struct HeartbeatEvent {
     #[event(parent)]
     #[serde(flatten)]
-    pub parent: OneBotEvent,
+    pub parent: MetaEvent,
     #[serde(default)]
     pub status: HeartbeatStatus,
     #[serde(default)]

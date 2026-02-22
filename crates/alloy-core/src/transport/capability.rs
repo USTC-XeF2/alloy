@@ -37,7 +37,6 @@ use serde_json::Value;
 
 use super::connection::{ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle};
 use crate::error::TransportResult;
-use crate::event::BoxedEvent;
 
 // =============================================================================
 // Connection Handler
@@ -57,14 +56,11 @@ pub trait ConnectionHandler: Send + Sync {
     /// Create and register a bot for a new connection.
     async fn create_bot(&self, bot_id: &str, connection: ConnectionHandle);
 
-    /// Process incoming data from a connection, returning a parsed event if one was produced.
-    async fn on_message(&self, bot_id: &str, data: &[u8]) -> Option<BoxedEvent>;
+    /// Process incoming data from a connection.
+    async fn on_message(&self, bot_id: &str, data: &[u8]);
 
     /// Called when a connection is closed.
     async fn on_disconnect(&self, bot_id: &str);
-
-    /// Called when a connection error occurs.
-    async fn on_error(&self, bot_id: &str, error: &str);
 }
 
 // =============================================================================

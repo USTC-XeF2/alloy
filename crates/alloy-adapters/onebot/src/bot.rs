@@ -180,10 +180,11 @@ impl Bot for OneBotBot {
                 {
                     if let Some(group_id) = parsed.get("group_id").and_then(Value::as_i64) {
                         Some((true, group_id))
-                    } else if let Some(user_id) = parsed.get("user_id").and_then(Value::as_i64) {
-                        Some((false, user_id))
                     } else {
-                        None
+                        parsed
+                            .get("user_id")
+                            .and_then(Value::as_i64)
+                            .map(|user_id| (false, user_id))
                     }
                 } else {
                     None

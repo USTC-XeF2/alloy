@@ -29,11 +29,10 @@
 //! }
 //! ```
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 use tracing::error;
 
 use crate::context::AlloyContext;
@@ -145,14 +144,11 @@ pub trait Handler<T>: Clone + Send + Sync + 'static {
 // BoxedHandler - Type-erased handler stored in collections
 // ============================================================================
 
-/// A type alias for a boxed, pinned future that is `Send`.
-pub type BoxFuture<T = ()> = Pin<Box<dyn Future<Output = T> + Send>>;
-
 /// A type-erased handler that can be stored in collections.
 ///
 /// Internally a closure that captures the original handler and calls it
 /// with a cloned copy on each invocation.
-pub type BoxedHandler = Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture + Send + Sync>;
+pub type BoxedHandler = Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture<'static, ()> + Send + Sync>;
 
 /// Convert a handler function into a boxed handler.
 pub fn into_handler<F, T>(f: F) -> BoxedHandler

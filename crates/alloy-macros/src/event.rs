@@ -247,7 +247,7 @@ fn generate_root_event(
     let platform_lit = syn::LitStr::new(platform, name.span());
     let seg_ty: Type = syn::parse_str(segment_type_str)?;
 
-    let raw_json_impl = if let Some(ref rj) = raw_json_field {
+    let raw_json_impl = if let Some(rj) = raw_json_field {
         quote! {
             fn raw_json(&self) -> Option<&str> {
                 self.#rj.as_deref()
@@ -258,7 +258,7 @@ fn generate_root_event(
     };
 
     let (segment_type_impl, get_message_impl);
-    if let Some((ref mf, ref _mft)) = message_field {
+    if let Some((mf, _)) = message_field {
         segment_type_impl = quote! { type Segment = #seg_ty; };
         get_message_impl = quote! {
             fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
@@ -384,7 +384,7 @@ fn generate_child_event(
 
     // ── message type / get_message / get_plain_text ──
     let (segment_type_impl, get_message_impl);
-    if let Some((ref mf, ref _mt)) = message_field {
+    if let Some((mf, _)) = message_field {
         segment_type_impl = quote! {
             type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
         };

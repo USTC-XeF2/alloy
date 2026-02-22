@@ -77,6 +77,24 @@ pub struct AlloyConfig {
     /// Example: `adapters.onebot` contains OneBot-specific settings.
     #[serde(default)]
     pub adapters: HashMap<String, Value>,
+
+    /// Plugin-specific configurations.
+    ///
+    /// Keyed by plugin name (must match the `name` field in the plugin descriptor).
+    /// Each entry is deserialised into the plugin's declared `config_type` at load
+    /// time and injected into every [`AlloyContext`] for that plugin run.
+    ///
+    /// ```yaml
+    /// plugins:
+    ///   echo:
+    ///     prefix: "[Bot]"
+    ///   alloy.storage:
+    ///     base_dir: "./bot_data"
+    /// ```
+    ///
+    /// [`AlloyContext`]: alloy_framework::context::AlloyContext
+    #[serde(default)]
+    pub plugins: HashMap<String, Value>,
 }
 
 impl AlloyConfig {
@@ -103,6 +121,11 @@ impl AlloyConfig {
     /// Checks if an adapter has configuration.
     pub fn has_adapter(&self, adapter_name: &str) -> bool {
         self.adapters.contains_key(adapter_name)
+    }
+
+    /// Checks if a plugin has an explicit configuration section.
+    pub fn has_plugin(&self, plugin_name: &str) -> bool {
+        self.plugins.contains_key(plugin_name)
     }
 }
 

@@ -27,7 +27,7 @@ alloy-core = { path = "../alloy-core" }
 async-trait = "0.1.89"
 futures = "0.3.31"
 serde_json = "1.0.149"
-tokio = "1.49.0"
+tokio = { version = "1.49.0", features = ["macros", "time"] }
 tracing = "0.1.44"
 
 # Optional dependencies

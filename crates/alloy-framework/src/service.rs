@@ -31,6 +31,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use tower::filter::{FilterLayer, Predicate};
 use tower::util::BoxCloneSyncService;
 use tower::{BoxError, Layer, Service, ServiceBuilder};
@@ -38,7 +40,7 @@ use tower_layer::Stack;
 
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::handler::{BoxFuture, Handler};
+use crate::handler::Handler;
 
 /// A wrapper that blocks event propagation if the inner service succeeds.
 ///
@@ -78,7 +80,7 @@ where
 {
     type Response = ();
     type Error = BoxError;
-    type Future = BoxFuture<Result<(), Self::Error>>;
+    type Future = BoxFuture<'static, Result<(), Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -86,7 +88,7 @@ where
 
     fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
         let mut inner = self.inner.clone();
-        Box::pin(async move {
+        async move {
             match inner.call(ctx.clone()).await {
                 Ok(()) => {
                     ctx.stop_propagation();
@@ -94,7 +96,8 @@ where
                 }
                 Err(e) => Err(e),
             }
-        })
+        }
+        .boxed()
     }
 }
 
@@ -207,7 +210,7 @@ where
 {
     type Response = ();
     type Error = BoxError;
-    type Future = BoxFuture<Result<(), Self::Error>>;
+    type Future = BoxFuture<'static, Result<(), Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -215,10 +218,11 @@ where
 
     fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
         let handler = self.handler.clone();
-        Box::pin(async move {
+        async move {
             handler.call(ctx).await;
             Ok(())
-        })
+        }
+        .boxed()
     }
 }
 

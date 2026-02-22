@@ -418,7 +418,7 @@ impl LoggingBuilder {
             LogOutput::Stdout => init_with_writer!(std::io::stdout),
             LogOutput::Stderr => init_with_writer!(std::io::stderr),
             LogOutput::File => {
-                if let Some(ref path) = self.file_path {
+                if let Some(path) = self.file_path {
                     let file_appender = tracing_appender::rolling::never(
                         path.parent().unwrap_or_else(|| Path::new(".")),
                         path.file_name().unwrap_or_else(|| OsStr::new("alloy.log")),
