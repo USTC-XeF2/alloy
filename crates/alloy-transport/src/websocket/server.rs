@@ -165,7 +165,7 @@ async fn handle_socket(
     let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
 
     // Create ConnectionHandle for this connection
-    let connection_handle = ConnectionHandle::new(bot_id.clone(), tx.clone(), shutdown_tx);
+    let connection_handle = ConnectionHandle::new_ws(bot_id.clone(), tx.clone(), shutdown_tx);
 
     // Create and register the bot
     state.handler.create_bot(&bot_id, connection_handle).await;

@@ -69,7 +69,7 @@ impl WsClientCapability for WsClientCapabilityImpl {
 
         info!(bot_id = %bot_id, url = %url, "WebSocket client connected");
 
-        let handle = ConnectionHandle::new(bot_id.clone(), message_tx, shutdown_tx);
+        let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_tx);
 
         // Create and register the bot
         handler.create_bot(&bot_id, handle.clone()).await;

@@ -33,7 +33,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde_json::Value;
 
 use super::connection::{ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle};
 use crate::error::TransportResult;
@@ -122,12 +121,6 @@ pub trait HttpServerCapability: Send + Sync {
 /// Allows an adapter to make HTTP requests.
 #[async_trait]
 pub trait HttpClientCapability: Send + Sync {
-    /// Sends an HTTP POST request with JSON body.
-    async fn post_json(&self, url: &str, body: Value) -> TransportResult<Value>;
-
-    /// Sends an HTTP GET request.
-    async fn get(&self, url: &str) -> TransportResult<Value>;
-
     /// Starts an HTTP client bot.
     ///
     /// Creates a bot that can send API calls via HTTP POST.

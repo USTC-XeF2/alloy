@@ -4,7 +4,6 @@
 //! and transport capabilities across different protocols (HTTP, WebSocket, etc.).
 
 pub mod capability;
-pub mod config;
 pub mod connection;
 
 // Re-export commonly used types
@@ -12,10 +11,7 @@ pub use capability::{
     ConnectionHandler, HttpClientCapability, HttpServerCapability, TransportContext,
     WsClientCapability, WsServerCapability,
 };
-pub use config::{
-    HttpClientConfig, HttpServerConfig, RetryConfig, TransportConfig, TransportType,
-    WsClientConfig, WsServerConfig,
-};
 pub use connection::{
-    ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle, MessageHandler,
+    ClientConfig, ConnectionHandle, ConnectionInfo, ConnectionKind, ListenerHandle, MessageHandler,
+    PostJsonFn,
 };

@@ -7,7 +7,9 @@
 //! - **Decoupling**: Core config is separate from adapter-specific config  
 //! - **Multi-source**: Supports files, env vars, and programmatic config
 //! - **Type safety**: Strong typing with serde and figment extraction
-//! - **No duplication**: Transport configs are defined in `alloy_core` and re-exported
+//! - **Adapter-owned transport configs**: Each adapter defines its own connection
+//!   configuration (see e.g. `alloy_adapter_onebot::config`).  There are no
+//!   generic transport config types at the framework level.
 //!
 //! # Configuration Hierarchy
 //!
@@ -17,16 +19,6 @@
 //! ├── runtime: RuntimeConfig       # Runtime behavior
 //! └── adapters: Map<String, Value> # Adapter-specific configs (dynamic)
 //! ```
-//!
-//! # Transport Configuration
-//!
-//! Transport-specific configurations (WebSocket, HTTP) are defined in `alloy_core::integration::transport`
-//! and re-exported here to avoid duplication. Use:
-//!
-//! - `alloy_core::TransportConfig` - Enum of all transport types
-//! - `alloy_core::WsClientConfig`, `WsServerConfig` - WebSocket configs
-//! - `alloy_core::HttpClientConfig`, `HttpServerConfig` - HTTP configs
-//! - `alloy_core::RetryConfig` - Retry/backoff configuration
 //!
 //! # Example Configuration (YAML)
 //!
@@ -374,19 +366,3 @@ fn default_metrics_port() -> u16 {
 fn default_event_buffer() -> usize {
     1024
 }
-
-// =============================================================================
-// Re-export Transport Configuration from Core
-// =============================================================================
-
-/// Transport configuration type alias.
-///
-/// This re-exports the transport configuration from `alloy_core` to avoid duplication.
-/// Adapters should use `alloy_core::TransportConfig` and its variants directly.
-///
-/// Available variants:
-/// - `TransportConfig::WsClient(WsClientConfig)`
-/// - `TransportConfig::WsServer(WsServerConfig)`  
-/// - `TransportConfig::HttpClient(HttpClientConfig)`
-/// - `TransportConfig::HttpServer(HttpServerConfig)`
-pub use alloy_core::TransportConfig;

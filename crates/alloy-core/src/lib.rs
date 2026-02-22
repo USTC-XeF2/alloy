@@ -47,8 +47,7 @@ pub use error::{
 pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
 pub use message::{Message, MessageSegment, RichTextSegment};
 pub use transport::{
-    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpClientCapability,
-    HttpClientConfig, HttpServerCapability, HttpServerConfig, ListenerHandle, MessageHandler,
-    RetryConfig, TransportConfig, TransportContext, TransportType, WsClientCapability,
-    WsClientConfig, WsServerCapability, WsServerConfig,
+    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, ConnectionKind,
+    HttpClientCapability, HttpServerCapability, ListenerHandle, MessageHandler, PostJsonFn,
+    TransportContext, WsClientCapability, WsServerCapability,
 };

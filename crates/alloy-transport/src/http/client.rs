@@ -4,13 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::FutureExt;
 use reqwest::{Client, ClientBuilder};
-use serde_json::Value;
-use tokio::sync::{mpsc, watch};
-use tracing::{info, trace, warn};
+use tokio::sync::watch;
+use tracing::info;
 
 use alloy_core::{
-    ConnectionHandle, ConnectionHandler, HttpClientCapability, TransportError, TransportResult,
+    ConnectionHandle, ConnectionHandler, HttpClientCapability, PostJsonFn, TransportError,
+    TransportResult,
 };
 
 /// HTTP client capability implementation.
@@ -48,61 +49,6 @@ impl Default for HttpClientCapabilityImpl {
 
 #[async_trait]
 impl HttpClientCapability for HttpClientCapabilityImpl {
-    async fn post_json(&self, url: &str, body: Value) -> TransportResult<Value> {
-        trace!(url = %url, "HTTP POST JSON");
-
-        let response = self
-            .client
-            .post(url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| TransportError::Io(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let text = response.text().await.unwrap_or_default();
-            return Err(TransportError::Io(format!(
-                "HTTP {} error: {}",
-                status.as_u16(),
-                text
-            )));
-        }
-
-        let result = response
-            .json()
-            .await
-            .map_err(|e| TransportError::Io(e.to_string()))?;
-        Ok(result)
-    }
-
-    async fn get(&self, url: &str) -> TransportResult<Value> {
-        trace!(url = %url, "HTTP GET");
-
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| TransportError::Io(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let text = response.text().await.unwrap_or_default();
-            return Err(TransportError::Io(format!(
-                "HTTP {} error: {}",
-                status.as_u16(),
-                text
-            )));
-        }
-
-        let result = response
-            .json()
-            .await
-            .map_err(|e| TransportError::Io(e.to_string()))?;
-        Ok(result)
-    }
-
     async fn start_client(
         &self,
         bot_id: &str,
@@ -110,78 +56,48 @@ impl HttpClientCapability for HttpClientCapabilityImpl {
         access_token: Option<String>,
         handler: Arc<dyn ConnectionHandler>,
     ) -> TransportResult<ConnectionHandle> {
-        let bot_id = bot_id.to_string();
-        let api_url = api_url.to_string();
+        info!(bot_id = %bot_id, url = %api_url, "Registering HTTP API client bot");
 
-        info!(bot_id = %bot_id, url = %api_url, "Starting HTTP client bot");
-
-        // Create channel for outgoing API calls
-        let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-
-        // Clone client for background task
+        // Capture everything connection-specific inside the closure so that
+        // ConnectionHandle carries only the behaviour primitive.
         let client = self.client.clone();
-        let bot_id_clone = bot_id.clone();
-
-        // Spawn background task to send HTTP requests
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = shutdown_rx.changed() => {
-                        if *shutdown_rx.borrow() {
-                            info!(bot_id = %bot_id_clone, "HTTP client bot shutting down");
-                            break;
-                        }
-                    }
-                    Some(data) = message_rx.recv() => {
-                        // Parse message as JSON and send via HTTP POST
-                        match serde_json::from_slice::<Value>(&data) {
-                            Ok(mut json) => {
-                                // Add access_token if configured
-                                if let Some(token) = &access_token {
-                                    json["access_token"] = Value::String(token.clone());
-                                }
-                                // Send API request
-                                match client.post(&api_url).json(&json).send().await {
-                                    Ok(response) => {
-                                        if !response.status().is_success() {
-                                            warn!(
-                                                bot_id = %bot_id_clone,
-                                                status = %response.status(),
-                                                "HTTP API request failed"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            bot_id = %bot_id_clone,
-                                            error = %e,
-                                            "Failed to send HTTP API request"
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                warn!(
-                                    bot_id = %bot_id_clone,
-                                    error = %e,
-                                    "Failed to parse outgoing message as JSON"
-                                );
-                            }
-                        }
-                    }
+        let api_url_owned = api_url.to_string();
+        let access_token_owned = access_token.clone();
+        let post_json: PostJsonFn = Arc::new(move |body| {
+            let client = client.clone();
+            let url = api_url_owned.clone();
+            let token = access_token_owned.clone();
+            async move {
+                let mut req = client.post(&url).json(&body);
+                if let Some(t) = &token {
+                    req = req.bearer_auth(t);
                 }
+                let resp = req
+                    .send()
+                    .await
+                    .map_err(|e| TransportError::Io(e.to_string()))?;
+                let status = resp.status();
+                if !status.is_success() {
+                    let text = resp.text().await.unwrap_or_default();
+                    return Err(TransportError::Io(format!(
+                        "HTTP {} error: {}",
+                        status.as_u16(),
+                        text
+                    )));
+                }
+                resp.json()
+                    .await
+                    .map_err(|e| TransportError::Io(e.to_string()))
             }
+            .boxed()
         });
 
-        // Create ConnectionHandle
-        let connection = ConnectionHandle::new(bot_id.clone(), message_tx, shutdown_tx);
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+        let connection = ConnectionHandle::new_http_client(bot_id, post_json, shutdown_tx);
 
-        // Create and register the bot
-        handler.create_bot(&bot_id, connection.clone()).await;
+        handler.create_bot(bot_id, connection.clone()).await;
 
-        info!(bot_id = %bot_id, "HTTP client bot created successfully");
-
+        info!(bot_id = %bot_id, "HTTP API client bot registered");
         Ok(connection)
     }
 }

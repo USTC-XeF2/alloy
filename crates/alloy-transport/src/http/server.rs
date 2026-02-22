@@ -147,7 +147,8 @@ async fn http_handler(
             let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
             let (shutdown_tx, _shutdown_rx) = watch::channel(false);
 
-            let connection_handle = ConnectionHandle::new(bot_id.clone(), message_tx, shutdown_tx);
+            let connection_handle =
+                ConnectionHandle::new_http_server(bot_id.clone(), message_tx, shutdown_tx);
 
             // Spawn task to handle outgoing messages
             // Adapters can implement custom logic to consume these messages (e.g., SSE push)

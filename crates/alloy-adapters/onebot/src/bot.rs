@@ -22,16 +22,12 @@
 //! ```
 
 use std::any::Any;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, oneshot};
-use tokio::time::{Duration, timeout};
-use tracing::{debug, trace};
 
+use crate::api_caller::{ApiCaller, DisabledApiCaller, HttpApiCaller, WsApiCaller};
 use crate::model::api::{
     Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, Status,
     StrangerInfo, VersionInfo,
@@ -39,7 +35,8 @@ use crate::model::api::{
 use crate::model::event::{GroupMessageEvent, PrivateMessageEvent};
 use crate::model::message::OneBotMessage;
 use crate::model::segment::Segment;
-use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
+use alloy_core::{ApiError, ApiResult, Bot, Event};
+use alloy_core::{ConnectionHandle, ConnectionKind};
 
 // =============================================================================
 // OneBotBot
@@ -47,47 +44,37 @@ use alloy_core::{ApiError, ApiResult, Bot, ConnectionHandle, Event};
 
 /// A OneBot v11 Bot implementation.
 ///
-/// Provides strongly-typed API methods for all OneBot v11 APIs.
+/// Wraps an [`ApiCaller`] that handles the transport-specific request/response
+/// strategy (WebSocket echo-matching or direct HTTP POST).
 pub struct OneBotBot {
     /// Bot ID (self_id from events).
     id: String,
-    /// Connection handle for sending messages.
-    connection: ConnectionHandle,
-    /// Pending API call responses.
-    pending_calls: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
-    /// Echo counter for generating unique echo IDs.
-    echo_counter: AtomicU64,
-    /// API call timeout duration.
-    api_timeout: Duration,
+    /// Transport-specific API call mechanism.
+    api_caller: Arc<dyn ApiCaller>,
 }
 
 impl OneBotBot {
-    /// Creates a new OneBotBot.
-    pub(crate) fn new(id: &str, connection: ConnectionHandle) -> Self {
-        Self {
-            id: id.to_string(),
-            connection,
-            pending_calls: Arc::new(Mutex::new(HashMap::new())),
-            echo_counter: AtomicU64::new(1),
-            api_timeout: Duration::from_secs(30),
-        }
-    }
-
-    /// Handles an incoming response message.
-    pub(crate) async fn handle_response(&self, response: &Value) {
-        if let Some(echo) = response.get("echo").and_then(Value::as_u64) {
-            let mut pending = self.pending_calls.lock().await;
-            if let Some(tx) = pending.remove(&echo) {
-                let _ = tx.send(response.clone());
-            }
-        }
-    }
-
-    /// Returns the number of pending API calls.
+    /// Creates a new `OneBotBot` from a connection handle.
     ///
-    /// This can be useful for monitoring or debugging purposes.
-    pub async fn pending_call_count(&self) -> usize {
-        self.pending_calls.lock().await.len()
+    /// Automatically selects the appropriate [`ApiCaller`] implementation
+    /// based on the connection type.
+    pub fn new(id: impl Into<String>, connection: ConnectionHandle) -> Self {
+        let api_caller: Arc<dyn ApiCaller> = match connection.kind {
+            // HTTP outbound: all data lives directly in the variant
+            ConnectionKind::HttpClient { post_json } => Arc::new(HttpApiCaller::new(post_json)),
+            // WebSocket: echo-based async caller
+            ConnectionKind::Ws { ref message_tx } => Arc::new(WsApiCaller::new(message_tx.clone())),
+            // HTTP server: receive-only, cannot issue API calls
+            ConnectionKind::HttpServer { .. } => Arc::new(DisabledApiCaller::new()),
+        };
+        Self {
+            id: id.into(),
+            api_caller,
+        }
+    }
+
+    pub(crate) async fn handle_response(&self, data: &Value) {
+        self.api_caller.on_incoming_response(data).await;
     }
 }
 
@@ -102,64 +89,19 @@ impl Bot for OneBotBot {
     }
 
     async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value> {
-        let echo = self.echo_counter.fetch_add(1, Ordering::SeqCst);
-
-        // Create channel for response
-        let (tx, rx) = oneshot::channel();
-
-        // Register pending call
+        let response = self.api_caller.call(action, params).await?;
+        if let Some(retcode) = response.get("retcode").and_then(Value::as_i64)
+            && retcode != 0
         {
-            let mut pending = self.pending_calls.lock().await;
-            pending.insert(echo, tx);
+            let message = response
+                .get("message")
+                .or_else(|| response.get("wording"))
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown error")
+                .to_string();
+            return Err(ApiError::ApiError { retcode, message });
         }
-
-        // Build request
-        let request = json!({
-            "action": action,
-            "params": params,
-            "echo": echo
-        });
-
-        debug!(action = %action, echo = %echo, "Calling OneBot API");
-        trace!(request = %request, "API request");
-
-        // Send request
-        let request_bytes = serde_json::to_vec(&request)?;
-
-        self.connection.send(request_bytes).await?;
-
-        // Wait for response with timeout
-        match timeout(self.api_timeout, rx).await {
-            Ok(Ok(response)) => {
-                trace!(response = %response, "API response");
-
-                // Check for API error
-                if let Some(retcode) = response.get("retcode").and_then(Value::as_i64)
-                    && retcode != 0
-                {
-                    let message = response
-                        .get("message")
-                        .or_else(|| response.get("wording"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown error")
-                        .to_string();
-                    return Err(ApiError::ApiError { retcode, message });
-                }
-
-                // Return the data field if present, otherwise the whole response
-                Ok(response.get("data").cloned().unwrap_or(response))
-            }
-            Ok(Err(_)) => {
-                // Channel closed, probably shutdown
-                Err(ApiError::NotConnected)
-            }
-            Err(_) => {
-                // Timeout - remove pending call
-                let mut pending = self.pending_calls.lock().await;
-                pending.remove(&echo);
-                Err(ApiError::Timeout)
-            }
-        }
+        Ok(response.get("data").cloned().unwrap_or(response))
     }
 
     async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<String> {
@@ -209,15 +151,7 @@ impl Bot for OneBotBot {
     }
 
     async fn on_disconnect(&self) {
-        let mut pending = self.pending_calls.lock().await;
-        let count = pending.len();
-        if count > 0 {
-            debug!(
-                count = count,
-                "Clearing pending API calls due to disconnect"
-            );
-            pending.clear();
-        }
+        self.api_caller.on_disconnect().await;
     }
 }
 

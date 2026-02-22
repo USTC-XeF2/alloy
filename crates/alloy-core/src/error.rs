@@ -111,6 +111,9 @@ pub enum ApiError {
     /// The API call timed out.
     #[error("API call timed out")]
     Timeout,
+    /// The transport does not support API calls.
+    #[error("API call not supported by this transport")]
+    NotSupported,
     /// The API returned an error.
     #[error("API error ({retcode}): {message}")]
     ApiError { retcode: i64, message: String },

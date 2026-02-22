@@ -1,12 +1,24 @@
 //! Connection handling and lifecycle types.
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use serde_json::Value;
 
 use crate::error::{TransportError, TransportResult};
 use crate::event::BoxedEvent;
+
+/// Type-erased async function that performs an HTTP POST and returns JSON.
+///
+/// The URL and any authentication (e.g. Bearer token) are captured when the
+/// closure is constructed by the transport layer.  Callers only supply the
+/// request body.
+pub type PostJsonFn = Arc<
+    dyn Fn(Value) -> Pin<Box<dyn std::future::Future<Output = TransportResult<Value>> + Send>>
+        + Send
+        + Sync,
+>;
 
 // =============================================================================
 // Message Handler
@@ -91,49 +103,153 @@ impl Drop for ListenerHandle {
     }
 }
 
-/// Handle to a client connection.
+// =============================================================================
+// ConnectionKind — transport-specific data
+// =============================================================================
+
+/// Transport-specific data carried by a [`ConnectionHandle`].
 ///
-/// Provides methods to interact with the connection.
-#[derive(Debug, Clone)]
+/// Each variant holds *only* what that transport actually needs — no optional
+/// fields, no dummy channels, no `HashMap` catch-all.
+#[derive(Clone)]
+pub enum ConnectionKind {
+    /// WebSocket connection (outbound dial or inbound accept — identical after handshake).
+    Ws {
+        /// Channel to the WS write loop; send serialised frames here.
+        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    },
+    /// HTTP outbound API client.
+    ///
+    /// All connection parameters (URL, auth) are baked into `post_json` at
+    /// construction time.  The adapter only needs to call `post_json(body)`.
+    HttpClient {
+        /// Type-erased async POST function provided by the transport layer.
+        /// URL and authentication are captured inside the closure.
+        post_json: PostJsonFn,
+    },
+    /// HTTP inbound webhook server.
+    ///
+    /// Events arrive via POST.  `message_tx` is an optional hook for future
+    /// SSE / response-channel delivery; it is not used for API calls.
+    HttpServer {
+        /// Outgoing message queue (reserved for future SSE / push mechanisms).
+        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    },
+}
+
+impl std::fmt::Debug for ConnectionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConnectionKind::Ws { .. } => write!(f, "Ws"),
+            ConnectionKind::HttpClient { .. } => write!(f, "HttpClient"),
+            ConnectionKind::HttpServer { .. } => write!(f, "HttpServer"),
+        }
+    }
+}
+
+// =============================================================================
+// ConnectionHandle
+// =============================================================================
+
+/// Handle to an active bot connection.
+///
+/// The `kind` field carries all transport-specific data; the handle itself
+/// only contains fields common to every connection.
+#[derive(Clone, Debug)]
 pub struct ConnectionHandle {
     /// Unique identifier for this connection (bot ID).
     pub id: String,
-    /// Sender for outgoing messages.
-    message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    /// Transport-specific data for this connection.
+    pub kind: ConnectionKind,
     /// Shutdown signal sender.
     shutdown_tx: Arc<tokio::sync::watch::Sender<bool>>,
 }
 
 impl ConnectionHandle {
-    /// Creates a new connection handle.
-    pub fn new(
+    // -------------------------------------------------------------------------
+    // Constructors (one per transport kind)
+    // -------------------------------------------------------------------------
+
+    /// Creates a handle for a WebSocket connection.
+    ///
+    /// Works for both outbound (client) and inbound (server) connections;
+    /// after the handshake, their behavior is identical.
+    pub fn new_ws(
         id: impl Into<String>,
         message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
         shutdown_tx: tokio::sync::watch::Sender<bool>,
     ) -> Self {
         Self {
             id: id.into(),
-            message_tx,
+            kind: ConnectionKind::Ws { message_tx },
             shutdown_tx: Arc::new(shutdown_tx),
         }
     }
 
-    /// Sends a message through this connection.
+    /// Creates a handle for an HTTP outbound API client connection.
+    ///
+    /// The `post_json` closure must already capture the target URL and any
+    /// required authentication; the handle itself stores nothing protocol-specific.
+    pub fn new_http_client(
+        id: impl Into<String>,
+        post_json: PostJsonFn,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            kind: ConnectionKind::HttpClient { post_json },
+            shutdown_tx: Arc::new(shutdown_tx),
+        }
+    }
+
+    /// Creates a handle for an HTTP inbound webhook server connection.
+    pub fn new_http_server(
+        id: impl Into<String>,
+        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            kind: ConnectionKind::HttpServer { message_tx },
+            shutdown_tx: Arc::new(shutdown_tx),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Common accessors
+    // -------------------------------------------------------------------------
+
+    /// Sends raw bytes over this connection.
+    ///
+    /// Valid for `WsClient`, `WsServer`, and `HttpServer` connections.
+    /// Returns [`TransportError::SendFailed`] for `HttpClient` connections
+    /// (those issue API calls via [`ConnectionKind::HttpClient::http`] instead).
     pub async fn send(&self, data: Vec<u8>) -> TransportResult<()> {
-        self.message_tx
-            .send(data)
+        let tx = match &self.kind {
+            ConnectionKind::Ws { message_tx } | ConnectionKind::HttpServer { message_tx } => {
+                message_tx
+            }
+            ConnectionKind::HttpClient { .. } => {
+                return Err(TransportError::SendFailed(
+                    "HTTP client connections do not use a raw send channel; \
+                     use HttpClientCapability::post_json instead"
+                        .into(),
+                ));
+            }
+        };
+        tx.send(data)
             .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))
     }
 
-    /// Sends a JSON message.
+    /// Sends a JSON value over this connection.
     pub async fn send_json(&self, value: &Value) -> TransportResult<()> {
         let data = serde_json::to_vec(value)
             .map_err(|e| TransportError::SendFailed(format!("JSON serialization failed: {e}")))?;
         self.send(data).await
     }
 
-    /// Closes this connection.
+    /// Signals the transport loop to shut down this connection.
     pub fn close(&self) {
         let _ = self.shutdown_tx.send(true);
     }
