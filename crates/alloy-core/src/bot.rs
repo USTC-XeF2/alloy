@@ -41,12 +41,12 @@ pub trait Bot: Send + Sync {
     /// # Arguments
     ///
     /// * `action` - The API action name (e.g., "send_private_msg")
-    /// * `params` - JSON string containing the parameters
+    /// * `params` - JSON value containing the parameters
     ///
     /// # Returns
     ///
     /// The raw JSON response from the API.
-    async fn call_api(&self, action: &str, params: &str) -> ApiResult<Value>;
+    async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value>;
 
     /// Sends a message in response to an event.
     ///
@@ -61,7 +61,7 @@ pub trait Bot: Send + Sync {
     /// # Returns
     ///
     /// The message ID if successful.
-    async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<i64>;
+    async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<String>;
 
     /// Returns self as an `Arc<dyn Any>` for safe downcasting.
     ///

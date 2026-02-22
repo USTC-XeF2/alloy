@@ -9,7 +9,6 @@ license = { workspace = true }
 [dependencies]
 alloy-core = { path = "../../alloy-core" }
 alloy-macros = { path = "../../alloy-macros" }
-anyhow = "1.0.101"
 async-trait = "0.1.89"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

@@ -36,10 +36,7 @@ pub mod config;
 pub mod model;
 
 pub use adapter::OneBotAdapter;
-pub use bot::{
-    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, OneBotBot,
-    Status, StrangerInfo, VersionInfo,
-};
+pub use bot::OneBotBot;
 pub use config::{
     ConnectionConfig, HttpClientConfig, HttpServerConfig, OneBotConfig, WsClientConfig,
     WsServerConfig,
@@ -57,6 +54,12 @@ pub use model::message::{OneBotMessage, OneBotMessageExt};
 
 // Re-export types
 pub use model::types::{Anonymous, Sender};
+
+// Re-export API response types
+pub use model::api::{
+    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, Status,
+    StrangerInfo, VersionInfo,
+};
 
 // Re-export event types
 pub use model::event::{

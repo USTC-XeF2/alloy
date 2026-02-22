@@ -27,7 +27,6 @@ version = "0.1.0"
 dependencies = [
  "alloy-core",
  "alloy-macros",
- "anyhow",
  "async-trait",
  "serde",
  "serde_json",

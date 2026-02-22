@@ -121,8 +121,8 @@ pub enum ApiError {
     #[error(transparent)]
     Transport(#[from] TransportError),
     /// The event does not have the required session information.
-    #[error("missing session info: {0}")]
-    MissingSession(String),
+    #[error("missing session info")]
+    MissingSession,
     /// Other error.
     #[error("{0}")]
     Other(String),
