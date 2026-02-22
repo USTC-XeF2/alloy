@@ -18,6 +18,21 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+alloy-core = { path = "crates/alloy-core" }
+alloy-framework = { path = "crates/alloy-framework" }
+alloy-macros = { path = "crates/alloy-macros" }
+alloy-runtime = { path = "crates/alloy-runtime" }
+alloy-transport = { path = "crates/alloy-transport" }
+
+async-trait = "0.1.89"
+futures = "0.3.32"
+serde = "1.0.228"
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = "1.49.0"
+tracing = "0.1.44"
+
 [profile.release]
 strip = true
 lto = true
