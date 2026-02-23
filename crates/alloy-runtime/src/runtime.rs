@@ -132,8 +132,9 @@ impl AlloyRuntime {
         // Initialize logging from config (try_init won't panic if already initialized)
         logging::init_from_config(&config.logging);
 
-        // Create transport context with all available capabilities
-        let transport_ctx = Self::create_default_transport_context();
+        // Create transport context by collecting all capabilities registered via
+        // `#[register_capability(...)]` across linked crates.
+        let transport_ctx = alloy_core::TransportContext::collect_all();
 
         info!(
             log_level = %config.logging.level,
@@ -161,49 +162,6 @@ impl AlloyRuntime {
     /// Returns a reference to the configuration.
     pub fn config(&self) -> &AlloyConfig {
         &self.config
-    }
-
-    /// Creates a default TransportContext with all available transport capabilities.
-    ///
-    /// This method automatically registers all transport implementations based on
-    /// enabled cargo features.
-    #[allow(unused_mut)]
-    fn create_default_transport_context() -> TransportContext {
-        let mut ctx = TransportContext::new();
-
-        // Register WebSocket server capability
-        #[cfg(feature = "ws-server")]
-        {
-            use alloy_transport::WsServerCapabilityImpl;
-            ctx = ctx.with_ws_server(Arc::new(WsServerCapabilityImpl::new()));
-            tracing::debug!("Registered WsServer capability");
-        }
-
-        // Register WebSocket client capability
-        #[cfg(feature = "ws-client")]
-        {
-            use alloy_transport::WsClientCapabilityImpl;
-            ctx = ctx.with_ws_client(Arc::new(WsClientCapabilityImpl::new()));
-            tracing::debug!("Registered WsClient capability");
-        }
-
-        // Register HTTP server capability
-        #[cfg(feature = "http-server")]
-        {
-            use alloy_transport::HttpServerCapabilityImpl;
-            ctx = ctx.with_http_server(Arc::new(HttpServerCapabilityImpl::new()));
-            tracing::debug!("Registered HttpServer capability");
-        }
-
-        // Register HTTP client capability
-        #[cfg(feature = "http-client")]
-        {
-            use alloy_transport::HttpClientCapabilityImpl;
-            ctx = ctx.with_http_client(Arc::new(HttpClientCapabilityImpl::new()));
-            tracing::debug!("Registered HttpClient capability");
-        }
-
-        ctx
     }
 
     /// Registers an adapter with the runtime.

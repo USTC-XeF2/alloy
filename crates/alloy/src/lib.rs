@@ -61,6 +61,7 @@
 pub use alloy_core as core;
 pub use alloy_framework as framework;
 pub use alloy_runtime as runtime;
+pub use alloy_transport as transport;
 
 // Built-in plugins
 #[cfg(feature = "builtin-plugins")]

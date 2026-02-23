@@ -143,9 +143,12 @@ impl Adapter for OneBotAdapter {
                 ConnectionConfig::WsServer(ws_config) => {
                     if let Some(ws_server) = ctx.transport().ws_server() {
                         let addr = ws_config.bind_addr();
-                        let handle = ws_server
-                            .listen(&addr, &ws_config.path, ctx.clone().as_connection_handler())
-                            .await?;
+                        let handle = ws_server(
+                            addr,
+                            ws_config.path.clone(),
+                            ctx.clone().as_connection_handler(),
+                        )
+                        .await?;
                         ctx.add_listener(handle).await;
                     } else {
                         warn!(
@@ -166,9 +169,12 @@ impl Adapter for OneBotAdapter {
                         } else {
                             ClientConfig::default()
                         };
-                        let handle = ws_client
-                            .connect(&ws_config.url, ctx.clone().as_connection_handler(), config)
-                            .await?;
+                        let handle = ws_client(
+                            ws_config.url.clone(),
+                            ctx.clone().as_connection_handler(),
+                            config,
+                        )
+                        .await?;
                         ctx.add_connection(handle).await;
                     } else {
                         warn!(
@@ -180,13 +186,12 @@ impl Adapter for OneBotAdapter {
                 ConnectionConfig::HttpServer(http_config) => {
                     if let Some(http_server) = ctx.transport().http_server() {
                         let addr = http_config.bind_addr();
-                        let handle = http_server
-                            .listen(
-                                &addr,
-                                &http_config.path,
-                                ctx.clone().as_connection_handler(),
-                            )
-                            .await?;
+                        let handle = http_server(
+                            addr,
+                            http_config.path.clone(),
+                            ctx.clone().as_connection_handler(),
+                        )
+                        .await?;
                         ctx.add_listener(handle).await;
                     } else {
                         warn!("HTTP server capability not available, skipping http-server config");
@@ -203,14 +208,13 @@ impl Adapter for OneBotAdapter {
                             .or(self.config.default_access_token.as_ref())
                             .cloned();
 
-                        let handle = http_client
-                            .start_client(
-                                &bot_id,
-                                &api_url,
-                                access_token,
-                                ctx.clone().as_connection_handler(),
-                            )
-                            .await?;
+                        let handle = http_client(
+                            bot_id,
+                            api_url,
+                            access_token,
+                            ctx.clone().as_connection_handler(),
+                        )
+                        .await?;
                         ctx.add_connection(handle).await;
                     } else {
                         warn!("HTTP client capability not available, skipping http-client config");

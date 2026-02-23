@@ -17,17 +17,9 @@ yaml-config = ["figment/yaml"]
 # Logging features
 json-log = ["tracing-subscriber/json"]
 
-# Transport features (passed through to alloy-transport)
-ws-client = ["alloy-transport/ws-client"]
-ws-server = ["alloy-transport/ws-server"]
-http-client = ["alloy-transport/http-client"]
-http-server = ["alloy-transport/http-server"]
-full-transport = ["alloy-transport/full"]
-
 [dependencies]
 alloy-core = { workspace = true }
 alloy-framework = { workspace = true }
-alloy-transport = { workspace = true }
 dirs = "6.0.0"
 figment = { version = "0.10.19", features = ["env"] }
 futures = { workspace = true }

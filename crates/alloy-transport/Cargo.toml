@@ -21,7 +21,7 @@ full = ["http-client", "http-server", "ws-client", "ws-server"]
 
 [dependencies]
 alloy-core = { workspace = true }
-async-trait = { workspace = true }
+alloy-macros = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time"] }
 tracing = { workspace = true }

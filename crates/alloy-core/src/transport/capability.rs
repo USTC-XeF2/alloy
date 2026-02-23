@@ -5,24 +5,8 @@
 //!
 //! # Overview
 //!
-//! Instead of configuring transports upfront, adapters query available capabilities
-//! and register handlers for the ones they need:
-//!
-//! ```rust,ignore
-//! impl Adapter for MyAdapter {
-//!     fn on_init(&self, ctx: &TransportContext) {
-//!         // Try to get WebSocket server capability
-//!         if let Some(ws_server) = ctx.get_capability::<dyn WsServerCapability>() {
-//!             ws_server.listen("0.0.0.0:8080", self.message_handler());
-//!         }
-//!
-//!         // Try to get WebSocket client capability  
-//!         if let Some(ws_client) = ctx.get_capability::<dyn WsClientCapability>() {
-//!             ws_client.connect("ws://127.0.0.1:9000", self.message_handler());
-//!         }
-//!     }
-//! }
-//! ```
+//! Each capability is stored as an async function closure.  Adapters call
+//! them directly via `ctx.ws_client()(url, handler, config).await`.
 //!
 //! # Dynamic Bot Management
 //!
@@ -33,6 +17,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
+use linkme::distributed_slice;
+use tracing::warn;
 
 use super::connection::{ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle};
 use crate::error::TransportResult;
@@ -63,77 +50,84 @@ pub trait ConnectionHandler: Send + Sync {
 }
 
 // =============================================================================
-// Transport Capabilities
+// Capability Function Types
 // =============================================================================
 
-/// WebSocket server capability.
+/// Async function that starts a WebSocket server listener.
 ///
-/// Allows an adapter to listen for incoming WebSocket connections.
-#[async_trait]
-pub trait WsServerCapability: Send + Sync {
-    /// Starts listening on the specified address.
-    ///
-    /// Each incoming connection will be handled by the provided handler.
-    /// Returns a handle that can be used to stop the listener.
-    async fn listen(
-        &self,
-        addr: &str,
-        path: &str,
-        handler: Arc<dyn ConnectionHandler>,
-    ) -> TransportResult<ListenerHandle>;
-}
+/// Parameters: `(addr, path, handler)` — all owned to satisfy `'static` bounds.
+pub type WsListenFn = Arc<
+    dyn Fn(
+            String,
+            String,
+            Arc<dyn ConnectionHandler>,
+        ) -> BoxFuture<'static, TransportResult<ListenerHandle>>
+        + Send
+        + Sync,
+>;
 
-/// WebSocket client capability.
+/// Async function that opens a WebSocket client connection.
 ///
-/// Allows an adapter to connect to WebSocket servers.
-#[async_trait]
-pub trait WsClientCapability: Send + Sync {
-    /// Connects to a WebSocket server.
-    ///
-    /// The connection will auto-reconnect based on the retry config.
-    /// Returns a handle that can be used to manage the connection.
-    async fn connect(
-        &self,
-        url: &str,
-        handler: Arc<dyn ConnectionHandler>,
-        config: ClientConfig,
-    ) -> TransportResult<ConnectionHandle>;
-}
+/// Parameters: `(url, handler, config)`.
+pub type WsConnectFn = Arc<
+    dyn Fn(
+            String,
+            Arc<dyn ConnectionHandler>,
+            ClientConfig,
+        ) -> BoxFuture<'static, TransportResult<ConnectionHandle>>
+        + Send
+        + Sync,
+>;
 
-/// HTTP server capability.
+/// Async function that starts an HTTP server listener.
 ///
-/// Allows an adapter to receive HTTP callbacks.
-#[async_trait]
-pub trait HttpServerCapability: Send + Sync {
-    /// Starts an HTTP server on the specified address.
-    ///
-    /// The handler will be called for each incoming request.
-    async fn listen(
-        &self,
-        addr: &str,
-        path: &str,
-        handler: Arc<dyn ConnectionHandler>,
-    ) -> TransportResult<ListenerHandle>;
-}
+/// Parameters: `(addr, path, handler)`.
+pub type HttpListenFn = Arc<
+    dyn Fn(
+            String,
+            String,
+            Arc<dyn ConnectionHandler>,
+        ) -> BoxFuture<'static, TransportResult<ListenerHandle>>
+        + Send
+        + Sync,
+>;
 
-/// HTTP client capability.
+/// Async function that registers an HTTP outbound API-client bot.
 ///
-/// Allows an adapter to make HTTP requests.
-#[async_trait]
-pub trait HttpClientCapability: Send + Sync {
-    /// Starts an HTTP client bot.
-    ///
-    /// Creates a bot that can send API calls via HTTP POST.
-    /// The bot is registered with the provided handler and can be used
-    /// to send messages, but will not receive events through this connection.
-    async fn start_client(
-        &self,
-        bot_id: &str,
-        api_url: &str,
-        access_token: Option<String>,
-        handler: Arc<dyn ConnectionHandler>,
-    ) -> TransportResult<ConnectionHandle>;
-}
+/// Parameters: `(bot_id, api_url, access_token, handler)`.
+pub type HttpStartClientFn = Arc<
+    dyn Fn(
+            String,
+            String,
+            Option<String>,
+            Arc<dyn ConnectionHandler>,
+        ) -> BoxFuture<'static, TransportResult<ConnectionHandle>>
+        + Send
+        + Sync,
+>;
+
+// =============================================================================
+// Capability Registries (linkme distributed slices)
+// =============================================================================
+
+/// Registry of WebSocket server listen functions.
+/// Each crate that provides a ws-server capability contributes one entry.
+#[distributed_slice]
+pub static WS_LISTEN_REGISTRY: [fn() -> WsListenFn];
+
+/// Registry of WebSocket client connect functions.
+#[distributed_slice]
+pub static WS_CONNECT_REGISTRY: [fn() -> WsConnectFn];
+
+/// Registry of HTTP server listen functions.
+#[distributed_slice]
+pub static HTTP_LISTEN_REGISTRY: [fn() -> HttpListenFn];
+
+/// Registry of HTTP client start functions.
+#[distributed_slice]
+pub static HTTP_START_CLIENT_REGISTRY: [fn() -> HttpStartClientFn];
+
+// Will be defined as impl method for TransportContext
 
 // =============================================================================
 // Transport Context
@@ -144,10 +138,10 @@ pub trait HttpClientCapability: Send + Sync {
 /// Provides access to available transport capabilities.
 #[derive(Clone)]
 pub struct TransportContext {
-    ws_server: Option<Arc<dyn WsServerCapability>>,
-    ws_client: Option<Arc<dyn WsClientCapability>>,
-    http_server: Option<Arc<dyn HttpServerCapability>>,
-    http_client: Option<Arc<dyn HttpClientCapability>>,
+    ws_server: Option<WsListenFn>,
+    ws_client: Option<WsConnectFn>,
+    http_server: Option<HttpListenFn>,
+    http_client: Option<HttpStartClientFn>,
 }
 
 impl TransportContext {
@@ -161,107 +155,82 @@ impl TransportContext {
         }
     }
 
+    /// Builds a [`TransportContext`] from all capability functions registered via
+    /// `#[register_capability(...)]`.
+    ///
+    /// If multiple providers are registered for the same capability type a warning
+    /// is emitted and the **first** one wins.
+    pub fn collect_all() -> Self {
+        fn load<T: Clone>(registry: &[fn() -> T], name: &str) -> Option<T> {
+            match registry.len() {
+                0 => None,
+                1 => Some(registry[0]()),
+                n => {
+                    warn!(
+                        count = n,
+                        capability = name,
+                        "Multiple capability providers registered, using first"
+                    );
+                    Some(registry[0]())
+                }
+            }
+        }
+
+        TransportContext {
+            ws_server: load(&WS_LISTEN_REGISTRY, "ws_server"),
+            ws_client: load(&WS_CONNECT_REGISTRY, "ws_client"),
+            http_server: load(&HTTP_LISTEN_REGISTRY, "http_server"),
+            http_client: load(&HTTP_START_CLIENT_REGISTRY, "http_client"),
+        }
+    }
+
     /// Registers the WebSocket server capability.
-    pub fn with_ws_server(mut self, cap: Arc<dyn WsServerCapability>) -> Self {
-        self.ws_server = Some(cap);
+    pub fn with_ws_server(mut self, f: WsListenFn) -> Self {
+        self.ws_server = Some(f);
         self
     }
 
     /// Registers the WebSocket client capability.
-    pub fn with_ws_client(mut self, cap: Arc<dyn WsClientCapability>) -> Self {
-        self.ws_client = Some(cap);
+    pub fn with_ws_client(mut self, f: WsConnectFn) -> Self {
+        self.ws_client = Some(f);
         self
     }
 
     /// Registers the HTTP server capability.
-    pub fn with_http_server(mut self, cap: Arc<dyn HttpServerCapability>) -> Self {
-        self.http_server = Some(cap);
+    pub fn with_http_server(mut self, f: HttpListenFn) -> Self {
+        self.http_server = Some(f);
         self
     }
 
     /// Registers the HTTP client capability.
-    pub fn with_http_client(mut self, cap: Arc<dyn HttpClientCapability>) -> Self {
-        self.http_client = Some(cap);
+    pub fn with_http_client(mut self, f: HttpStartClientFn) -> Self {
+        self.http_client = Some(f);
         self
     }
 
-    /// Sets the WebSocket server capability.
-    pub fn set_ws_server(&mut self, cap: Arc<dyn WsServerCapability>) {
-        self.ws_server = Some(cap);
-    }
-
-    /// Sets the WebSocket client capability.
-    pub fn set_ws_client(&mut self, cap: Arc<dyn WsClientCapability>) {
-        self.ws_client = Some(cap);
-    }
-
-    /// Sets the HTTP server capability.
-    pub fn set_http_server(&mut self, cap: Arc<dyn HttpServerCapability>) {
-        self.http_server = Some(cap);
-    }
-
-    /// Sets the HTTP client capability.
-    pub fn set_http_client(&mut self, cap: Arc<dyn HttpClientCapability>) {
-        self.http_client = Some(cap);
-    }
-
     /// Gets the WebSocket server capability if available.
-    pub fn ws_server(&self) -> Option<&Arc<dyn WsServerCapability>> {
+    pub fn ws_server(&self) -> Option<&WsListenFn> {
         self.ws_server.as_ref()
     }
 
     /// Gets the WebSocket client capability if available.
-    pub fn ws_client(&self) -> Option<&Arc<dyn WsClientCapability>> {
+    pub fn ws_client(&self) -> Option<&WsConnectFn> {
         self.ws_client.as_ref()
     }
 
     /// Gets the HTTP server capability if available.
-    pub fn http_server(&self) -> Option<&Arc<dyn HttpServerCapability>> {
+    pub fn http_server(&self) -> Option<&HttpListenFn> {
         self.http_server.as_ref()
     }
 
     /// Gets the HTTP client capability if available.
-    pub fn http_client(&self) -> Option<&Arc<dyn HttpClientCapability>> {
+    pub fn http_client(&self) -> Option<&HttpStartClientFn> {
         self.http_client.as_ref()
-    }
-
-    /// Checks if WebSocket server is available.
-    pub fn has_ws_server(&self) -> bool {
-        self.ws_server.is_some()
-    }
-
-    /// Checks if WebSocket client is available.
-    pub fn has_ws_client(&self) -> bool {
-        self.ws_client.is_some()
-    }
-
-    /// Checks if HTTP server is available.
-    pub fn has_http_server(&self) -> bool {
-        self.http_server.is_some()
-    }
-
-    /// Checks if HTTP client is available.
-    pub fn has_http_client(&self) -> bool {
-        self.http_client.is_some()
     }
 }
 
 impl Default for TransportContext {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_transport_context() {
-        let ctx = TransportContext::new();
-        assert!(!ctx.has_ws_server());
-        assert!(!ctx.has_ws_client());
-        assert!(!ctx.has_http_server());
-        assert!(!ctx.has_http_client());
     }
 }

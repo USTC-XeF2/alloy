@@ -9,6 +9,8 @@ license = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true }
+futures = { workspace = true }
+linkme = "0.3.35"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

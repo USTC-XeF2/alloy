@@ -2,80 +2,46 @@
 //!
 //! Network transport capability implementations for the Alloy bot framework.
 //!
-//! This crate provides concrete implementations of transport capabilities defined in `alloy-core`.
-//! It supports multiple transport types through feature flags.
+//! This crate provides concrete implementations of transport capabilities registered through
+//! `#[register_capability(...)]` attribute macros. These implementations are automatically
+//! discovered and collected by `TransportContext::collect_all()` at runtime.
 //!
 //! ## Features
 //!
-//! - `ws-client` (default): WebSocket client capability
+//! - `ws-client`: WebSocket client capability
 //! - `ws-server`: WebSocket server capability
 //! - `http-client`: HTTP client capability
 //! - `http-server`: HTTP server capability
-//! - `all-clients`: Both client capabilities
-//! - `all-servers`: Both server capabilities
 //! - `full`: All capabilities
 //!
 //! ## Architecture
 //!
 //! ```text
-//! ┌─────────────────────┐
-//! │  Adapter Layer      │  (OneBot, Discord, etc.)
-//! │  (uses capabilities)│
-//! ├─────────────────────┤
-//! │  alloy-core         │  (capability traits)
-//! ├─────────────────────┤
-//! │  alloy-transport    │  <- This crate (implementations)
-//! ├─────────────────────┤
-//! │  Network (TCP/HTTP) │
-//! └─────────────────────┘
+//! ┌─────────────────────────────────────────┐
+//! │  Adapter Layer (OneBot, Discord, etc.)  │
+//! │  Calls: ws_connect(), http_start_client(), etc.
+//! ├─────────────────────────────────────────┤
+//! │  alloy-core TransportContext            │
+//! │  Holds: Arc<dyn Fn(...) -> BoxFuture>   │
+//! ├─────────────────────────────────────────┤
+//! │  alloy-transport async fn implementations
+//! │  Registered via #[register_capability] macro
+//! ├─────────────────────────────────────────┤
+//! │  Network Layer (TCP/HTTP/WebSocket)     │
+//! └─────────────────────────────────────────┘
 //! ```
 //!
 //! ## Capability Implementations
 //!
-//! | Capability | Description | Use Case |
-//! |------------|-------------|----------|
-//! | `WsClientCapability` | WebSocket client | Connect to bot backend |
-//! | `WsServerCapability` | WebSocket server | Accept reverse WebSocket |
-//! | `HttpClientCapability` | HTTP client | Make API requests |
-//! | `HttpServerCapability` | HTTP server | Receive event callbacks |
+//! | Function | Feature | Request Type | Response Type |
+//! |----------|---------|--------------|---------------|
+//! | `ws_connect()` | `ws-client` | `(url, handler, config)` | `ConnectionHandle` |
+//! | `ws_listen()` | `ws-server` | `(addr, path, handler)` | `ListenerHandle` |
+//! | `http_start_client()` | `http-client` | `(bot_id, api_url, token, handler)` | `ConnectionHandle` |
+//! | `http_listen()` | `http-server` | `(addr, path, handler)` | `ListenerHandle` |
 //!
-//! ## Quick Start
-//!
-//! ```rust,ignore
-//! use alloy_transport::websocket::WsClientCapabilityImpl;
-//! use alloy_core::{WsClientCapability, ClientConfig};
-//!
-//! // Create capability implementation
-//! let capability = WsClientCapabilityImpl::new();
-//!
-//! // Use with adapter
-//! let config = ClientConfig::default();
-//! let handle = capability.connect("ws://127.0.0.1:8080", handler, config).await?;
-//! ```
-//!
-//! ```rust,ignore
-//! use alloy_transport::websocket::{WsServerConfig, WsServerTransport};
-//! use alloy_transport::traits::{Transport, ServerTransport};
-//!
-//! let config = WsServerConfig::new("0.0.0.0", 9000);
-//! let transport = WsServerTransport::new(config);
-//! transport.start().await?;
-//!
-//! // Handle connections
-//! let mut rx = transport.take_message_receiver().await.unwrap();
-//! while let Some(msg) = rx.recv().await {
-//!     match msg {
-//!         TransportMessage::Connected { conn_id } => {
-//!             println!("Client connected: {}", conn_id);
-//!         }
-//!         TransportMessage::Received { conn_id, data } => {
-//!             // Echo back
-//!             transport.send(&conn_id, data).await?;
-//!         }
-//!         _ => {}
-//!     }
-//! }
-//! ```
+//! All capabilities are automatically discovered via `linkme::distributed_slice` registration
+//! and collected into a [`TransportContext`] at startup.
 
 // Transport implementations (feature-gated)
 
@@ -93,14 +59,14 @@ mod ws_client;
 // ─── Capability re-exports ───────────────────────────────────────────────────
 // Server capabilities (all from crate::server module)
 #[cfg(feature = "http-server")]
-pub use server::HttpServerCapabilityImpl;
+pub use server::http_listen;
 
 #[cfg(feature = "ws-server")]
-pub use server::WsServerCapabilityImpl;
+pub use server::ws_listen;
 
 // Client capabilities (from root-level modules)
 #[cfg(feature = "http-client")]
-pub use http_client::HttpClientCapabilityImpl;
+pub use http_client::http_start_client;
 
 #[cfg(feature = "ws-client")]
-pub use ws_client::WsClientCapabilityImpl;
+pub use ws_client::ws_connect;

@@ -37,6 +37,10 @@ pub mod event;
 pub mod message;
 pub mod transport;
 
+// Re-export linkme so downstream crates don't need to add it as a direct
+// dependency when using `register_capability`.
+pub use linkme;
+
 // Re-export core types for public API
 pub use adapter::{Adapter, AdapterContext, BoxedAdapter, ConfigurableAdapter};
 pub use bot::{Bot, BoxedBot};
@@ -48,6 +52,7 @@ pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
 pub use message::{Message, MessageSegment, RichTextSegment};
 pub use transport::{
     ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, ConnectionKind,
-    HttpClientCapability, HttpServerCapability, ListenerHandle, MessageHandler, PostJsonFn,
-    TransportContext, WsClientCapability, WsServerCapability,
+    HTTP_LISTEN_REGISTRY, HTTP_START_CLIENT_REGISTRY, HttpListenFn, HttpStartClientFn,
+    ListenerHandle, MessageHandler, PostJsonFn, TransportContext, WS_CONNECT_REGISTRY,
+    WS_LISTEN_REGISTRY, WsConnectFn, WsListenFn,
 };

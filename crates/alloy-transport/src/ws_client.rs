@@ -3,7 +3,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
@@ -14,8 +13,9 @@ use tracing::{error, info, trace, warn};
 
 use alloy_core::{
     ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError,
-    TransportResult, WsClientCapability,
+    TransportResult,
 };
+use alloy_macros::register_capability;
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsSink = SplitSink<WsStream, Message>;
@@ -146,93 +146,78 @@ impl ClientLoopState {
     }
 }
 
-/// WebSocket client capability implementation.
-pub struct WsClientCapabilityImpl;
+/// Connects to a WebSocket server.
+///
+/// Creates channels, performs the initial connection, spawns a background loop
+/// that handles send/receive and automatic reconnect per `config`.
+///
+/// This function is registered as the `WsConnectFn` capability.
+#[register_capability(ws_client)]
+pub async fn ws_connect(
+    url: String,
+    handler: Arc<dyn ConnectionHandler>,
+    config: ClientConfig,
+) -> TransportResult<ConnectionHandle> {
+    // Create channels
+    let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
-impl WsClientCapabilityImpl {
-    /// Creates a new WebSocket client capability.
-    pub fn new() -> Self {
-        Self
-    }
-}
+    // Initial connection
+    let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &url);
 
-impl Default for WsClientCapabilityImpl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+    info!(url = %url, "Connecting to WebSocket server");
 
-#[async_trait]
-impl WsClientCapability for WsClientCapabilityImpl {
-    async fn connect(
-        &self,
-        url: &str,
-        handler: Arc<dyn ConnectionHandler>,
-        config: ClientConfig,
-    ) -> TransportResult<ConnectionHandle> {
-        let url = url.to_string();
+    let (ws_stream, _response) =
+        connect_async(&url)
+            .await
+            .map_err(|e| TransportError::ConnectionFailed {
+                url: url.clone(),
+                reason: format!("WebSocket connection failed: {}", e),
+            })?;
 
-        // Create channels
-        let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    // Get bot ID from handler
+    let bot_id = handler.get_bot_id(conn_info).await?;
 
-        // Initial connection
-        let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &url);
+    info!(bot_id = %bot_id, url = %url, "WebSocket client connected");
 
-        info!(url = %url, "Connecting to WebSocket server");
+    let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_tx);
 
-        let (ws_stream, _response) =
-            connect_async(&url)
-                .await
-                .map_err(|e| TransportError::ConnectionFailed {
-                    url: url.clone(),
-                    reason: format!("WebSocket connection failed: {}", e),
-                })?;
+    // Create and register the bot
+    handler.create_bot(&bot_id, handle.clone()).await;
 
-        // Get bot ID from handler
-        let bot_id = handler.get_bot_id(conn_info).await?;
+    let mut state = ClientLoopState::new(handler, bot_id, config, url, ws_stream);
 
-        info!(bot_id = %bot_id, url = %url, "WebSocket client connected");
-
-        let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_tx);
-
-        // Create and register the bot
-        handler.create_bot(&bot_id, handle.clone()).await;
-
-        let mut state = ClientLoopState::new(handler, bot_id, config, url, ws_stream);
-
-        // Spawn connection manager task
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    // Check for shutdown
-                    _ = shutdown_rx.changed() => {
-                        if *shutdown_rx.borrow() {
-                            info!(bot_id = %state.bot_id, "WebSocket client shutting down");
-                            let _ = state.ws_tx.close().await;
-                            state.handler.on_disconnect(&state.bot_id).await;
-                            break;
-                        }
+    // Spawn connection manager task
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                // Check for shutdown
+                _ = shutdown_rx.changed() => {
+                    if *shutdown_rx.borrow() {
+                        info!(bot_id = %state.bot_id, "WebSocket client shutting down");
+                        let _ = state.ws_tx.close().await;
+                        state.handler.on_disconnect(&state.bot_id).await;
+                        break;
                     }
+                }
 
-                    // Receive messages to send
-                    Some(data) = message_rx.recv() => {
-                        let msg = Message::Text(String::from_utf8_lossy(&data).to_string().into());
-                        if let Err(e) = state.ws_tx.send(msg).await {
-                            warn!(bot_id = %state.bot_id, error = %e, "Failed to send message");
-                        }
+                // Receive messages to send
+                Some(data) = message_rx.recv() => {
+                    let msg = Message::Text(String::from_utf8_lossy(&data).to_string().into());
+                    if let Err(e) = state.ws_tx.send(msg).await {
+                        warn!(bot_id = %state.bot_id, error = %e, "Failed to send message");
                     }
+                }
 
-                    // Receive messages from server
-                    msg = state.ws_rx.next() => {
-                        if !state.handle_message(msg).await {
-                            break;
-                        }
+                // Receive messages from server
+                msg = state.ws_rx.next() => {
+                    if !state.handle_message(msg).await {
+                        break;
                     }
                 }
             }
-        });
+        }
+    });
 
-        Ok(handle)
-    }
+    Ok(handle)
 }

@@ -8,10 +8,10 @@ authors = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-# Core dependencies (always required, includes Tower integration)
 alloy-core = { workspace = true }
 alloy-framework = { workspace = true }
 alloy-runtime = { workspace = true }
+alloy-transport = { workspace = true }
 
 [features]
 default = ["command", "toml-config"]
@@ -29,9 +29,9 @@ yaml-config = ["alloy-runtime/yaml-config"]
 # Logging features
 json-log = ["alloy-runtime/json-log"]
 
-# Transport features (passed through to runtime)
-ws-client = ["alloy-runtime/ws-client"]
-ws-server = ["alloy-runtime/ws-server"]
-http-client = ["alloy-runtime/http-client"]
-http-server = ["alloy-runtime/http-server"]
-full-transport = ["alloy-runtime/full-transport"]
+# Transport features
+ws-client = ["alloy-transport/ws-client"]
+ws-server = ["alloy-transport/ws-server"]
+http-client = ["alloy-transport/http-client"]
+http-server = ["alloy-transport/http-server"]
+full-transport = ["alloy-transport/full"]

@@ -26,7 +26,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
-use async_trait::async_trait;
 use axum::{
     Router,
     extract::{ConnectInfo, State},
@@ -39,17 +38,16 @@ use tracing::{debug, error, info, warn};
 use alloy_core::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportResult,
 };
+use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
 use {
-    alloy_core::HttpServerCapability,
     axum::{body::Bytes, response::Response, routing::post},
     tokio::sync::watch,
 };
 
 #[cfg(feature = "ws-server")]
 use {
-    alloy_core::WsServerCapability,
     axum::{
         extract::{
             WebSocketUpgrade,
@@ -372,62 +370,39 @@ async fn ws_dispatch(
 // HTTP SERVER CAPABILITY IMPLEMENTATION
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// HTTP server capability implementation.
+/// Starts (or re-uses) a TCP server on `addr` and registers a POST handler
+/// for `path`.
 ///
-/// Call [`HttpServerCapabilityImpl::new`] once and pass it to the
-/// [`TransportContext`]; adapters receive it through capability lookup.
+/// Multiple calls with the **same `addr` but different `path`** values will
+/// share one TCP listener; the shared dispatcher routes each request to the
+/// correct handler.
+///
+/// This function is registered as the `HttpListenFn` capability.
 #[cfg(feature = "http-server")]
-pub struct HttpServerCapabilityImpl;
+#[register_capability(http_server)]
+pub async fn http_listen(
+    addr: String,
+    path: String,
+    handler: Arc<dyn ConnectionHandler>,
+) -> TransportResult<ListenerHandle> {
+    let path = if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    };
 
-#[cfg(feature = "http-server")]
-impl HttpServerCapabilityImpl {
-    /// Creates a new HTTP server capability.
-    pub fn new() -> Self {
-        Self
-    }
-}
+    let entry = get_or_create_server(&addr).await?;
+    info!(
+        addr = %entry.actual_addr,
+        path = %path,
+        "HTTP server listening",
+    );
 
-#[cfg(feature = "http-server")]
-impl Default for HttpServerCapabilityImpl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(feature = "http-server")]
-#[async_trait]
-impl HttpServerCapability for HttpServerCapabilityImpl {
-    /// Starts (or re-uses) a TCP server on `addr` and registers a POST handler
-    /// for `path`.
-    ///
-    /// Multiple calls with the **same `addr` but different `path`** values will
-    /// share one TCP listener; the shared dispatcher routes each request to the
-    /// correct handler.
-    async fn listen(
-        &self,
-        addr: &str,
-        path: &str,
-        handler: Arc<dyn ConnectionHandler>,
-    ) -> TransportResult<ListenerHandle> {
-        let path = if path.starts_with('/') {
-            path.to_string()
-        } else {
-            format!("/{path}")
-        };
-
-        let entry = get_or_create_server(addr).await?;
-        info!(
-            addr = %entry.actual_addr,
-            path = %path,
-            "HTTP server listening",
-        );
-
-        let route_handler = Arc::new(HttpBotHandler {
-            handler,
-            known_bots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        });
-        register_http_route(entry, path, route_handler).await
-    }
+    let route_handler = Arc::new(HttpBotHandler {
+        handler,
+        known_bots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+    });
+    register_http_route(entry, path, route_handler).await
 }
 
 #[cfg(feature = "http-server")]
@@ -498,61 +473,38 @@ impl HttpBotHandler {
 // WEBSOCKET SERVER CAPABILITY IMPLEMENTATION
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// WebSocket server capability implementation.
+/// Starts (or re-uses) a TCP server on `addr` and registers a WebSocket
+/// upgrade handler for `path`.
 ///
-/// Call [`WsServerCapabilityImpl::new`] once and pass it to the
-/// [`TransportContext`]; adapters receive it through capability lookup.
+/// Multiple calls with the **same `addr` but different `path`** values share
+/// one TCP listener; the dispatcher routes each request to the correct handler.
+///
+/// This function is registered as the `WsListenFn` capability.
 #[cfg(feature = "ws-server")]
-pub struct WsServerCapabilityImpl;
+#[register_capability(ws_server)]
+pub async fn ws_listen(
+    addr: String,
+    path: String,
+    handler: Arc<dyn ConnectionHandler>,
+) -> TransportResult<ListenerHandle> {
+    let path = if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    };
 
-#[cfg(feature = "ws-server")]
-impl WsServerCapabilityImpl {
-    /// Creates a new WebSocket server capability.
-    pub fn new() -> Self {
-        Self
-    }
-}
+    let entry = get_or_create_server(&addr).await?;
+    info!(
+        addr = %entry.actual_addr,
+        path = %path,
+        "WebSocket server listening",
+    );
 
-#[cfg(feature = "ws-server")]
-impl Default for WsServerCapabilityImpl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(feature = "ws-server")]
-#[async_trait]
-impl WsServerCapability for WsServerCapabilityImpl {
-    /// Starts (or re-uses) a TCP server on `addr` and registers a WebSocket
-    /// upgrade handler for `path`.
-    ///
-    /// Multiple calls with the **same `addr` but different `path`** values share
-    /// one TCP listener; the dispatcher routes each request to the correct handler.
-    async fn listen(
-        &self,
-        addr: &str,
-        path: &str,
-        handler: Arc<dyn ConnectionHandler>,
-    ) -> TransportResult<ListenerHandle> {
-        let path = if path.starts_with('/') {
-            path.to_string()
-        } else {
-            format!("/{path}")
-        };
-
-        let entry = get_or_create_server(addr).await?;
-        info!(
-            addr = %entry.actual_addr,
-            path = %path,
-            "WebSocket server listening",
-        );
-
-        let route_handler = Arc::new(WsBotHandler {
-            handler,
-            connections: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        });
-        register_ws_route(entry, path, route_handler).await
-    }
+    let route_handler = Arc::new(WsBotHandler {
+        handler,
+        connections: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+    });
+    register_ws_route(entry, path, route_handler).await
 }
 
 #[cfg(feature = "ws-server")]
