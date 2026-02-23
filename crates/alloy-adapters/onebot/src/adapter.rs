@@ -43,7 +43,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
@@ -132,7 +132,7 @@ impl Adapter for OneBotAdapter {
             return Ok(());
         }
 
-        info!(
+        debug!(
             enabled = enabled_count,
             total = self.config.connections.len(),
             "Starting OneBot adapter connections"
@@ -143,12 +143,6 @@ impl Adapter for OneBotAdapter {
                 ConnectionConfig::WsServer(ws_config) => {
                     if let Some(ws_server) = ctx.transport().ws_server() {
                         let addr = ws_config.bind_addr();
-                        info!(
-                            name = %ws_config.name,
-                            addr = %addr,
-                            path = %ws_config.path,
-                            "Starting WebSocket server"
-                        );
                         let handle = ws_server
                             .listen(&addr, &ws_config.path, ctx.clone().as_connection_handler())
                             .await?;
@@ -167,12 +161,6 @@ impl Adapter for OneBotAdapter {
                             .as_ref()
                             .or(self.config.default_access_token.as_ref())
                             .filter(|t| !t.is_empty());
-                        info!(
-                            name = %ws_config.name,
-                            url = %ws_config.url,
-                            has_token = token.is_some(),
-                            "Connecting to WebSocket server"
-                        );
                         let config = if let Some(t) = token {
                             ClientConfig::default().with_token(t)
                         } else {
@@ -192,12 +180,6 @@ impl Adapter for OneBotAdapter {
                 ConnectionConfig::HttpServer(http_config) => {
                     if let Some(http_server) = ctx.transport().http_server() {
                         let addr = http_config.bind_addr();
-                        info!(
-                            name = %http_config.name,
-                            addr = %addr,
-                            path = %http_config.path,
-                            "Starting HTTP webhook server"
-                        );
                         let handle = http_server
                             .listen(
                                 &addr,
@@ -220,14 +202,6 @@ impl Adapter for OneBotAdapter {
                             .as_ref()
                             .or(self.config.default_access_token.as_ref())
                             .cloned();
-
-                        info!(
-                            name = %http_config.name,
-                            bot_id = %bot_id,
-                            url = %api_url,
-                            has_token = access_token.is_some(),
-                            "Starting HTTP API client bot (send-only)"
-                        );
 
                         let handle = http_client
                             .start_client(

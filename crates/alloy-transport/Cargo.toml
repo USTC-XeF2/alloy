@@ -14,7 +14,7 @@ default = []
 http-client = ["dep:reqwest"]
 http-server = ["dep:axum"]
 ws-client = ["dep:tokio-tungstenite"]
-ws-server = ["dep:axum", "dep:tokio-tungstenite"]
+ws-server = ["dep:axum"]
 
 # Convenience feature groups
 full = ["http-client", "http-server", "ws-client", "ws-server"]

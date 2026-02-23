@@ -174,7 +174,7 @@ impl AlloyRuntime {
         // Register WebSocket server capability
         #[cfg(feature = "ws-server")]
         {
-            use alloy_transport::websocket::WsServerCapabilityImpl;
+            use alloy_transport::WsServerCapabilityImpl;
             ctx = ctx.with_ws_server(Arc::new(WsServerCapabilityImpl::new()));
             tracing::debug!("Registered WsServer capability");
         }
@@ -182,7 +182,7 @@ impl AlloyRuntime {
         // Register WebSocket client capability
         #[cfg(feature = "ws-client")]
         {
-            use alloy_transport::websocket::WsClientCapabilityImpl;
+            use alloy_transport::WsClientCapabilityImpl;
             ctx = ctx.with_ws_client(Arc::new(WsClientCapabilityImpl::new()));
             tracing::debug!("Registered WsClient capability");
         }
@@ -190,7 +190,7 @@ impl AlloyRuntime {
         // Register HTTP server capability
         #[cfg(feature = "http-server")]
         {
-            use alloy_transport::http::HttpServerCapabilityImpl;
+            use alloy_transport::HttpServerCapabilityImpl;
             ctx = ctx.with_http_server(Arc::new(HttpServerCapabilityImpl::new()));
             tracing::debug!("Registered HttpServer capability");
         }
@@ -198,7 +198,7 @@ impl AlloyRuntime {
         // Register HTTP client capability
         #[cfg(feature = "http-client")]
         {
-            use alloy_transport::http::HttpClientCapabilityImpl;
+            use alloy_transport::HttpClientCapabilityImpl;
             ctx = ctx.with_http_client(Arc::new(HttpClientCapabilityImpl::new()));
             tracing::debug!("Registered HttpClient capability");
         }

@@ -78,21 +78,29 @@
 //! ```
 
 // Transport implementations (feature-gated)
-#[cfg(any(feature = "http-client", feature = "http-server"))]
-pub mod http;
 
-#[cfg(any(feature = "ws-client", feature = "ws-server"))]
-pub mod websocket;
+// ─── Unified server module (all server logic: infrastructure + impls) ────────
+#[cfg(any(feature = "http-server", feature = "ws-server"))]
+mod server;
 
-// Capability re-exports
-#[cfg(feature = "ws-server")]
-pub use websocket::WsServerCapabilityImpl;
+// ─── Root-level client implementations ─────────────────────────────────────
+#[cfg(feature = "http-client")]
+mod http_client;
 
 #[cfg(feature = "ws-client")]
-pub use websocket::WsClientCapabilityImpl;
+mod ws_client;
 
+// ─── Capability re-exports ───────────────────────────────────────────────────
+// Server capabilities (all from crate::server module)
 #[cfg(feature = "http-server")]
-pub use http::HttpServerCapabilityImpl;
+pub use server::HttpServerCapabilityImpl;
 
+#[cfg(feature = "ws-server")]
+pub use server::WsServerCapabilityImpl;
+
+// Client capabilities (from root-level modules)
 #[cfg(feature = "http-client")]
-pub use http::HttpClientCapabilityImpl;
+pub use http_client::HttpClientCapabilityImpl;
+
+#[cfg(feature = "ws-client")]
+pub use ws_client::WsClientCapabilityImpl;
