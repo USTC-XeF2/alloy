@@ -200,7 +200,7 @@ impl AlloyRuntime {
         let bridge = Arc::new(AdapterBridge::new(
             adapter,
             self.plugin_manager.clone(),
-            self.transport_context.clone(),
+            self.transport_context,
         ));
 
         self.bridges

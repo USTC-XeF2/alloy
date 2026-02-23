@@ -12,8 +12,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{error, info, trace, warn};
 
 use alloy_core::{
-    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError,
-    TransportResult,
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError, TransportResult,
+    WsClientConfig,
 };
 use alloy_macros::register_capability;
 
@@ -25,8 +25,7 @@ type WsSource = SplitStream<WsStream>;
 struct ClientLoopState {
     handler: Arc<dyn ConnectionHandler>,
     bot_id: String,
-    config: ClientConfig,
-    url: String,
+    config: WsClientConfig,
     retry_count: u32,
     current_delay: Duration,
     ws_tx: WsSink,
@@ -38,8 +37,7 @@ impl ClientLoopState {
     fn new(
         handler: Arc<dyn ConnectionHandler>,
         bot_id: String,
-        config: ClientConfig,
-        url: String,
+        config: WsClientConfig,
         ws_stream: WsStream,
     ) -> Self {
         let initial_delay = config.initial_delay;
@@ -49,7 +47,6 @@ impl ClientLoopState {
             handler,
             bot_id,
             config,
-            url,
             retry_count: 0,
             current_delay: initial_delay,
             ws_tx,
@@ -85,7 +82,7 @@ impl ClientLoopState {
         warn!(bot_id = %self.bot_id, delay = ?self.current_delay, "Reconnecting...");
         tokio::time::sleep(self.current_delay).await;
 
-        match connect_async(&self.url).await {
+        match connect_async(&self.config.url).await {
             Ok((new_stream, _)) => {
                 let (new_tx, new_rx) = new_stream.split();
                 info!(bot_id = %self.bot_id, "Reconnected successfully");
@@ -154,38 +151,37 @@ impl ClientLoopState {
 /// This function is registered as the `WsConnectFn` capability.
 #[register_capability(ws_client)]
 pub async fn ws_connect(
-    url: String,
+    config: WsClientConfig,
     handler: Arc<dyn ConnectionHandler>,
-    config: ClientConfig,
 ) -> TransportResult<ConnectionHandle> {
     // Create channels
     let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
     // Initial connection
-    let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &url);
+    let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &config.url);
 
-    info!(url = %url, "Connecting to WebSocket server");
+    info!(url = %config.url, "Connecting to WebSocket server");
 
     let (ws_stream, _response) =
-        connect_async(&url)
+        connect_async(&config.url)
             .await
             .map_err(|e| TransportError::ConnectionFailed {
-                url: url.clone(),
+                url: config.url.clone(),
                 reason: format!("WebSocket connection failed: {}", e),
             })?;
 
     // Get bot ID from handler
     let bot_id = handler.get_bot_id(conn_info).await?;
 
-    info!(bot_id = %bot_id, url = %url, "WebSocket client connected");
+    info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 
     let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_tx);
 
     // Create and register the bot
     handler.create_bot(&bot_id, handle.clone()).await;
 
-    let mut state = ClientLoopState::new(handler, bot_id, config, url, ws_stream);
+    let mut state = ClientLoopState::new(handler, bot_id, config, ws_stream);
 
     // Spawn connection manager task
     tokio::spawn(async move {

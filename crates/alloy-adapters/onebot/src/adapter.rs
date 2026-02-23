@@ -49,8 +49,9 @@ use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::parse_onebot_event;
 use alloy_core::{
-    Adapter, AdapterContext, AdapterResult, BoxedBot, BoxedEvent, ClientConfig,
-    ConfigurableAdapter, ConnectionHandle, ConnectionInfo, TransportError, TransportResult,
+    Adapter, AdapterContext, AdapterResult, BoxedBot, BoxedEvent, ConfigurableAdapter,
+    ConnectionHandle, ConnectionInfo, HttpClientConfig, TransportError, TransportResult,
+    WsClientConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -164,17 +165,11 @@ impl Adapter for OneBotAdapter {
                             .as_ref()
                             .or(self.config.default_access_token.as_ref())
                             .filter(|t| !t.is_empty());
-                        let config = if let Some(t) = token {
-                            ClientConfig::default().with_token(t)
-                        } else {
-                            ClientConfig::default()
-                        };
-                        let handle = ws_client(
-                            ws_config.url.clone(),
-                            ctx.clone().as_connection_handler(),
-                            config,
-                        )
-                        .await?;
+                        let mut config = WsClientConfig::new(&ws_config.url);
+                        if let Some(t) = token {
+                            config = config.with_token(t);
+                        }
+                        let handle = ws_client(config, ctx.clone().as_connection_handler()).await?;
                         ctx.add_connection(handle).await;
                     } else {
                         warn!(
@@ -201,20 +196,20 @@ impl Adapter for OneBotAdapter {
                 ConnectionConfig::HttpClient(http_config) => {
                     if let Some(http_client) = ctx.transport().http_client() {
                         let bot_id = http_config.bot_id.clone();
-                        let api_url = http_config.api_url.clone();
                         let access_token = http_config
                             .access_token
                             .as_ref()
                             .or(self.config.default_access_token.as_ref())
                             .cloned();
 
-                        let handle = http_client(
-                            bot_id,
-                            api_url,
-                            access_token,
-                            ctx.clone().as_connection_handler(),
-                        )
-                        .await?;
+                        let mut client_config = HttpClientConfig::new(&http_config.api_url);
+                        if let Some(token) = access_token {
+                            client_config = client_config.with_token(token);
+                        }
+
+                        let handle =
+                            http_client(bot_id, client_config, ctx.clone().as_connection_handler())
+                                .await?;
                         ctx.add_connection(handle).await;
                     } else {
                         warn!("HTTP client capability not available, skipping http-client config");

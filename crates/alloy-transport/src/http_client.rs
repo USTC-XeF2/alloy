@@ -1,7 +1,6 @@
 //! HTTP client capability implementation.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use alloy_macros::register_capability;
 use futures::FutureExt;
@@ -10,7 +9,8 @@ use tokio::sync::watch;
 use tracing::info;
 
 use alloy_core::{
-    ConnectionHandle, ConnectionHandler, PostJsonFn, TransportError, TransportResult,
+    ConnectionHandle, ConnectionHandler, HttpClientConfig, PostJsonFn, TransportError,
+    TransportResult,
 };
 
 /// Registers an HTTP outbound API-client bot.
@@ -22,20 +22,19 @@ use alloy_core::{
 #[register_capability(http_client)]
 pub async fn http_start_client(
     bot_id: String,
-    api_url: String,
-    access_token: Option<String>,
+    config: HttpClientConfig,
     handler: Arc<dyn ConnectionHandler>,
 ) -> TransportResult<ConnectionHandle> {
-    info!(bot_id = %bot_id, url = %api_url, "Registering HTTP API client bot");
+    info!(bot_id = %bot_id, url = %config.api_url, "Registering HTTP API client bot");
 
     let client = ClientBuilder::new()
-        .timeout(Duration::from_secs(30))
+        .timeout(config.timeout)
         .build()
         .map_err(|e| TransportError::Io(e.to_string()))?;
     let post_json: PostJsonFn = Arc::new(move |body| {
         let client = client.clone();
-        let url = api_url.clone();
-        let token = access_token.clone();
+        let url = config.api_url.clone();
+        let token = config.access_token.clone();
         async move {
             let mut req = client.post(&url).json(&body);
             if let Some(t) = &token {

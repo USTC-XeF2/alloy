@@ -5,8 +5,9 @@
 //!
 //! # Overview
 //!
-//! Each capability is stored as an async function closure.  Adapters call
-//! them directly via `ctx.ws_client()(url, handler, config).await`.
+//! Each capability is a plain function pointer (`fn(Args...) -> BoxFuture`).
+//! Because they carry no captured state, all parameters are passed explicitly.
+//! Adapters call them via `ctx.ws_client()(url, handler, config).await`.
 //!
 //! # Dynamic Bot Management
 //!
@@ -21,7 +22,8 @@ use futures::future::BoxFuture;
 use linkme::distributed_slice;
 use tracing::warn;
 
-use super::connection::{ClientConfig, ConnectionHandle, ConnectionInfo, ListenerHandle};
+use super::config::{HttpClientConfig, WsClientConfig};
+use super::connection::{ConnectionHandle, ConnectionInfo, ListenerHandle};
 use crate::error::TransportResult;
 
 // =============================================================================
@@ -53,79 +55,61 @@ pub trait ConnectionHandler: Send + Sync {
 // Capability Function Types
 // =============================================================================
 
-/// Async function that starts a WebSocket server listener.
+/// Function pointer that starts a WebSocket server listener.
 ///
 /// Parameters: `(addr, path, handler)` — all owned to satisfy `'static` bounds.
-pub type WsListenFn = Arc<
-    dyn Fn(
-            String,
-            String,
-            Arc<dyn ConnectionHandler>,
-        ) -> BoxFuture<'static, TransportResult<ListenerHandle>>
-        + Send
-        + Sync,
->;
+pub type WsListenFn = fn(
+    String,
+    String,
+    Arc<dyn ConnectionHandler>,
+) -> BoxFuture<'static, TransportResult<ListenerHandle>>;
 
-/// Async function that opens a WebSocket client connection.
+/// Function pointer that opens a WebSocket client connection.
 ///
-/// Parameters: `(url, handler, config)`.
-pub type WsConnectFn = Arc<
-    dyn Fn(
-            String,
-            Arc<dyn ConnectionHandler>,
-            ClientConfig,
-        ) -> BoxFuture<'static, TransportResult<ConnectionHandle>>
-        + Send
-        + Sync,
->;
+/// Parameters: `(config, handler)`.
+pub type WsConnectFn = fn(
+    WsClientConfig,
+    Arc<dyn ConnectionHandler>,
+) -> BoxFuture<'static, TransportResult<ConnectionHandle>>;
 
-/// Async function that starts an HTTP server listener.
+/// Function pointer that starts an HTTP server listener.
 ///
 /// Parameters: `(addr, path, handler)`.
-pub type HttpListenFn = Arc<
-    dyn Fn(
-            String,
-            String,
-            Arc<dyn ConnectionHandler>,
-        ) -> BoxFuture<'static, TransportResult<ListenerHandle>>
-        + Send
-        + Sync,
->;
+pub type HttpListenFn = fn(
+    String,
+    String,
+    Arc<dyn ConnectionHandler>,
+) -> BoxFuture<'static, TransportResult<ListenerHandle>>;
 
-/// Async function that registers an HTTP outbound API-client bot.
+/// Function pointer that registers an HTTP outbound API-client bot.
 ///
-/// Parameters: `(bot_id, api_url, access_token, handler)`.
-pub type HttpStartClientFn = Arc<
-    dyn Fn(
-            String,
-            String,
-            Option<String>,
-            Arc<dyn ConnectionHandler>,
-        ) -> BoxFuture<'static, TransportResult<ConnectionHandle>>
-        + Send
-        + Sync,
->;
+/// Parameters: `(bot_id, config, handler)`.
+pub type HttpStartClientFn = fn(
+    String,
+    HttpClientConfig,
+    Arc<dyn ConnectionHandler>,
+) -> BoxFuture<'static, TransportResult<ConnectionHandle>>;
 
 // =============================================================================
 // Capability Registries (linkme distributed slices)
 // =============================================================================
 
-/// Registry of WebSocket server listen functions.
+/// Registry of WebSocket server listen function pointers.
 /// Each crate that provides a ws-server capability contributes one entry.
 #[distributed_slice]
-pub static WS_LISTEN_REGISTRY: [fn() -> WsListenFn];
+pub static WS_LISTEN_REGISTRY: [WsListenFn];
 
-/// Registry of WebSocket client connect functions.
+/// Registry of WebSocket client connect function pointers.
 #[distributed_slice]
-pub static WS_CONNECT_REGISTRY: [fn() -> WsConnectFn];
+pub static WS_CONNECT_REGISTRY: [WsConnectFn];
 
-/// Registry of HTTP server listen functions.
+/// Registry of HTTP server listen function pointers.
 #[distributed_slice]
-pub static HTTP_LISTEN_REGISTRY: [fn() -> HttpListenFn];
+pub static HTTP_LISTEN_REGISTRY: [HttpListenFn];
 
-/// Registry of HTTP client start functions.
+/// Registry of HTTP client start function pointers.
 #[distributed_slice]
-pub static HTTP_START_CLIENT_REGISTRY: [fn() -> HttpStartClientFn];
+pub static HTTP_START_CLIENT_REGISTRY: [HttpStartClientFn];
 
 // Will be defined as impl method for TransportContext
 
@@ -136,7 +120,7 @@ pub static HTTP_START_CLIENT_REGISTRY: [fn() -> HttpStartClientFn];
 /// Context for adapter initialization.
 ///
 /// Provides access to available transport capabilities.
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct TransportContext {
     ws_server: Option<WsListenFn>,
     ws_client: Option<WsConnectFn>,
@@ -161,17 +145,17 @@ impl TransportContext {
     /// If multiple providers are registered for the same capability type a warning
     /// is emitted and the **first** one wins.
     pub fn collect_all() -> Self {
-        fn load<T: Clone>(registry: &[fn() -> T], name: &str) -> Option<T> {
+        fn load<T: Copy>(registry: &[T], name: &str) -> Option<T> {
             match registry.len() {
                 0 => None,
-                1 => Some(registry[0]()),
+                1 => Some(registry[0]),
                 n => {
                     warn!(
                         count = n,
                         capability = name,
                         "Multiple capability providers registered, using first"
                     );
-                    Some(registry[0]())
+                    Some(registry[0])
                 }
             }
         }
@@ -209,23 +193,23 @@ impl TransportContext {
     }
 
     /// Gets the WebSocket server capability if available.
-    pub fn ws_server(&self) -> Option<&WsListenFn> {
-        self.ws_server.as_ref()
+    pub fn ws_server(&self) -> Option<WsListenFn> {
+        self.ws_server
     }
 
     /// Gets the WebSocket client capability if available.
-    pub fn ws_client(&self) -> Option<&WsConnectFn> {
-        self.ws_client.as_ref()
+    pub fn ws_client(&self) -> Option<WsConnectFn> {
+        self.ws_client
     }
 
     /// Gets the HTTP server capability if available.
-    pub fn http_server(&self) -> Option<&HttpListenFn> {
-        self.http_server.as_ref()
+    pub fn http_server(&self) -> Option<HttpListenFn> {
+        self.http_server
     }
 
     /// Gets the HTTP client capability if available.
-    pub fn http_client(&self) -> Option<&HttpStartClientFn> {
-        self.http_client.as_ref()
+    pub fn http_client(&self) -> Option<HttpStartClientFn> {
+        self.http_client
     }
 }
 

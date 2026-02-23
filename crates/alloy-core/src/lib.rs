@@ -51,8 +51,8 @@ pub use error::{
 pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
 pub use message::{Message, MessageSegment, RichTextSegment};
 pub use transport::{
-    ClientConfig, ConnectionHandle, ConnectionHandler, ConnectionInfo, ConnectionKind,
-    HTTP_LISTEN_REGISTRY, HTTP_START_CLIENT_REGISTRY, HttpListenFn, HttpStartClientFn,
-    ListenerHandle, MessageHandler, PostJsonFn, TransportContext, WS_CONNECT_REGISTRY,
-    WS_LISTEN_REGISTRY, WsConnectFn, WsListenFn,
+    ConnectionHandle, ConnectionHandler, ConnectionInfo, ConnectionKind, HTTP_LISTEN_REGISTRY,
+    HTTP_START_CLIENT_REGISTRY, HttpClientConfig, HttpListenFn, HttpStartClientFn, ListenerHandle,
+    MessageHandler, PostJsonFn, TransportContext, WS_CONNECT_REGISTRY, WS_LISTEN_REGISTRY,
+    WsClientConfig, WsConnectFn, WsListenFn,
 };

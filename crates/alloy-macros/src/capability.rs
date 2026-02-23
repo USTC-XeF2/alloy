@@ -21,16 +21,15 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 
     let cap_str = cap_type.to_string();
 
-    let (slice, arc_ty, arg_decls, arg_names) = match cap_str.as_str() {
+    let (slice, fn_ty, arg_decls, arg_names) = match cap_str.as_str() {
         "ws_client" => (
             quote!(::alloy_core::WS_CONNECT_REGISTRY),
             quote!(::alloy_core::WsConnectFn),
             quote!(
-                url: ::std::string::String,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
-                config: ::alloy_core::ClientConfig
+                config: ::alloy_core::WsClientConfig,
+                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
             ),
-            quote!(url, handler, config),
+            quote!(config, handler),
         ),
         "ws_server" => (
             quote!(::alloy_core::WS_LISTEN_REGISTRY),
@@ -47,11 +46,10 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::HttpStartClientFn),
             quote!(
                 bot_id: ::std::string::String,
-                api_url: ::std::string::String,
-                access_token: ::std::option::Option<::std::string::String>,
+                config: ::alloy_core::HttpClientConfig,
                 handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
             ),
-            quote!(bot_id, api_url, access_token, handler),
+            quote!(bot_id, config, handler),
         ),
         "http_server" => (
             quote!(::alloy_core::HTTP_LISTEN_REGISTRY),
@@ -81,11 +79,8 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 
         #[::alloy_core::linkme::distributed_slice(#slice)]
         #[linkme(crate = ::alloy_core::linkme)]
-        static #static_name: fn() -> #arc_ty = || {
-            ::std::sync::Arc::new(|#arg_decls| {
-                ::std::boxed::Box::pin(#fn_name(#arg_names))
-            })
-        };
+        static #static_name: #fn_ty =
+            |#arg_decls| ::futures::FutureExt::boxed(#fn_name(#arg_names));
     }
     .into()
 }
