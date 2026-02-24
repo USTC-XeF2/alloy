@@ -31,7 +31,7 @@ use tokio::signal;
 use tracing::{error, info, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader};
-use crate::error::{ConfigResult, RuntimeError, RuntimeResult};
+use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
 use alloy_core::{AdapterBridge, ConfigurableAdapter, TransportContext};
 use alloy_framework::{PluginDescriptor, PluginManager};
@@ -94,25 +94,11 @@ impl AlloyRuntime {
             .with_current_dir()
             .load()
             .unwrap_or_else(|e| {
-                eprintln!("Warning: Failed to load config ({e}), using defaults");
+                warn!("Failed to load configuration: {e}, using defaults");
                 AlloyConfig::default()
             });
 
-        Self::from_config(&config)
-    }
-
-    /// Creates a runtime builder for custom configuration.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let runtime = AlloyRuntime::builder()
-    ///     .config_file("config/production.yaml")
-    ///     .profile("production")
-    ///     .build()?;
-    /// ```
-    pub fn builder() -> RuntimeBuilder {
-        RuntimeBuilder::new()
+        Self::from_config(config)
     }
 
     /// Creates a new runtime from configuration.
@@ -123,12 +109,14 @@ impl AlloyRuntime {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use alloy_runtime::{AlloyRuntime, config::load_config};
+    /// use alloy_runtime::{AlloyRuntime, config::ConfigLoader};
     ///
-    /// let config = load_config()?;
-    /// let runtime = AlloyRuntime::from_config(&config);
+    /// let config = ConfigLoader::new()
+    ///     .with_current_dir()
+    ///     .load()?;
+    /// let runtime = AlloyRuntime::from_config(config);
     /// ```
-    pub fn from_config(config: &AlloyConfig) -> Self {
+    pub fn from_config(config: AlloyConfig) -> Self {
         // Initialize logging from config (try_init won't panic if already initialized)
         logging::init_from_config(&config.logging);
 
@@ -151,7 +139,7 @@ impl AlloyRuntime {
             .collect();
 
         Self {
-            config: config.clone(),
+            config,
             plugin_manager: Arc::new(PluginManager::new(plugin_configs)),
             transport_context: transport_ctx,
             bridges: Mutex::new(HashMap::new()),
@@ -366,81 +354,6 @@ impl AlloyRuntime {
 }
 
 impl Default for AlloyRuntime {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// =============================================================================
-// RuntimeBuilder
-// =============================================================================
-
-/// Builder for creating an `AlloyRuntime` with custom configuration.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let runtime = AlloyRuntime::builder()
-///     .config_file("config/production.yaml")
-///     .profile("production")
-///     .build()?;
-/// ```
-pub struct RuntimeBuilder {
-    config_loader: ConfigLoader,
-}
-
-impl RuntimeBuilder {
-    /// Creates a new runtime builder.
-    pub fn new() -> Self {
-        Self {
-            config_loader: ConfigLoader::new().with_current_dir(),
-        }
-    }
-
-    /// Sets a specific configuration file to load.
-    pub fn config_file<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
-        self.config_loader = self.config_loader.file(path);
-        self
-    }
-
-    /// Sets the configuration profile (e.g., "development", "production").
-    pub fn profile(mut self, profile: impl Into<String>) -> Self {
-        self.config_loader = self.config_loader.profile(profile);
-        self
-    }
-
-    /// Adds a search path for configuration files.
-    pub fn search_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
-        self.config_loader = self.config_loader.search_path(path);
-        self
-    }
-
-    /// Enables loading environment variables (enabled by default).
-    pub fn with_env(mut self) -> Self {
-        self.config_loader = self.config_loader.with_env();
-        self
-    }
-
-    /// Disables loading environment variables.
-    pub fn without_env(mut self) -> Self {
-        self.config_loader = self.config_loader.without_env();
-        self
-    }
-
-    /// Merges additional configuration programmatically.
-    pub fn merge(mut self, config: AlloyConfig) -> Self {
-        self.config_loader = self.config_loader.merge(config);
-        self
-    }
-
-    /// Builds the runtime.
-    pub fn build(self) -> ConfigResult<AlloyRuntime> {
-        let config = self.config_loader.load()?;
-        Ok(AlloyRuntime::from_config(&config))
-    }
-}
-
-impl Default for RuntimeBuilder {
     fn default() -> Self {
         Self::new()
     }

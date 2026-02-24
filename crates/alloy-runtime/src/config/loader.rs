@@ -5,7 +5,6 @@
 //! - **Multiple sources**: TOML/YAML files, environment variables, programmatic defaults
 //! - **Layered configuration**: Later sources override earlier ones
 //! - **Profile support**: Development vs production configurations
-//! - **Environment variable interpolation**: `${VAR}` or `${VAR:-default}`
 //!
 //! # Feature Flags
 //!
@@ -116,8 +115,6 @@ impl std::fmt::Display for Profile {
 ///     .load()?;
 /// ```
 pub struct ConfigLoader {
-    /// Base figment instance.
-    figment: Figment,
     /// Configuration profile.
     profile: Profile,
     /// Search paths for configuration files.
@@ -138,7 +135,6 @@ impl ConfigLoader {
     /// Creates a new configuration loader with defaults.
     pub fn new() -> Self {
         Self {
-            figment: Figment::new(),
             profile: Profile::from_env(),
             search_paths: Vec::new(),
             load_env: true,
@@ -158,7 +154,7 @@ impl ConfigLoader {
     }
 
     /// Adds a search path for configuration files.
-    pub fn search_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    pub fn search_path(mut self, path: impl AsRef<Path>) -> Self {
         self.search_paths.push(path.as_ref().to_path_buf());
         self
     }
@@ -172,17 +168,8 @@ impl ConfigLoader {
         }
     }
 
-    /// Adds user config directory to search paths.
-    pub fn with_user_config_dir(self) -> Self {
-        if let Some(config_dir) = dirs::config_dir() {
-            self.search_path(config_dir.join("alloy"))
-        } else {
-            self
-        }
-    }
-
     /// Sets a specific configuration file to load.
-    pub fn file<P: AsRef<Path>>(mut self, path: P) -> Self {
+    pub fn file(mut self, path: impl AsRef<Path>) -> Self {
         self.config_file = Some(path.as_ref().to_path_buf());
         self
     }
@@ -196,23 +183,6 @@ impl ConfigLoader {
     /// Disables loading environment variables.
     pub fn without_env(mut self) -> Self {
         self.load_env = false;
-        self
-    }
-
-    /// Merges additional configuration programmatically.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let config = ConfigLoader::new()
-    ///     .merge(AlloyConfig {
-    ///         logging: LoggingConfig { level: LogLevel::Debug, ..Default::default() },
-    ///         ..Default::default()
-    ///     })
-    ///     .load()?;
-    /// ```
-    pub fn merge(mut self, config: AlloyConfig) -> Self {
-        self.figment = self.figment.merge(Serialized::defaults(config));
         self
     }
 
@@ -235,20 +205,27 @@ impl ConfigLoader {
     }
 
     /// Builds the figment instance with all sources.
-    fn build_figment(mut self) -> ConfigResult<Figment> {
+    fn build_figment(self) -> ConfigResult<Figment> {
         // Start with defaults
         let mut figment = Figment::from(Serialized::defaults(AlloyConfig::default()));
-
-        // Merge user's pre-configured figment
-        let user_figment = std::mem::take(&mut self.figment);
-        figment = figment.merge(user_figment);
 
         // Load config files
         if let Some(path) = self.config_file {
             // Load specific file
             if path.exists() {
                 info!(path = %path.display(), "Loading configuration file");
-                figment = Self::merge_config_file(figment, &path)?;
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                figment = match ext {
+                    #[cfg(feature = "toml-config")]
+                    "toml" => figment.merge(Toml::file(path)),
+                    #[cfg(feature = "yaml-config")]
+                    "yaml" | "yml" => figment.merge(Yaml::file(path)),
+                    _ => {
+                        return Err(ConfigError::ParseError(format!(
+                            "Unsupported or disabled configuration file format: .{ext}"
+                        )));
+                    }
+                }
             } else {
                 return Err(ConfigError::FileNotFound(path.clone()));
             }
@@ -260,46 +237,10 @@ impl ConfigLoader {
         // Load environment variables
         if self.load_env {
             trace!("Loading environment variables with ALLOY_ prefix");
-            figment = figment.merge(
-                Env::prefixed("ALLOY_")
-                    .split("__")
-                    .map(|key| key.as_str().replace("__", ".").into()),
-            );
+            figment = figment.merge(Env::prefixed("ALLOY_").split("__"));
         }
 
         Ok(figment)
-    }
-
-    /// Merges a single config file into the figment, dispatching on file extension.
-    ///
-    /// Only extensions enabled via feature flags are accepted.
-    fn merge_config_file(figment: Figment, path: &Path) -> ConfigResult<Figment> {
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        match ext {
-            #[cfg(feature = "toml-config")]
-            "toml" => Ok(figment.merge(Toml::file(path))),
-            #[cfg(feature = "yaml-config")]
-            "yaml" | "yml" => Ok(figment.merge(Yaml::file(path))),
-            _ => Err(ConfigError::ParseError(format!(
-                "Unsupported or disabled configuration file format: .{ext}"
-            ))),
-        }
-    }
-
-    /// Resolves the effective list of search paths.
-    fn resolve_search_paths(&self) -> Vec<PathBuf> {
-        if self.search_paths.is_empty() {
-            let mut paths = Vec::new();
-            if let Ok(cwd) = std::env::current_dir() {
-                paths.push(cwd);
-            }
-            if let Some(config_dir) = dirs::config_dir() {
-                paths.push(config_dir.join("alloy"));
-            }
-            paths
-        } else {
-            self.search_paths.clone()
-        }
     }
 
     /// Common search logic for a single file format.
@@ -308,71 +249,54 @@ impl ConfigLoader {
     /// base file. Returns `(figment, true)` as soon as a base file is found (early return), or
     /// `(figment, false)` if nothing was located.
     #[cfg(any(feature = "toml-config", feature = "yaml-config"))]
-    fn load_format_files<F>(
-        &self,
-        mut figment: Figment,
-        search_paths: &[PathBuf],
-        base_names: &[&str],
-        merge_fn: F,
-    ) -> (Figment, bool)
+    fn load_format_files<F>(&self, mut figment: Figment, exts: &[&str]) -> (Figment, bool)
     where
-        F: Fn(Figment, &Path) -> Figment,
+        F: Format,
     {
-        for search_path in search_paths {
-            for base_name in base_names {
-                if let Some(dot) = base_name.rfind('.') {
-                    let stem = &base_name[..dot];
-                    let ext = &base_name[dot + 1..];
+        let mut found = false;
+        for search_path in &self.search_paths {
+            for ext in exts {
+                // Profile-specific: e.g. alloy.production.toml
+                let profile_name = format!("alloy.{}.{}", self.profile.as_str(), ext);
+                let profile_path = search_path.join(&profile_name);
+                if profile_path.exists() {
+                    debug!(path = %profile_path.display(), "Loading profile-specific config");
+                    figment = figment.merge(F::file(profile_path));
+                    found = true;
+                }
 
-                    // Profile-specific: e.g. alloy.production.toml
-                    let profile_name = format!("{}.{}.{}", stem, self.profile.as_str(), ext);
-                    let profile_path = search_path.join(&profile_name);
-                    if profile_path.exists() {
-                        debug!(path = %profile_path.display(), "Loading profile-specific config");
-                        figment = merge_fn(figment, &profile_path);
-                    }
-
-                    // Base file
-                    let base_path = search_path.join(base_name);
-                    if base_path.exists() {
-                        info!(path = %base_path.display(), "Loading configuration file");
-                        figment = merge_fn(figment, &base_path);
-                        return (figment, true);
-                    }
+                // Base file
+                let base_name = format!("alloy.{ext}");
+                let base_path = search_path.join(&base_name);
+                if base_path.exists() {
+                    info!(path = %base_path.display(), "Loading configuration file");
+                    figment = figment.merge(F::file(base_path));
+                    found = true;
                 }
             }
         }
-        (figment, false)
+        (figment, found)
     }
 
     /// Searches for and loads configuration files from search paths.
     ///
     /// Which file formats are attempted is controlled by the `toml-config` and `yaml-config`
     /// feature flags.  Each enabled format is searched independently.
+    #[allow(unused_variables)]
+    #[allow(unused_mut)]
     fn load_config_files(&self, mut figment: Figment) -> Figment {
-        let search_paths = self.resolve_search_paths();
         let mut found = false;
 
         #[cfg(feature = "toml-config")]
         {
-            let (f, ok) = self.load_format_files(
-                figment,
-                &search_paths,
-                &["alloy.toml", "config.toml"],
-                |fig, path| fig.merge(Toml::file(path)),
-            );
+            let (f, ok) = self.load_format_files::<Toml>(figment, &["toml"]);
             figment = f;
             found |= ok;
         }
 
         #[cfg(feature = "yaml-config")]
         {
-            let (f, ok) = self.load_format_files(
-                figment,
-                &search_paths,
-                &["alloy.yaml", "alloy.yml", "config.yaml", "config.yml"],
-                |fig, path| fig.merge(Yaml::file(path)),
-            );
+            let (f, ok) = self.load_format_files::<Yaml>(figment, &["yaml", "yml"]);
             figment = f;
             found |= ok;
         }

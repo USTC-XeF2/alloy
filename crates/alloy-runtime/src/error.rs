@@ -18,10 +18,6 @@ pub enum ConfigError {
     /// YAML/configuration parsing error.
     #[error("Configuration parse error: {0}")]
     ParseError(String),
-
-    /// Environment variable error.
-    #[error("Environment variable error: {0}")]
-    EnvVarError(String),
 }
 
 /// Result type for configuration operations.

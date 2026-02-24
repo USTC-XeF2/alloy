@@ -67,4 +67,4 @@ pub mod runtime;
 pub use config::{AlloyConfig, ConfigLoader, LogFormat, LogLevel, LogOutput, LoggingConfig};
 pub use error::{ConfigError, ConfigResult, RuntimeError, RuntimeResult};
 pub use logging::{LoggingBuilder, SpanEvents};
-pub use runtime::{AlloyRuntime, RuntimeBuilder};
+pub use runtime::AlloyRuntime;
