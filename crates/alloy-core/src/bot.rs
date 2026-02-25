@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::error::ApiResult;
 use crate::event::Event;
+use crate::message::ErasedMessage;
 
 /// The core Bot trait.
 ///
@@ -62,6 +63,18 @@ pub trait Bot: Send + Sync {
     ///
     /// The message ID if successful.
     async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<String>;
+
+    /// Sends a rich (type-erased) message in response to an event.
+    ///
+    /// # Arguments
+    ///
+    /// * `event`   - The event to respond to
+    /// * `message` - A type-erased [`ErasedMessage`]; pass any `Message<S>` reference
+    async fn send_message(
+        &self,
+        event: &dyn Event,
+        message: &dyn ErasedMessage,
+    ) -> ApiResult<String>;
 
     /// Returns self as an `Arc<dyn Any>` for safe downcasting.
     ///

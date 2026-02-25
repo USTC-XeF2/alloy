@@ -35,7 +35,7 @@ use crate::model::api::{
 use crate::model::event::{GroupMessageEvent, PrivateMessageEvent};
 use crate::model::message::OneBotMessage;
 use crate::model::segment::Segment;
-use alloy_core::{ApiError, ApiResult, Bot, Event};
+use alloy_core::{ApiError, ApiResult, Bot, ErasedMessage, Event, MessageSegment};
 use alloy_core::{ConnectionHandle, ConnectionKind};
 
 // =============================================================================
@@ -73,6 +73,45 @@ impl OneBotBot {
         }
     }
 
+    /// Internal method to send a message after converting it to OneBotMessage.
+    ///
+    /// Extracts the session information from the event and routes to either
+    /// `send_group_msg` or `send_private_msg`.
+    async fn send_internal(
+        &self,
+        event: &dyn Event,
+        onebot_msg: OneBotMessage,
+    ) -> ApiResult<String> {
+        let target_id = {
+            if let Some(group_msg) = event.as_any().downcast_ref::<GroupMessageEvent>() {
+                Some((true, group_msg.group_id))
+            } else if let Some(private_msg) = event.as_any().downcast_ref::<PrivateMessageEvent>() {
+                Some((false, private_msg.user_id))
+            } else if let Some(raw_json) = event.raw_json()
+                && let Ok(parsed) = serde_json::from_str::<Value>(raw_json)
+            {
+                if let Some(group_id) = parsed.get("group_id").and_then(Value::as_i64) {
+                    Some((true, group_id))
+                } else {
+                    parsed
+                        .get("user_id")
+                        .and_then(Value::as_i64)
+                        .map(|user_id| (false, user_id))
+                }
+            } else {
+                None
+            }
+        };
+
+        let (is_group, id) = target_id.ok_or(ApiError::MissingSession)?;
+        let message_id = if is_group {
+            self.send_group_msg(id, onebot_msg).await?
+        } else {
+            self.send_private_msg(id, onebot_msg).await?
+        };
+        Ok(message_id.to_string())
+    }
+
     pub(crate) async fn handle_response(&self, data: &Value) {
         self.api_caller.on_incoming_response(data).await;
     }
@@ -105,45 +144,17 @@ impl Bot for OneBotBot {
     }
 
     async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<String> {
-        // Convert string message to OneBotMessage
-        let onebot_msg: OneBotMessage = Segment::text(message).into();
+        self.send_internal(event, Segment::text(message).into())
+            .await
+    }
 
-        // Extract target: try downcast first, then fallback to raw_json
-        let target_id = {
-            // Try to downcast to GroupMessageEvent first
-            if let Some(group_msg) = event.as_any().downcast_ref::<GroupMessageEvent>() {
-                Some((true, group_msg.group_id))
-            } else if let Some(private_msg) = event.as_any().downcast_ref::<PrivateMessageEvent>() {
-                Some((false, private_msg.user_id))
-            } else {
-                // Fallback: parse raw_json
-                if let Some(raw_json) = event.raw_json()
-                    && let Ok(parsed) = serde_json::from_str::<Value>(raw_json)
-                {
-                    if let Some(group_id) = parsed.get("group_id").and_then(Value::as_i64) {
-                        Some((true, group_id))
-                    } else {
-                        parsed
-                            .get("user_id")
-                            .and_then(Value::as_i64)
-                            .map(|user_id| (false, user_id))
-                    }
-                } else {
-                    None
-                }
-            }
-        };
-
-        let (is_group, id) = target_id.ok_or(ApiError::MissingSession)?;
-
-        // Send message with unified logic
-        let message_id = if is_group {
-            self.send_group_msg(id, onebot_msg).await?
-        } else {
-            self.send_private_msg(id, onebot_msg).await?
-        };
-
-        Ok(message_id.to_string())
+    async fn send_message(
+        &self,
+        event: &dyn Event,
+        message: &dyn ErasedMessage,
+    ) -> ApiResult<String> {
+        self.send_internal(event, OneBotMessage::from_erased_message(message))
+            .await
     }
 
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

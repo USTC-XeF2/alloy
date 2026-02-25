@@ -37,58 +37,73 @@ use tracing::error;
 
 use crate::context::AlloyContext;
 use crate::extractor::FromContext;
+use alloy_core::{Message, MessageSegment};
 
 // ============================================================================
-// IntoHandlerResponse - Convert handler return values into responses
+// HandleResponse - Handle handler return values
 // ============================================================================
 
-/// A trait for types that can be converted into handler responses.
-///
-/// This trait allows handlers to return different types:
-/// - `()` - No response
-/// - `Result<(), E>` - Log errors
-/// - `Result<String, E>` - Send message on Ok, log errors on Err
+/// A trait for types that can handle handler return values.
 #[async_trait]
-pub trait IntoHandlerResponse: Send {
+pub trait HandleResponse: Send {
     /// Convert this value into a response.
     async fn into_response(self, ctx: Arc<AlloyContext>);
 }
 
 /// Implementation for `()` - no response needed.
 #[async_trait]
-impl IntoHandlerResponse for () {
+impl HandleResponse for () {
     async fn into_response(self, _ctx: Arc<AlloyContext>) {
         // No action needed
     }
 }
 
-/// Implementation for `Result<(), E>` - log errors using `error!()`.
+/// Implementation for `String` - send message on Ok, log errors on Err.
 #[async_trait]
-impl<E: std::fmt::Display + Send + 'static> IntoHandlerResponse for Result<(), E> {
-    async fn into_response(self, _ctx: Arc<AlloyContext>) {
-        if let Err(e) = self {
-            error!("Handler error: {}", e);
+impl HandleResponse for String {
+    async fn into_response(self, ctx: Arc<AlloyContext>) {
+        let bot = ctx.bot_arc();
+        let event = ctx.event();
+        if let Err(e) = bot.send(&**event, &self).await {
+            error!("Failed to send message: {e}");
         }
     }
 }
 
-/// Implementation for `Result<String, E>` - send message on Ok, log errors on Err.
+/// Implementation for `Message<S>` - sends the message using `send_message`.
 #[async_trait]
-impl<E: std::fmt::Display + Send + 'static> IntoHandlerResponse for Result<String, E> {
+impl<S: MessageSegment> HandleResponse for Message<S> {
+    async fn into_response(self, ctx: Arc<AlloyContext>) {
+        let bot = ctx.bot_arc();
+        let event = ctx.event();
+        if let Err(e) = bot.send_message(&**event, &self).await {
+            error!("Failed to send message: {e}");
+        }
+    }
+}
+
+/// Implementation for `Option<T>` where T implements HandleResponse.
+///
+/// On Some, the inner value's response is handled. On None, no action is taken.
+#[async_trait]
+impl<T: HandleResponse> HandleResponse for Option<T> {
+    async fn into_response(self, ctx: Arc<AlloyContext>) {
+        if let Some(t) = self {
+            t.into_response(ctx).await;
+        }
+    }
+}
+
+/// Implementation for `Result<T, E>` where T implements HandleResponse.
+///
+/// On Ok, the inner value's response is handled. On Err, the error is logged.
+#[async_trait]
+impl<T: HandleResponse, E: std::fmt::Display + Send> HandleResponse for Result<T, E> {
     async fn into_response(self, ctx: Arc<AlloyContext>) {
         match self {
-            Ok(msg) => {
-                if !msg.is_empty() {
-                    let bot = ctx.bot_arc();
-                    let event = ctx.event();
-                    // BoxedEvent derefs to &dyn Event
-                    if let Err(e) = bot.send(&**event, &msg).await {
-                        error!("Failed to send message: {}", e);
-                    }
-                }
-            }
+            Ok(t) => t.into_response(ctx).await,
             Err(e) => {
-                error!("Handler error: {}", e);
+                error!("Handler error: {e}");
             }
         }
     }
@@ -107,13 +122,7 @@ impl<E: std::fmt::Display + Send + 'static> IntoHandlerResponse for Result<Strin
 ///
 /// This trait is automatically implemented for async functions that:
 /// - Take 0-16 parameters that implement [`FromContext`]
-/// - Return `()`, `Result<(), E>`, or `Result<String, E>`
-///
-/// # Return Types
-///
-/// - `()` - No response
-/// - `Result<(), E>` - Errors are logged using `error!()`
-/// - `Result<String, E>` - Ok(String) sends a message, Err(E) is logged
+/// - Return a type that implements [`HandleResponse`]
 ///
 /// # Example
 ///
@@ -174,7 +183,7 @@ macro_rules! impl_handler {
         where
             F: FnOnce($($ty,)*) -> Fut + Clone + Send + Sync + 'static,
             Fut: Future<Output = Res> + Send + 'static,
-            Res: IntoHandlerResponse + 'static,
+            Res: HandleResponse + 'static,
             $( $ty: FromContext + Send + 'static, )*
         {
             async fn call(self, ctx: Arc<AlloyContext>) {

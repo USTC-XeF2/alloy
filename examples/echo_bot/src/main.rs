@@ -9,6 +9,7 @@
 //! cargo run --package echo-bot
 //! ```
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use alloy::builtin_plugins::storage::{STORAGE_PLUGIN, StorageService};
@@ -52,8 +53,8 @@ async fn logging_handler(event: EventContext<MessageEvent>) {
 }
 
 /// Echoes the provided text back to the sender.
-async fn echo_handler(cmd: CommandArgs<EchoCommand>) -> Result<String> {
-    Ok(cmd.text.join(" ")) // Empty string results in no message sent
+async fn echo_handler(cmd: CommandArgs<EchoCommand>) -> Option<String> {
+    Some(cmd.text.join(" ")).filter(|s| !s.is_empty())
 }
 
 /// Displays group information or member details (if `--user` is provided).
@@ -100,14 +101,12 @@ async fn info_handler(
 async fn signin_handler(
     event: EventContext<MessageEvent>,
     storage: ServiceRef<StorageService>,
-) -> Result<String> {
-    use std::collections::HashMap;
-
+) -> Result<RichText> {
     let path = storage.data_dir().join("signin.json");
 
     // Load existing records (user_id → last-signin-date).
     let mut records: HashMap<String, String> = if path.exists() {
-        let text: String = tokio::fs::read_to_string(&path).await?;
+        let text = tokio::fs::read_to_string(&path).await?;
         serde_json::from_str(&text).unwrap_or_default()
     } else {
         HashMap::new()
@@ -120,18 +119,21 @@ async fn signin_handler(
         .ok()
         .and_then(|dt| dt.format(format).ok())
     else {
-        return Ok("获取当前日期失败，请稍后再试！".to_string());
+        return Ok(RichText::msg(
+            "获取当前日期失败，请稍后再试！",
+            event.get_user_id(),
+        ));
     };
 
     if records.get(&user_id).is_some_and(|d| d == &today) {
-        return Ok("你今天已经签到过了！".to_string());
+        return Ok(RichText::msg("你今天已经签到过了！", event.get_user_id()));
     }
 
     records.insert(user_id, today);
     let json = serde_json::to_string_pretty(&records)?;
     tokio::fs::write(&path, json).await?;
 
-    Ok("签到成功！".to_string())
+    Ok(RichText::msg("签到成功！", event.get_user_id()))
 }
 
 /// The echo bot plugin with command handlers for echo, info, and signin.

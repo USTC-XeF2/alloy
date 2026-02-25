@@ -49,7 +49,7 @@ pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };
 pub use event::{AsText, BoxedEvent, Event, EventContext, EventType};
-pub use message::{Message, MessageSegment, RichTextSegment};
+pub use message::{ErasedMessage, Message, MessageSegment, RichText, RichTextSegment};
 pub use transport::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, ConnectionKind, HTTP_LISTEN_REGISTRY,
     HTTP_START_CLIENT_REGISTRY, HttpClientConfig, HttpListenFn, HttpStartClientFn, ListenerHandle,

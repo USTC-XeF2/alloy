@@ -31,6 +31,7 @@ use crate::adapter::{Adapter, AdapterContext};
 use crate::bot::BoxedBot;
 use crate::error::AdapterResult;
 use crate::event::{BoxedEvent, EventType};
+use crate::message::RichText;
 use crate::transport::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportContext,
 };
@@ -161,7 +162,13 @@ impl ConnectionHandler for AdapterBridge {
         if event.event_type() == EventType::Meta {
             trace!(bot_id = %bot_id, event = %event.event_name(), "Received meta event");
         } else {
-            info!(bot_id = %bot_id, event = %event.event_name(), "Received event");
+            let text = event.get_rich_text();
+            if !text.is_empty() {
+                let text: RichText = text.into();
+                info!(bot_id = %bot_id, event = %event.event_name(), text = %text, "Received message event");
+            } else {
+                info!(bot_id = %bot_id, event = %event.event_name(), "Received event");
+            }
         }
 
         // Dispatch in a separate task so we don't block the transport receiver.

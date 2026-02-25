@@ -56,6 +56,8 @@ pub struct OneBotEvent {
     pub time: i64,
     /// Bot's QQ ID.
     pub self_id: i64,
+    /// Post type discriminator (e.g. "message", "notice", "request", "meta_event").
+    pub post_type: String,
     /// Raw JSON string (not serialized — attached after initial parse).
     #[serde(skip)]
     #[event(raw_json)]
@@ -80,9 +82,12 @@ pub struct MessageEvent {
     #[serde(flatten)]
     pub parent: OneBotEvent,
 
+    /// Message type discriminator.
+    pub message_type: String,
     /// Message ID.
     pub message_id: i32,
     /// Sender's user ID.
+    #[event(user_id)]
     pub user_id: i64,
     /// Message content (array of segments).
     #[event(message)]
@@ -91,14 +96,9 @@ pub struct MessageEvent {
     /// Raw message string (CQ codes or plain text).
     pub raw_message: String,
     /// Font (usually 0).
-    #[serde(default)]
     pub font: i32,
     /// Sender information.
-    #[serde(default)]
     pub sender: Sender,
-    /// Message type discriminator (kept for serde round-trip).
-    #[serde(default)]
-    pub message_type: String,
 }
 
 /// Private message event.
@@ -107,17 +107,12 @@ pub struct MessageEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(name = "message.private")]
 pub struct PrivateMessageEvent {
-    /// Embedded parent fields (message_id, user_id, message, …, time, self_id).
     #[event(parent)]
     #[serde(flatten)]
     pub parent: MessageEvent,
 
     /// Sub-type ("friend", "group", "discuss", "other").
-    #[serde(default)]
     pub sub_type: String,
-    /// Temp source group (for temp conversations).
-    #[serde(default)]
-    pub temp_source: Option<i64>,
 }
 
 /// Group message event.
@@ -126,22 +121,20 @@ pub struct PrivateMessageEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
 #[event(name = "message.group")]
 pub struct GroupMessageEvent {
-    /// Embedded parent fields.
     #[event(parent)]
     #[serde(flatten)]
     pub parent: MessageEvent,
 
+    /// Sub-type ("normal", "anonymous", "notice").
+    pub sub_type: String,
     /// Group ID.
     pub group_id: i64,
     /// Anonymous user info (if anonymous).
     #[serde(default)]
     pub anonymous: Option<Anonymous>,
-    /// Sub-type ("normal", "anonymous", "notice").
-    #[serde(default)]
-    pub sub_type: String,
 }
 
-/// Notice event base — contains only the parent `OneBotEvent` fields.
+/// Notice event base — matches any event with `post_type = "notice"`.
 ///
 /// Use `EventContext<NoticeEvent>` to match **any** notice event.
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
@@ -150,6 +143,8 @@ pub struct NoticeEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: OneBotEvent,
+
+    pub notice_type: String,
 }
 
 /// Uploaded file info.
@@ -168,7 +163,9 @@ pub struct GroupUploadEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
+
     pub group_id: i64,
+    #[event(user_id)]
     pub user_id: i64,
     pub file: UploadedFile,
 }
@@ -179,9 +176,11 @@ pub struct GroupAdminEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
-    pub group_id: i64,
-    pub user_id: i64,
+
     pub sub_type: String,
+    pub group_id: i64,
+    #[event(user_id)]
+    pub user_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
@@ -190,11 +189,12 @@ pub struct GroupDecreaseEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
-    pub group_id: i64,
-    pub user_id: i64,
-    #[serde(default)]
-    pub operator_id: Option<i64>,
+
     pub sub_type: String,
+    pub group_id: i64,
+    pub operator_id: i64,
+    #[event(user_id)]
+    pub user_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
@@ -203,11 +203,12 @@ pub struct GroupIncreaseEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
-    pub group_id: i64,
-    pub user_id: i64,
-    #[serde(default)]
-    pub operator_id: Option<i64>,
+
     pub sub_type: String,
+    pub group_id: i64,
+    pub operator_id: i64,
+    #[event(user_id)]
+    pub user_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
@@ -216,12 +217,13 @@ pub struct GroupBanEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
-    pub group_id: i64,
-    pub user_id: i64,
-    #[serde(default)]
-    pub operator_id: Option<i64>,
-    pub duration: i64,
+
     pub sub_type: String,
+    pub group_id: i64,
+    pub operator_id: i64,
+    #[event(user_id)]
+    pub user_id: i64,
+    pub duration: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
@@ -230,6 +232,8 @@ pub struct FriendAddEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
+
+    #[event(user_id)]
     pub user_id: i64,
 }
 
@@ -239,10 +243,11 @@ pub struct GroupRecallEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
+
     pub group_id: i64,
+    #[event(user_id)]
     pub user_id: i64,
-    #[serde(default)]
-    pub operator_id: Option<i64>,
+    pub operator_id: i64,
     pub message_id: i64,
 }
 
@@ -252,74 +257,10 @@ pub struct FriendRecallEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
+
+    #[event(user_id)]
     pub user_id: i64,
     pub message_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_card")]
-pub struct GroupCardEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-    pub group_id: i64,
-    pub user_id: i64,
-    #[serde(default)]
-    pub card_new: Option<String>,
-    #[serde(default)]
-    pub card_old: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OfflineFile {
-    pub name: String,
-    pub size: i64,
-    pub url: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.offline_file")]
-pub struct OfflineFileEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-    pub user_id: i64,
-    pub file: OfflineFile,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Device {
-    #[serde(default)]
-    pub app_id: Option<i64>,
-    #[serde(default)]
-    pub device_name: Option<String>,
-    #[serde(default)]
-    pub device_kind: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.client_status")]
-pub struct ClientStatusEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-    #[serde(default)]
-    pub online: bool,
-    #[serde(default)]
-    pub client: Option<Device>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.essence")]
-pub struct EssenceEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-    pub group_id: i64,
-    pub sender_id: i64,
-    pub operator_id: i64,
-    pub message_id: i64,
-    pub sub_type: String,
 }
 
 /// Notify event with common fields shared by poke / lucky_king / honor.
@@ -331,8 +272,9 @@ pub struct NotifyEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NoticeEvent,
-    #[serde(default)]
-    pub group_id: i64,
+
+    pub sub_type: String,
+    #[event(user_id)]
     pub user_id: i64,
 }
 
@@ -342,6 +284,9 @@ pub struct PokeEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NotifyEvent,
+
+    #[serde(default)]
+    pub group_id: Option<i64>,
     pub target_id: i64,
 }
 
@@ -351,6 +296,8 @@ pub struct LuckyKingEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NotifyEvent,
+
+    pub group_id: i64,
     pub target_id: i64,
 }
 
@@ -360,6 +307,8 @@ pub struct HonorEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: NotifyEvent,
+
+    pub group_id: i64,
     pub honor_type: String,
 }
 
@@ -370,6 +319,8 @@ pub struct RequestEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: OneBotEvent,
+
+    pub request_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
@@ -378,8 +329,9 @@ pub struct FriendRequestEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: RequestEvent,
+
+    #[event(user_id)]
     pub user_id: i64,
-    #[serde(default)]
     pub comment: String,
     pub flag: String,
 }
@@ -390,12 +342,13 @@ pub struct GroupRequestEvent {
     #[event(parent)]
     #[serde(flatten)]
     pub parent: RequestEvent,
+
+    pub sub_type: String,
     pub group_id: i64,
+    #[event(user_id)]
     pub user_id: i64,
-    #[serde(default)]
     pub comment: String,
     pub flag: String,
-    pub sub_type: String,
 }
 
 /// Meta event base — matches any event with `post_type = "meta_event"`.
@@ -482,10 +435,6 @@ pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
                 "friend_add" => attach_raw!(FriendAddEvent),
                 "group_recall" => attach_raw!(GroupRecallEvent),
                 "friend_recall" => attach_raw!(FriendRecallEvent),
-                "group_card" => attach_raw!(GroupCardEvent),
-                "offline_file" => attach_raw!(OfflineFileEvent),
-                "client_status" => attach_raw!(ClientStatusEvent),
-                "essence" => attach_raw!(EssenceEvent),
                 "notify" => {
                     let sub_type = v.get("sub_type").and_then(|v| v.as_str()).unwrap_or("");
                     match sub_type {

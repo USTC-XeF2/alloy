@@ -97,5 +97,5 @@ pub mod prelude {
     pub use alloy_core::Bot;
 
     // Core traits for custom implementations
-    pub use alloy_core::{Event, Message, RichTextSegment};
+    pub use alloy_core::{Event, Message, RichText, RichTextSegment};
 }

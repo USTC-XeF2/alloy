@@ -35,6 +35,7 @@
 //! | `raw_json` | Field that stores `Option<Arc<str>>` of raw JSON |
 //! | `bot_id` | Field that stores `Option<Arc<str>>` of bot ID |
 //! | `message` | Field of type `Message<Segment>`, used for `Event::get_message()` |
+//! | `user_id` | Field whose `to_string()` is returned by `Event::get_user_id()` |
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -64,6 +65,7 @@ struct FieldAttrs {
     is_parent: bool,
     is_raw_json: bool,
     is_message: bool,
+    is_user_id: bool,
 }
 
 // ============================================================================
@@ -160,6 +162,8 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 result.is_raw_json = true;
             } else if meta.path.is_ident("message") {
                 result.is_message = true;
+            } else if meta.path.is_ident("user_id") {
+                result.is_user_id = true;
             }
             Ok(())
         })?;
@@ -181,6 +185,7 @@ fn generate_struct_impl(
     let mut parent_field: Option<(Ident, Type)> = None;
     let mut raw_json_field: Option<Ident> = None;
     let mut message_field: Option<(Ident, Type)> = None;
+    let mut user_id_field: Option<Ident> = None;
 
     if let Fields::Named(named) = fields {
         for f in &named.named {
@@ -194,6 +199,9 @@ fn generate_struct_impl(
             }
             if fa.is_message {
                 message_field = Some((ident.clone(), f.ty.clone()));
+            }
+            if fa.is_user_id {
+                user_id_field = Some(ident.clone());
             }
         }
     }
@@ -209,7 +217,14 @@ fn generate_struct_impl(
                     "#[root_event] must not have a #[event(parent)] field",
                 ));
             }
-            generate_root_event(name, platform, segment_type, raw_json_field, message_field)
+            generate_root_event(
+                name,
+                platform,
+                segment_type,
+                raw_json_field,
+                message_field,
+                user_id_field,
+            )
         }
         EventKind::Child {
             name: event_name,
@@ -228,6 +243,7 @@ fn generate_struct_impl(
                 &pf_ident,
                 &pf_ty,
                 message_field,
+                user_id_field,
             ))
         }
     }
@@ -243,6 +259,7 @@ fn generate_root_event(
     segment_type_str: &str,
     raw_json_field: Option<Ident>,
     message_field: Option<(Ident, Type)>,
+    user_id_field: Option<Ident>,
 ) -> syn::Result<TokenStream> {
     let platform_lit = syn::LitStr::new(platform, name.span());
     let seg_ty: Type = syn::parse_str(segment_type_str)?;
@@ -275,6 +292,16 @@ fn generate_root_event(
         };
     }
 
+    let get_user_id_impl = if let Some(uid) = user_id_field {
+        quote! {
+            fn get_user_id(&self) -> Option<String> {
+                Some(self.#uid.to_string())
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     let downgrade_any_impl = quote! {
         fn downgrade_any(&self, type_id: ::std::any::TypeId) -> Option<Box<dyn ::std::any::Any>> {
             // Root event: only matches self
@@ -302,6 +329,7 @@ fn generate_root_event(
 
             #downgrade_any_impl
             #raw_json_impl
+            #get_user_id_impl
             #segment_type_impl
             #get_message_impl
         }
@@ -323,6 +351,7 @@ fn generate_child_event(
     parent_field_ident: &Ident,
     parent_ty: &Type,
     message_field: Option<(Ident, Type)>,
+    user_id_field: Option<Ident>,
 ) -> TokenStream {
     // ── event_type ──
     let event_type_impl = match event_type {
@@ -422,6 +451,21 @@ fn generate_child_event(
         }
     };
 
+    // ── get_user_id ──
+    let get_user_id_impl = if let Some(uid) = user_id_field {
+        quote! {
+            fn get_user_id(&self) -> Option<String> {
+                Some(self.#uid.to_string())
+            }
+        }
+    } else {
+        quote! {
+            fn get_user_id(&self) -> Option<String> {
+                <#parent_ty as ::alloy_core::Event>::get_user_id(&self.#parent_field_ident)
+            }
+        }
+    };
+
     // ── DowngradeAny ──
     let downgrade_any_impl = quote! {
         fn downgrade_any(&self, type_id: ::std::any::TypeId) -> Option<Box<dyn ::std::any::Any>> {
@@ -447,6 +491,7 @@ fn generate_child_event(
 
             #downgrade_any_impl
             #raw_json_impl
+            #get_user_id_impl
             #segment_type_impl
             #get_message_impl
         }

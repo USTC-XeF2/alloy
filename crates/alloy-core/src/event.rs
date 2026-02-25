@@ -168,6 +168,15 @@ pub trait Event: AsText + Any + Send + Sync {
         None
     }
 
+    /// Returns the user ID associated with this event, if applicable.
+    ///
+    /// For events with a field marked with `#[event(user_id)]`, the derive macro
+    /// automatically generates an implementation that returns `Some(user_id)`.
+    /// Otherwise returns `None`.
+    fn get_user_id(&self) -> Option<String> {
+        None
+    }
+
     /// Attempts to downgrade to any type identified by `TypeId`, returned as `Box<dyn Any>`.
     ///
     /// This follows the parent chain:
@@ -201,13 +210,7 @@ pub trait Event: AsText + Any + Send + Sync {
     /// For non-message events, returns an empty message by default.
     fn get_message(&self) -> &Message<Self::Segment>
     where
-        Self: Sized,
-    {
-        // This should be overridden by the macro for events with message fields.
-        // For events without message fields, this would need a static empty instance.
-        // The macro will generate proper implementations.
-        panic!("get_message() called on event without message field - macro should override this")
-    }
+        Self: Sized;
 }
 
 // ============================================================================

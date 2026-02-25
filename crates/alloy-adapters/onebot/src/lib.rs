@@ -64,10 +64,9 @@ pub use model::api::{
 
 // Re-export event types
 pub use model::event::{
-    ClientStatusEvent, Device, EssenceEvent, FriendAddEvent, FriendRecallEvent, FriendRequestEvent,
-    GroupAdminEvent, GroupBanEvent, GroupCardEvent, GroupDecreaseEvent, GroupIncreaseEvent,
-    GroupMessageEvent, GroupRecallEvent, GroupRequestEvent, GroupUploadEvent, HeartbeatEvent,
-    HonorEvent, LifecycleEvent, LuckyKingEvent, MessageEvent, MetaEvent, NoticeEvent, NotifyEvent,
-    OfflineFile, OfflineFileEvent, OneBotEvent, PokeEvent, PrivateMessageEvent, RequestEvent,
+    FriendAddEvent, FriendRecallEvent, FriendRequestEvent, GroupAdminEvent, GroupBanEvent,
+    GroupDecreaseEvent, GroupIncreaseEvent, GroupMessageEvent, GroupRecallEvent, GroupRequestEvent,
+    GroupUploadEvent, HeartbeatEvent, HonorEvent, LifecycleEvent, LuckyKingEvent, MessageEvent,
+    MetaEvent, NoticeEvent, NotifyEvent, OneBotEvent, PokeEvent, PrivateMessageEvent, RequestEvent,
     UploadedFile,
 };

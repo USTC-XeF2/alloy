@@ -26,7 +26,7 @@
 //! println!("Mentioned users: {:?}", msg.mentioned_users());
 //! ```
 
-use alloy_core::Message;
+use alloy_core::{Message, MessageSegment};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::segment::{Segment, unescape_cq_text, unescape_cq_value};
@@ -60,7 +60,7 @@ pub trait OneBotMessageExt {
     fn reply_to(&self) -> Option<&str>;
 }
 
-impl OneBotMessageExt for Message<Segment> {
+impl OneBotMessageExt for OneBotMessage {
     fn to_cq_string(&self) -> String {
         self.iter().map(Segment::to_cq_code).collect()
     }

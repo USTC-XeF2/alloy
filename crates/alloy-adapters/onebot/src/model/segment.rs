@@ -32,7 +32,7 @@ use alloy_core::{MessageSegment as MessageSegmentTrait, RichTextSegment};
 // Segment Enum - The main message segment type
 // ============================================================================
 
-/// A `OneBot` v11 message segment.
+/// A OneBot v11 message segment.
 ///
 /// This enum represents all possible segment types in the `OneBot` v11 protocol.
 /// Each variant contains the specific data for that segment type.
@@ -81,7 +81,46 @@ pub enum Segment {
     Json(JsonData),
 }
 
+impl std::fmt::Display for Segment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Segment::Text(data) => write!(f, "{}", data.text),
+            Segment::Face(data) => write!(f, "[表情:{}]", data.id),
+            Segment::Image(data) => write!(f, "[图片:{}]", data.file),
+            Segment::Record(data) => write!(f, "[语音:{}]", data.file),
+            Segment::Video(data) => write!(f, "[视频:{}]", data.file),
+            Segment::At(data) => {
+                if data.qq == "all" {
+                    write!(f, "@全体成员")
+                } else {
+                    write!(f, "@{}", data.qq)
+                }
+            }
+            Segment::Rps(_) => write!(f, "[猜拳]"),
+            Segment::Dice(_) => write!(f, "[骰子]"),
+            Segment::Shake(_) => write!(f, "[窗口抖动]"),
+            Segment::Poke(data) => write!(f, "[戳一戳:{}]", data.poke_type),
+            Segment::Anonymous(_) => write!(f, "[匿名]"),
+            Segment::Share(data) => write!(f, "[分享:{}]", data.title),
+            Segment::Contact(data) => write!(f, "[推荐{}:{}]", data.contact_type, data.id),
+            Segment::Location(data) => {
+                write!(f, "[位置:{},{}]", data.lat, data.lon)
+            }
+            Segment::Music(data) => write!(f, "[音乐:{}]", data.music_type),
+            Segment::Reply(data) => write!(f, "[回复:{}]", data.id),
+            Segment::Forward(data) => write!(f, "[合并转发:{}]", data.id),
+            Segment::Node(_) => write!(f, "[转发节点]"),
+            Segment::Xml(_) => write!(f, "[XML消息]"),
+            Segment::Json(_) => write!(f, "[JSON消息]"),
+        }
+    }
+}
+
 impl MessageSegmentTrait for Segment {
+    fn text(text: impl Into<String>) -> Self {
+        Segment::Text(TextData { text: text.into() })
+    }
+
     fn segment_type(&self) -> &str {
         match self {
             Segment::Text(_) => "text",
@@ -114,45 +153,20 @@ impl MessageSegmentTrait for Segment {
         }
     }
 
-    fn display(&self) -> String {
+    fn as_rich_text(&self) -> Option<RichTextSegment> {
         match self {
-            Segment::Text(data) => data.text.clone(),
-            Segment::Face(data) => format!("[表情:{}]", data.id),
-            Segment::Image(data) => format!("[图片:{}]", data.file),
-            Segment::Record(data) => format!("[语音:{}]", data.file),
-            Segment::Video(data) => format!("[视频:{}]", data.file),
-            Segment::At(data) => {
-                if data.qq == "all" {
-                    "@全体成员".to_string()
-                } else {
-                    format!("@{}", data.qq)
-                }
-            }
-            Segment::Rps(_) => "[猜拳]".to_string(),
-            Segment::Dice(_) => "[骰子]".to_string(),
-            Segment::Shake(_) => "[窗口抖动]".to_string(),
-            Segment::Poke(data) => format!("[戳一戳:{}]", data.poke_type),
-            Segment::Anonymous(_) => "[匿名]".to_string(),
-            Segment::Share(data) => format!("[分享:{}]", data.title),
-            Segment::Contact(data) => format!("[推荐{}:{}]", data.contact_type, data.id),
-            Segment::Location(data) => {
-                format!("[位置:{},{}]", data.lat, data.lon)
-            }
-            Segment::Music(data) => format!("[音乐:{}]", data.music_type),
-            Segment::Reply(data) => format!("[回复:{}]", data.id),
-            Segment::Forward(data) => format!("[合并转发:{}]", data.id),
-            Segment::Node(_) => "[转发节点]".to_string(),
-            Segment::Xml(_) => "[XML消息]".to_string(),
-            Segment::Json(_) => "[JSON消息]".to_string(),
+            Segment::Text(data) => Some(RichTextSegment::Text(data.text.clone())),
+            Segment::Image(data) => Some(RichTextSegment::Image(data.file.clone())),
+            Segment::At(data) => Some(RichTextSegment::At(data.qq.clone())),
+            _ => None,
         }
     }
 
-    fn as_rich_text(&self) -> RichTextSegment {
-        match self {
-            Segment::Text(data) => RichTextSegment::Text(data.text.clone()),
-            Segment::Image(data) => RichTextSegment::Image(data.file.clone()),
-            Segment::At(data) => RichTextSegment::At(data.qq.clone()),
-            _ => RichTextSegment::Text(self.display()),
+    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
+        match seg {
+            RichTextSegment::Text(s) => Some(Segment::text(s)),
+            RichTextSegment::Image(r) => Some(Segment::image(r)),
+            RichTextSegment::At(id) => Some(Segment::At(AtData { qq: id.clone() })),
         }
     }
 }
@@ -162,15 +176,6 @@ impl MessageSegmentTrait for Segment {
 // ============================================================================
 
 impl Segment {
-    // --------------------------------
-    // Text
-    // --------------------------------
-
-    /// Creates a text segment.
-    pub fn text(text: impl Into<String>) -> Self {
-        Segment::Text(TextData { text: text.into() })
-    }
-
     // --------------------------------
     // Face
     // --------------------------------
@@ -916,15 +921,6 @@ mod tests {
 
         assert_eq!(escape_cq_value("a,b,c"), "a&#44;b&#44;c");
         assert_eq!(unescape_cq_value("a&#44;b&#44;c"), "a,b,c");
-    }
-
-    #[test]
-    fn test_segment_display() {
-        assert_eq!(Segment::text("Hello").display(), "Hello");
-        assert_eq!(Segment::face(178).display(), "[表情:178]");
-        assert_eq!(Segment::at(10001000).display(), "@10001000");
-        assert_eq!(Segment::at_all().display(), "@全体成员");
-        assert_eq!(Segment::image("test.jpg").display(), "[图片:test.jpg]");
     }
 
     #[test]
