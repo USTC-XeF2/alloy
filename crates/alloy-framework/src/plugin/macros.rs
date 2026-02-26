@@ -1,4 +1,4 @@
-// ─── __plugin_metadata! ──────────────────────────────────────────────────────
+﻿// ─── __plugin_metadata! ──────────────────────────────────────────────────────
 //
 // Internal helper macro. Called exclusively by `define_plugin!`.
 
@@ -122,13 +122,22 @@ macro_rules! __plugin_metadata {
 /// use alloy::prelude::*;
 ///
 /// // Fields may appear in **any order** after `name:`.
+/// async fn my_on_load(ctx: PluginLoadContext) -> anyhow::Result<()> {
+///     let cfg = ctx.get_config::<MyCfg>()?;
+///     info!("my_plugin ready");
+///     Ok(())
+/// }
+/// async fn my_on_unload() {
+///     info!("unloaded");
+/// }
+///
 /// pub static MY_PLUGIN: PluginDescriptor = define_plugin! {
 ///     name: "my_plugin",
 ///     depends_on: [StorageService],
 ///     provides:   [MyService],
 ///     handlers:   [on_message().handler(log_handler)],
-///     on_load: async { info!("my_plugin ready"); },
-///     on_unload:  async { info!("unloaded"); },
+///     on_load:    my_on_load,
+///     on_unload:  my_on_unload,
 ///     metadata: {
 ///         version:     "2.0.0",
 ///         desc:        "Short.",
@@ -145,8 +154,8 @@ macro_rules! __plugin_metadata {
 /// | `handlers` | — | Tower handler list `[expr, …]` |
 /// | `provides` | — | `[ServiceType, …]` |
 /// | `depends_on` | — | `[ServiceType, …]` |
-/// | `on_load` | — | `async { … }` |
-/// | `on_unload` | — | `async { … }` |
+/// | `on_load` | — | `async fn(ctx: PluginLoadContext)` function path |
+/// | `on_unload` | — | `async fn()` function path |
 /// | `metadata` | — | `{ version, desc, full_desc, plugin_type }` |
 ///
 /// ## `metadata` block
@@ -192,7 +201,7 @@ macro_rules! define_plugin {
 
     // Consume provides
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [$($un:block)?] $doc:tt
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [$($un:expr)?] $doc:tt
         provides: [$($np:ty),* $(,)?] $($rest:tt)*
     ) => {
         $crate::define_plugin!(
@@ -203,7 +212,7 @@ macro_rules! define_plugin {
 
     // Consume depends_on
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [$($un:block)?] $doc:tt
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [$($un:expr)?] $doc:tt
         depends_on: [$($nd:ty),* $(,)?] $($rest:tt)*
     ) => {
         $crate::define_plugin!(
@@ -214,7 +223,7 @@ macro_rules! define_plugin {
 
     // Consume handlers
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [$($un:block)?] $doc:tt
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [$($un:expr)?] $doc:tt
         handlers: [$($nh:expr),* $(,)?] $($rest:tt)*
     ) => {
         $crate::define_plugin!(
@@ -223,31 +232,49 @@ macro_rules! define_plugin {
         )
     };
 
-    // Consume on_load
+    // Consume on_load: a function `async fn(ctx: PluginLoadContext)` — followed by more fields
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [] [$($un:block)?] $doc:tt
-        on_load: async $lo:block $($rest:tt)*
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [] [$($un:expr)?] $doc:tt
+        on_load: $lo:path , $($rest:tt)+
     ) => {
         $crate::define_plugin!(
             @acc [$n] [$($p),*] [$($d),*] [$($h),*] [$lo] [$($un)?] $doc
-            $($rest)*
+            $($rest)+
+        )
+    };
+    // Consume on_load: last field (trailing comma optional)
+    (
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [] [$($un:expr)?] [$($doc:expr)?]
+        on_load: $lo:path $(,)?
+    ) => {
+        $crate::define_plugin!(
+            @acc [$n] [$($p),*] [$($d),*] [$($h),*] [$lo] [$($un)?] [$($doc)?]
         )
     };
 
-    // ── consume `on_unload: async { ... }` (slot must be empty) ──────────────
+    // Consume on_unload: a function `async fn()` — followed by more fields
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [] $doc:tt
-        on_unload: async $un:block $($rest:tt)*
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [] $doc:tt
+        on_unload: $un:path , $($rest:tt)+
     ) => {
         $crate::define_plugin!(
             @acc [$n] [$($p),*] [$($d),*] [$($h),*] [$($lo)?] [$un] $doc
-            $($rest)*
+            $($rest)+
+        )
+    };
+    // Consume on_unload: last field (trailing comma optional)
+    (
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [] [$($doc:expr)?]
+        on_unload: $un:path $(,)?
+    ) => {
+        $crate::define_plugin!(
+            @acc [$n] [$($p),*] [$($d),*] [$($h),*] [$($lo)?] [$un] [$($doc)?]
         )
     };
 
     // Consume metadata block
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [$($un:block)?] [$($doc:expr)?]
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [$($un:expr)?] [$($doc:expr)?]
         metadata: { $($meta:tt)* } $(,)?
     ) => {
         $crate::define_plugin!(
@@ -258,7 +285,7 @@ macro_rules! define_plugin {
 
     // No metadata block
     (
-        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [$($un:block)?] [$($doc:expr)?]
+        @acc [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [$($un:expr)?] [$($doc:expr)?]
     ) => {
         $crate::define_plugin!(
             @terminal [$n] [$($p),*] [$($d),*] [$($h),*] [$($lo)?] [$($un)?]
@@ -268,7 +295,7 @@ macro_rules! define_plugin {
 
     // @terminal — emit the PluginDescriptor
     (
-        @terminal [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:block)?] [$($un:block)?]
+        @terminal [$n:literal] [$($p:ty),*] [$($d:ty),*] [$($h:expr),*] [$($lo:expr)?] [$($un:expr)?]
             [$($doc:expr)?] $($meta:tt)*
     ) => {{
         const __ALLOY_PROVIDES_IDS:   &[&str] = &[$(<$p>::ID),*];
@@ -290,10 +317,10 @@ macro_rules! define_plugin {
                     $crate::plugin::ServiceEntry {
                         id:      <$p>::ID,
                         type_id: ::std::any::TypeId::of::<$p>(),
-                        factory: ::std::sync::Arc::new(|__config: $crate::plugin::__JsonValue| {
+                        factory: ::std::sync::Arc::new(|ctx: ::std::sync::Arc<$crate::plugin::PluginLoadContext>| {
                             ::std::boxed::Box::pin(async move {
                                 ::std::sync::Arc::new(
-                                    <$p as $crate::plugin::PluginService>::init(&__config).await
+                                    <$p as $crate::plugin::PluginService>::init(ctx).await
                                 ) as ::std::sync::Arc<dyn ::std::any::Any + Send + Sync>
                             })
                         }),
@@ -301,18 +328,11 @@ macro_rules! define_plugin {
                 ),*],
                 {
                     #[allow(unused_mut)]
-                    let mut __f: ::std::option::Option<
-                        ::std::sync::Arc<
-                            dyn Fn($crate::plugin::__JsonValue) -> $crate::plugin::__BoxFuture<'static, ()>
-                                + Send + Sync,
-                        >,
-                    > = None;
+                    let mut __f: ::std::option::Option<$crate::plugin::OnLoadFn> = None;
                     $(
                         __f = Some(::std::sync::Arc::new(
-                            |__config_json: $crate::plugin::__JsonValue| {
-                                #[allow(unused_variables)]
-                                let config_json = __config_json;
-                                ::std::boxed::Box::pin(async move { $lo })
+                            |ctx: $crate::plugin::PluginLoadContext| {
+                                ::std::boxed::Box::pin($lo(ctx))
                             },
                         ));
                     )?
@@ -320,12 +340,10 @@ macro_rules! define_plugin {
                 },
                 {
                     #[allow(unused_mut)]
-                    let mut __f: ::std::option::Option<
-                        ::std::sync::Arc<dyn Fn() -> $crate::plugin::__BoxFuture<'static, ()> + Send + Sync>,
-                    > = None;
+                    let mut __f: ::std::option::Option<$crate::plugin::OnUnloadFn> = None;
                     $(
                         __f = Some(::std::sync::Arc::new(
-                            || ::std::boxed::Box::pin(async move { $un }),
+                            || ::std::boxed::Box::pin($un()),
                         ));
                     )?
                     __f

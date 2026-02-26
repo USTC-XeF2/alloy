@@ -257,8 +257,8 @@ impl AlloyRuntime {
             .collect::<Vec<_>>();
         future::join_all(futures).await;
 
-        // 2. Load plugins in dependency order (topological sort).
-        self.plugin_manager.start_all().await;
+        // 2. Load plugins.
+        self.plugin_manager.load_all().await;
 
         info!("Runtime started");
     }
@@ -280,8 +280,8 @@ impl AlloyRuntime {
 
         info!("Stopping Alloy runtime");
 
-        // 1. Unload plugins in reverse dependency order (dependents before providers).
-        self.plugin_manager.stop_all().await;
+        // 1. Unload plugins in reverse dependency order.
+        self.plugin_manager.unload_all().await;
 
         // 2. Shut down adapters in parallel.
         let futures = self

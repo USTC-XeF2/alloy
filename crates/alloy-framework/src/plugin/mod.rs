@@ -74,15 +74,16 @@
 //! # Inter-plugin services
 //!
 //! ```rust,ignore
+//! async fn my_on_load(_config: serde_json::Value) {
+//!     // Called after the plugin is loaded
+//!     info!("my_plugin ready");
+//! }
+//!
 //! pub static MY_PLUGIN: PluginDescriptor = define_plugin! {
 //!     name: "my_plugin",
 //!     depends_on: ["alloy.storage"],
 //!     handlers: [on_message().handler(handler)],
-//!     on_load: async {
-//!         // Services from `depends_on` are available here
-//!         let storage: Arc<StorageService> = services.get("alloy.storage").unwrap();
-//!         info!("data dir: {}", storage.data_dir().display());
-//!     },
+//!     on_load: my_on_load,
 //! };
 //! ```
 
@@ -99,15 +100,13 @@ pub mod builtin;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
 pub use config::PluginConfig;
-pub use core::{Plugin, PluginMetadata, PluginType, ServiceEntry};
+pub use core::{
+    OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType, ServiceEntry,
+};
 pub use descriptor::{ALLOY_PLUGIN_API_VERSION, PluginDescriptor};
 pub use registry::PluginService;
 pub use service_ref::ServiceRef;
 
 // ─── Macro-internal re-export (needed by define_plugin! at call sites) ───────
-#[doc(hidden)]
-pub use futures::future::BoxFuture as __BoxFuture;
-#[doc(hidden)]
-pub use serde_json::Value as __JsonValue;
 #[doc(hidden)]
 pub use tower::util::BoxCloneSyncService as __BoxCloneSyncService;

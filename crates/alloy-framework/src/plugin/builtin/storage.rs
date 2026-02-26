@@ -42,13 +42,14 @@
 //! ```
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::define_plugin;
-use crate::plugin::{PluginDescriptor, PluginService};
+use crate::plugin::{PluginDescriptor, PluginLoadContext, PluginService};
 
 pub const STORAGE_SERVICE_ID: &str = "storage";
 
@@ -122,10 +123,10 @@ impl PluginService for StorageService {
     const ID: &'static str = "storage";
     /// Constructs the service and creates the three conventional directories.
     ///
-    /// Reads `base_dir` from JSON; falls back to `"."` when absent.
+    /// Reads `base_dir` from config; falls back to `"."` when absent.
     /// Asynchronously creates the cache, data, and config subdirectories.
-    async fn init(config: &serde_json::Value) -> Self {
-        let cfg: StorageConfig = serde_json::from_value(config.clone()).unwrap_or_default();
+    async fn init(ctx: Arc<PluginLoadContext>) -> Self {
+        let cfg: StorageConfig = ctx.get_config().unwrap_or_default();
         let service = StorageService::new(&cfg.base_dir);
 
         // Create the three conventional subdirectories.

@@ -15,7 +15,10 @@
 //! #[async_trait::async_trait]
 //! impl PluginService for MyService {
 //!     const ID: &'static str = "my_service";
-//!     async fn init(config: &serde_json::Value) -> Self { MyService { /* … */ } }
+//!     async fn init(ctx: PluginLoadContext) -> Self {
+//!         let cfg = ctx.get_config::<MyServiceConfig>().unwrap_or_default();
+//!         MyService { /* … */ }
+//!     }
 //! }
 //!
 //! pub static MY_PLUGIN: PluginDescriptor = define_plugin! {
@@ -26,8 +29,11 @@
 //! ```
 
 use std::any::Any;
+use std::sync::Arc;
 
 use async_trait::async_trait;
+
+use super::PluginLoadContext;
 
 // ─── PluginService trait ──────────────────────────────────────────────────────
 
@@ -49,13 +55,13 @@ pub trait PluginService: Any + Send + Sync {
     /// [`PluginManager`]: crate::manager::PluginManager
     const ID: &'static str;
 
-    /// Construct this service from the plugin's raw config JSON section.
+    /// Construct this service from the plugin's load context.
     ///
     /// Called once at plugin load time.  This method may be async, allowing
     /// for I/O operations (e.g. creating directories, connecting to databases).
-    /// Use `serde_json::from_value` to deserialise a typed config struct;
-    /// fall back to `Default` if absent.
-    async fn init(config: &serde_json::Value) -> Self
+    /// Use `ctx.get_config::<T>()` to deserialise a typed config struct;
+    /// it returns `Result<T, serde_json::Error>`.
+    async fn init(ctx: Arc<PluginLoadContext>) -> Self
     where
         Self: Sized;
 }
