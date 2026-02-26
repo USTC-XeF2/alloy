@@ -28,63 +28,45 @@
 //! };
 //! ```
 //!
-//! # Configuration
+//! # Service pattern
 //!
-//! Plugin configuration is loaded transparently from `alloy.yaml` under
-//! `plugins.<name>`.  The runtime injects the raw JSON section into every
-//! [`AlloyContext`] before the handler chain runs.  Handlers opt in by
-//! declaring a [`PluginConfig<T>`] parameter:
+//! Plugins can provide shared services via the `provides` map:
 //!
 //! ```rust,ignore
-//! #[derive(serde::Deserialize, Default)]
-//! struct EchoConfig { prefix: String }
-//!
-//! async fn echo_handler(
-//!     event: EventContext<MessageEvent>,
-//!     cfg:   PluginConfig<EchoConfig>,  // auto-extracted; falls back to Default
-//! ) -> anyhow::Result<String> {
-//!     Ok(format!("{} {}", cfg.prefix, event.get_plain_text()))
+//! // 1. Define the service as a trait:
+//! pub trait MyService: Send + Sync + 'static {
+//!     fn do_thing(&self) -> String;
+//! }
+//! impl ServiceMeta for dyn MyService {
+//!     const ID: &'static str = "my.service";
 //! }
 //!
-//! pub static ECHO: PluginDescriptor = define_plugin! {
-//!     name: "echo",
-//!     handlers: [on_message().handler(echo_handler)],
-//! };
-//! ```
+//! // 2. Implement with a concrete type:
+//! pub struct MyServiceImpl;
+//! impl MyService for MyServiceImpl { fn do_thing(&self) -> String { "done".into() } }
+//! #[async_trait::async_trait]
+//! impl ServiceInit for MyServiceImpl {
+//!     async fn init(_ctx: Arc<PluginLoadContext>) -> Self { MyServiceImpl }
+//! }
 //!
-//! YAML:
-//! ```yaml
-//! plugins:
-//!   echo:
-//!     prefix: "[Bot]"
-//! ```
-//!
-//! In `on_load`, the plugin's raw JSON section is available as `config_json`:
-//!
-//! ```rust,ignore
+//! // 3. Register the service:
 //! pub static MY: PluginDescriptor = define_plugin! {
-//!     name: "my",
+//!     name: "my_plugin",
 //!     provides: {
-//!         "my.service": MyService,  // MyService::init(&config_json) called automatically
+//!         MyService: MyServiceImpl,
 //!     },
 //!     handlers: [],
 //! };
 //! ```
 //!
-//! # Inter-plugin services
+//! # Consuming services in handlers
 //!
 //! ```rust,ignore
-//! async fn my_on_load(_config: serde_json::Value) {
-//!     // Called after the plugin is loaded
-//!     info!("my_plugin ready");
+//! async fn my_handler(
+//!     svc: ServiceRef<dyn MyService>,
+//! ) -> anyhow::Result<String> {
+//!     Ok(svc.do_thing())
 //! }
-//!
-//! pub static MY_PLUGIN: PluginDescriptor = define_plugin! {
-//!     name: "my_plugin",
-//!     depends_on: ["alloy.storage"],
-//!     handlers: [on_message().handler(handler)],
-//!     on_load: my_on_load,
-//! };
 //! ```
 
 // ─── Submodules ──────────────────────────────────────────────────────────────
@@ -104,7 +86,7 @@ pub use core::{
     OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType, ServiceEntry,
 };
 pub use descriptor::{ALLOY_PLUGIN_API_VERSION, PluginDescriptor};
-pub use registry::PluginService;
+pub use registry::{ServiceInit, ServiceMeta};
 pub use service_ref::ServiceRef;
 
 // ─── Macro-internal re-export (needed by define_plugin! at call sites) ───────

@@ -12,7 +12,9 @@
 //!   never invoked.
 //! - Directly owns the **global service map** shared by all active plugins.
 //!   Services are registered into it on load and removed from it on unload.
-//!   A read-only snapshot is passed to each [`AlloyContext`] during dispatch.
+//!   During event dispatch each plugin receives a **restricted snapshot** of
+//!   only the services it declared (via `provides` or `depends_on`) as part
+//!   of its own [`PluginContext`](crate::context::PluginContext).
 //! - Implements [`Dispatcher`]: on each incoming event it invokes all **active**
 //!   plugins **sequentially** in registration order, sharing a single
 //!   [`BaseContext`](crate::context::BaseContext).  Any plugin may call
@@ -24,23 +26,22 @@
 //! use alloy_framework::manager::PluginManager;
 //!
 //! let manager = Arc::new(PluginManager::new(HashMap::new()));
-//! manager.register_plugin(MY_PLUGIN).await;
+//! manager.register_plugin(MY_PLUGIN);
 //! manager.load_all().await;
 //! // …later…
 //! manager.unload_all().await;
 //! ```
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use futures::future;
 use serde_json::{Map, Value};
-use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{error, info, span, warn};
 
-use crate::context::{AlloyContext, BaseContext, PluginContext, ServiceSnapshot};
+use crate::context::{AlloyContext, BaseContext, PluginContext};
 use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
 use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
 
@@ -209,8 +210,7 @@ struct PluginEntry {
 /// [`PluginManager`] directly owns a `HashMap` of all inter-plugin services.
 /// When a plugin is loaded its declared service factories are called and the
 /// results are inserted into this map.  When the plugin is unloaded those
-/// entries are removed.  During event dispatch a read-only [`ServiceSnapshot`]
-/// is created and shared with every [`AlloyContext`].
+/// entries are removed.
 ///
 /// # Plugin configuration
 ///
@@ -218,7 +218,7 @@ struct PluginEntry {
 /// from `alloy.yaml → plugins → <name>`.  The runtime converts the figment
 /// config before calling [`new`](Self::new).
 pub struct PluginManager {
-    plugins: AsyncRwLock<HashMap<String, PluginEntry>>,
+    plugins: RwLock<HashMap<String, PluginEntry>>,
     /// Per-plugin config sections, keyed by plugin name.
     plugin_configs: HashMap<String, Value>,
     /// Managed exclusively by [`load_all`] / [`unload_all`].
@@ -229,7 +229,7 @@ impl PluginManager {
     /// Creates a new manager with the given per-plugin config map.
     pub fn new(plugin_configs: HashMap<String, Value>) -> Self {
         Self {
-            plugins: AsyncRwLock::new(HashMap::new()),
+            plugins: RwLock::new(HashMap::new()),
             plugin_configs,
             services: RwLock::new(HashMap::new()),
         }
@@ -245,7 +245,7 @@ impl PluginManager {
     ///
     /// Logs a warning when the API version does not match, but continues —
     /// hard rejection can be enforced by callers if needed.
-    pub async fn register_plugin(&self, desc: PluginDescriptor) {
+    pub fn register_plugin(&self, desc: &PluginDescriptor) {
         if !desc.is_compatible() {
             warn!(
                 plugin = %desc.name,
@@ -264,7 +264,7 @@ impl PluginManager {
         }
         let instance = desc.instantiate();
         let name = instance.name().to_string();
-        self.plugins.write().await.insert(
+        self.plugins.write().unwrap().insert(
             name.clone(),
             PluginEntry {
                 plugin: Arc::new(instance),
@@ -278,25 +278,50 @@ impl PluginManager {
     ///
     /// If the runtime is already running, call [`unload_all`](Self::unload_all)
     /// first to invoke the plugin's `on_unload` hook.
-    pub async fn remove_plugin(&self, name: &str) {
-        if self.plugins.write().await.remove(name).is_some() {
+    ///
+    /// Returns `false` if the plugin is not found or if it is currently active.
+    pub fn remove_plugin(&self, name: &str) -> bool {
+        let mut plugins = self.plugins.write().unwrap();
+        if let Some(entry) = plugins.get(name)
+            && entry.state == PluginLoadState::Active
+        {
+            error!(
+                plugin = %name,
+                "Cannot remove plugin — it is currently active. Call unload_all first."
+            );
+            return false;
+        }
+        if plugins.remove(name).is_some() {
             info!(plugin = %name, "Plugin removed");
+            true
+        } else {
+            false
         }
     }
 
     /// Returns the number of registered plugins (in any state).
-    pub async fn plugin_count(&self) -> usize {
-        self.plugins.read().await.len()
+    pub fn plugin_count(&self) -> usize {
+        self.plugins.read().unwrap().len()
     }
 
     /// Returns a map of plugin name → load state for all registered plugins.
-    pub async fn plugin_states(&self) -> HashMap<String, PluginLoadState> {
+    pub fn plugin_states(&self) -> HashMap<String, PluginLoadState> {
         self.plugins
             .read()
-            .await
+            .unwrap()
             .iter()
             .map(|(name, entry)| (name.clone(), entry.state))
             .collect()
+    }
+
+    /// Sets a plugin's load state. Returns `true` if successful, `false` if not found.
+    fn set_plugin_state(&self, name: &str, state: PluginLoadState) -> bool {
+        if let Some(entry) = self.plugins.write().unwrap().get_mut(name) {
+            entry.state = state;
+            true
+        } else {
+            false
+        }
     }
 
     /// Loads a single plugin in dependency order.
@@ -306,45 +331,41 @@ impl PluginManager {
     /// returns `true` on success.
     pub async fn load_plugin(&self, name: &str) -> bool {
         // ── 1. Check state and deps ──────────────────────────────────────
-        let (plugin, config) = {
-            let plugins = self.plugins.read().await;
+        let plugin = {
+            let plugins = self.plugins.read().unwrap();
             let Some(entry) = plugins.get(name) else {
                 return false;
             };
             if entry.state == PluginLoadState::Active {
                 return true;
             }
-            let plugin = Arc::clone(&entry.plugin);
-            let config = self
-                .plugin_configs
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| Value::Object(Map::default()));
-
-            let missing: Option<String> = {
-                let svc_guard = self.services.read().unwrap();
-                plugin
-                    .depends_on()
-                    .iter()
-                    .find(|dep| !svc_guard.contains_key(**dep))
-                    .map(|&s| s.to_string())
-            };
-
-            if let Some(dep) = missing {
-                error!(
-                    plugin = %name,
-                    missing_dependency = %dep,
-                    "Plugin dependency not satisfied — plugin will not be loaded"
-                );
-                drop(plugins); // release read lock before acquiring write lock
-                if let Some(e) = self.plugins.write().await.get_mut(name) {
-                    e.state = PluginLoadState::Failed;
-                }
-                return false;
-            }
-
-            (plugin, config)
+            entry.plugin.clone()
         };
+
+        let config = self
+            .plugin_configs
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Map::default()));
+
+        let missing = {
+            let svc_guard = self.services.read().unwrap();
+            plugin
+                .depends_on()
+                .iter()
+                .find(|dep| !svc_guard.contains_key(**dep))
+                .map(|&s| s.to_string())
+        };
+
+        if let Some(dep) = missing {
+            error!(
+                plugin = %name,
+                missing_dependency = %dep,
+                "Plugin dependency not satisfied — plugin will not be loaded"
+            );
+            self.set_plugin_state(name, PluginLoadState::Failed);
+            return false;
+        }
 
         // ── 2. on_load ───────────────────────────────────────────────────
         let ctx = Arc::new(PluginLoadContext::new(config));
@@ -354,9 +375,7 @@ impl PluginManager {
                 error  = %e,
                 "Plugin on_load returned an error — plugin will not be loaded"
             );
-            if let Some(entry) = self.plugins.write().await.get_mut(name) {
-                entry.state = PluginLoadState::Failed;
-            }
+            self.set_plugin_state(name, PluginLoadState::Failed);
             return false;
         }
 
@@ -381,8 +400,7 @@ impl PluginManager {
         }
 
         // ── 4. Mark Active ───────────────────────────────────────────────
-        if let Some(entry) = self.plugins.write().await.get_mut(name) {
-            entry.state = PluginLoadState::Active;
+        if self.set_plugin_state(name, PluginLoadState::Active) {
             info!(plugin = %name, "Plugin loaded and active");
             return true;
         }
@@ -395,14 +413,14 @@ impl PluginManager {
     /// Returns `true` on success; `false` if the plugin is not found or not active.
     async fn unload_plugin_unchecked(&self, name: &str) -> bool {
         let plugin = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read().unwrap();
             let Some(entry) = plugins.get(name) else {
                 return false;
             };
             if entry.state != PluginLoadState::Active {
                 return false;
             }
-            Arc::clone(&entry.plugin)
+            entry.plugin.clone()
         };
 
         // Run on_unload hook.
@@ -417,8 +435,7 @@ impl PluginManager {
         }
 
         // Mark as Registered.
-        if let Some(entry) = self.plugins.write().await.get_mut(name) {
-            entry.state = PluginLoadState::Registered;
+        if self.set_plugin_state(name, PluginLoadState::Registered) {
             info!(plugin = %name, "Plugin unloaded");
             return true;
         }
@@ -433,20 +450,20 @@ impl PluginManager {
     pub async fn unload_plugin(&self, name: &str) -> bool {
         // Check if plugin exists and is active.
         let plugin = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read().unwrap();
             let Some(entry) = plugins.get(name) else {
                 return false;
             };
             if entry.state != PluginLoadState::Active {
                 return false;
             }
-            Arc::clone(&entry.plugin)
+            entry.plugin.clone()
         };
 
         let plugin_services = plugin.provides();
 
         // Check if any other active plugin depends on this plugin's services.
-        for (other_name, entry) in self.plugins.read().await.iter() {
+        for (other_name, entry) in self.plugins.read().unwrap().iter() {
             if other_name == name || entry.state != PluginLoadState::Active {
                 continue;
             }
@@ -471,10 +488,10 @@ impl PluginManager {
     /// Attempts to load all registered plugins in dependency order.
     pub async fn load_all(&self) {
         let layers = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read().unwrap();
             let plugins_map = plugins
                 .iter()
-                .map(|(name, entry)| (name.clone(), Arc::clone(&entry.plugin)))
+                .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
                 .collect::<HashMap<_, _>>();
             if let Some(l) = topological_layers(&plugins_map) {
                 l
@@ -492,11 +509,11 @@ impl PluginManager {
     /// Unloads all **active** plugins in reverse dependency order.
     pub async fn unload_all(&self) {
         let layers = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read().unwrap();
             let plugins_map = plugins
                 .iter()
                 .filter(|(_, entry)| entry.state == PluginLoadState::Active)
-                .map(|(name, entry)| (name.clone(), Arc::clone(&entry.plugin)))
+                .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
                 .collect::<HashMap<_, _>>();
             if let Some(l) = topological_layers(&plugins_map) {
                 l
@@ -518,29 +535,34 @@ impl PluginManager {
 
 #[async_trait]
 impl Dispatcher for PluginManager {
-    /// Dispatches `event` to all **active** plugins **sequentially**.
+    /// Dispatches `event` to all **active** plugins in **isolated async tasks**.
     ///
     /// A single [`BaseContext`] is created and shared (via `Arc`) across every
-    /// plugin.  Plugins are invoked in registration order; if any plugin calls
-    /// [`AlloyContext::stop_propagation`] the loop exits immediately and
-    /// subsequent plugins are skipped.
+    /// plugin.  Each plugin runs in its own isolated async task, allowing panics
+    /// in one plugin to be contained without affecting others.
+    ///
+    /// Plugins are executed sequentially in registration order. If any plugin calls
+    /// [`AlloyContext::stop_propagation`], the loop exits immediately and
+    /// subsequent plugins are skipped. Panics within a plugin are caught and logged,
+    /// but do not halt the dispatch process.
     async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) {
         let event_name = event.event_name();
 
-        // Build the service snapshot and shared base context.
-        let services = Arc::new(
+        // Snapshot the global service map once for this dispatch cycle.
+        // Each plugin will receive a filtered subset of this snapshot.
+        let all_services: HashMap<String, (TypeId, Arc<dyn Any + Send + Sync>)> = {
             self.services
                 .read()
                 .unwrap()
-                .values()
-                .map(|(type_id, arc)| (*type_id, Arc::clone(arc)))
-                .collect::<ServiceSnapshot>(),
-        );
-        let base = Arc::new(BaseContext::new(event, bot, services));
+                .iter()
+                .map(|(id, (tid, arc))| (id.clone(), (*tid, arc.clone())))
+                .collect()
+        };
+        let base = Arc::new(BaseContext::new(event, bot));
 
         // Snapshot active plugins — brief read lock.
         let active_plugins: Vec<(Arc<Plugin>, Arc<Value>)> = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read().unwrap();
             plugins
                 .iter()
                 .filter(|(_, e)| e.state == PluginLoadState::Active)
@@ -551,29 +573,59 @@ impl Dispatcher for PluginManager {
                             .cloned()
                             .unwrap_or_else(|| Value::Object(Map::default())),
                     );
-                    (Arc::clone(&e.plugin), cfg)
+                    (e.plugin.clone(), cfg)
                 })
                 .collect()
         };
 
-        // Dispatch sequentially; stop early if propagation is halted.
+        // Dispatch sequentially in isolated tasks; stop early if propagation is halted.
         for (plugin, config) in active_plugins {
             if !base.is_propagating() {
                 break;
             }
 
-            let plugin_name = plugin.name().to_string();
-            let span = span!(
-                tracing::Level::DEBUG,
-                "dispatch",
-                event_name = %event_name,
-                plugin = %plugin_name
-            );
-            let _enter = span.enter();
+            let declared: HashSet<&str> = plugin
+                .depends_on()
+                .iter()
+                .copied()
+                .chain(plugin.provides().iter().copied())
+                .collect();
+            let plugin_services = {
+                all_services
+                    .iter()
+                    .filter(|(id, _)| declared.contains(id.as_str()))
+                    .map(|(_, (type_id, arc))| (*type_id, arc.clone()))
+                    .collect()
+            };
+            let ctx = Arc::new(AlloyContext::new(
+                base.clone(),
+                PluginContext::new(config, plugin_services),
+            ));
 
-            let ctx = Arc::new(AlloyContext::new(base.clone(), PluginContext { config }));
+            let plugin_clone = plugin.clone();
 
-            plugin.dispatch_event(ctx).await;
+            // Spawn each plugin in an isolated async task to catch panics and
+            // provide independent execution context.
+            let task_handle = tokio::spawn(async move {
+                let span = span!(
+                    tracing::Level::DEBUG,
+                    "dispatch",
+                    event_name = %event_name,
+                    plugin = %plugin_clone.name()
+                );
+                let _enter = span.enter();
+
+                plugin_clone.dispatch_event(ctx).await;
+            });
+
+            // Wait for the task and handle any panics
+            if let Err(e) = task_handle.await {
+                error!(
+                    plugin = %plugin.name(),
+                    "Plugin task error: {}",
+                    e
+                );
+            }
         }
     }
 }

@@ -5,8 +5,8 @@
 //!
 //! - [`BaseContext`] — the **shared** base for one dispatch cycle.  A single
 //!   `Arc<BaseContext>` is created per incoming event and passed to every
-//!   plugin.  It holds the event, the bot, the service snapshot, the
-//!   propagation flag, and the cross-plugin state map.
+//!   plugin.  It holds the event, the bot, the propagation flag, and the
+//!   cross-plugin state map.
 //!
 //! - [`PluginContext`] — **plugin-specific** data attached per-plugin.
 //!   Currently holds only the plugin's config section, but serves as the
@@ -23,16 +23,16 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::plugin::PluginService;
-use alloy_core::{BoxedBot, BoxedEvent};
 use serde_json::Value;
+
+use alloy_core::{BoxedBot, BoxedEvent};
 
 /// A read-only snapshot of all registered inter-plugin services.
 ///
 /// Keyed by `TypeId` so handlers can retrieve services by their concrete type.
 /// Created by [`PluginManager`](crate::manager::PluginManager) once per
 /// dispatch and shared (via `Arc`) across every [`AlloyContext`] for that event.
-pub type ServiceSnapshot = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
+type ServiceSnapshot = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
 
 // =============================================================================
 // BaseContext — shared base, one per dispatch cycle
@@ -51,7 +51,6 @@ pub type ServiceSnapshot = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
 pub struct BaseContext {
     event: BoxedEvent,
     bot: BoxedBot,
-    services: Arc<ServiceSnapshot>,
     /// Cleared by any handler that calls [`AlloyContext::stop_propagation`].
     is_propagating: AtomicBool,
     /// Type-keyed state shared across all plugins for this event.
@@ -60,71 +59,22 @@ pub struct BaseContext {
 
 impl BaseContext {
     /// Creates a new shared event context.
-    pub fn new(event: BoxedEvent, bot: BoxedBot, services: Arc<ServiceSnapshot>) -> Self {
+    pub(crate) fn new(event: BoxedEvent, bot: BoxedBot) -> Self {
         Self {
             event,
             bot,
-            services,
             is_propagating: AtomicBool::new(true),
             state: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Returns a reference to the underlying boxed event.
-    pub fn event(&self) -> &BoxedEvent {
-        &self.event
-    }
-
-    /// Returns a reference to the bot.
-    pub fn bot(&self) -> &BoxedBot {
-        &self.bot
-    }
-
-    /// Returns a clone of the bot `Arc`.
-    pub fn bot_arc(&self) -> BoxedBot {
-        self.bot.clone()
-    }
-
     /// Returns `true` if the event is still propagating.
-    pub fn is_propagating(&self) -> bool {
+    pub(crate) fn is_propagating(&self) -> bool {
         self.is_propagating.load(Ordering::SeqCst)
     }
 
     pub(crate) fn stop_propagation(&self) {
         self.is_propagating.store(false, Ordering::SeqCst);
-    }
-
-    pub(crate) fn set_state<T: Send + Sync + 'static>(&self, value: T) {
-        self.state
-            .lock()
-            .unwrap()
-            .insert(TypeId::of::<T>(), Box::new(value));
-    }
-
-    pub(crate) fn get_state<T: Clone + 'static>(&self) -> Option<T> {
-        self.state
-            .lock()
-            .unwrap()
-            .get(&TypeId::of::<T>())
-            .and_then(|v| v.downcast_ref::<T>())
-            .cloned()
-    }
-
-    pub(crate) fn has_state<T: 'static>(&self) -> bool {
-        self.state.lock().unwrap().contains_key(&TypeId::of::<T>())
-    }
-
-    pub(crate) fn take_state<T: 'static>(&self) -> Option<T> {
-        self.state
-            .lock()
-            .unwrap()
-            .remove(&TypeId::of::<T>())
-            .and_then(|v| v.downcast::<T>().ok())
-            .map(|v| *v)
-    }
-
-    pub(crate) fn get_service_raw(&self, type_id: TypeId) -> Option<Arc<dyn Any + Send + Sync>> {
-        self.services.get(&type_id).map(Arc::clone)
     }
 }
 
@@ -149,11 +99,23 @@ impl std::fmt::Debug for BaseContext {
 /// This is intentionally a plain struct rather than a field on [`AlloyContext`]
 /// so that future per-plugin fields (e.g. per-plugin rate-limit state,
 /// per-plugin metadata) have a clear home without polluting the shared base.
+///
+/// `services` is intentionally restricted to the services declared by this
+/// plugin in its [`define_plugin!`] descriptor (`provides` + `depends_on`).
+/// This prevents a plugin from reaching services it never declared a need for.
 #[derive(Debug)]
 pub struct PluginContext {
     /// The plugin's config section from `alloy.yaml` (or an empty object).
-    pub config: Arc<Value>,
-    // Future per-plugin fields go here.
+    config: Arc<Value>,
+    /// Services accessible to this plugin — only those it declared.
+    services: ServiceSnapshot,
+}
+
+impl PluginContext {
+    /// Creates a new `PluginContext` with the given config and services.
+    pub(crate) fn new(config: Arc<Value>, services: ServiceSnapshot) -> Self {
+        Self { config, services }
+    }
 }
 
 // =============================================================================
@@ -188,46 +150,43 @@ pub struct AlloyContext {
 
 impl AlloyContext {
     /// Creates a new `AlloyContext` from a shared base and plugin-specific data.
-    pub fn new(base: Arc<BaseContext>, plugin: PluginContext) -> Self {
+    pub(crate) fn new(base: Arc<BaseContext>, plugin: PluginContext) -> Self {
         Self { base, plugin }
     }
 
     // ─── Shared base delegation ───────────────────────────────────────────────
 
-    /// Returns the shared [`BaseContext`].
-    pub fn base(&self) -> &Arc<BaseContext> {
-        &self.base
-    }
-
     /// Returns a reference to the underlying boxed event.
     pub fn event(&self) -> &BoxedEvent {
-        self.base.event()
+        &self.base.event
     }
 
     /// Returns a reference to the bot.
     pub fn bot(&self) -> &BoxedBot {
-        self.base.bot()
+        &self.base.bot
     }
 
     /// Returns a clone of the bot `Arc`.
     pub fn bot_arc(&self) -> BoxedBot {
-        self.base.bot_arc()
+        self.base.bot.clone()
     }
 
-    /// Looks up a service by its concrete type.
+    /// Looks up a service by its trait-object type.
     ///
-    /// Returns `None` if no service of the given type is registered.
-    /// For ergonomic access, prefer [`ServiceRef<T>`](crate::plugin::ServiceRef)
-    /// as a handler parameter.
-    pub fn get_service<T: PluginService>(&self) -> Option<Arc<T>> {
-        self.base
-            .get_service_raw(TypeId::of::<T>())
-            .and_then(|arc| arc.downcast::<T>().ok())
+    /// Returns `None` if the service of type `T` was not declared by this
+    /// plugin (via `provides` or `depends_on`) or if its provider plugin
+    /// failed to load.  For ergonomic handler injection prefer
+    /// [`ServiceRef<dyn YourTrait>`](crate::plugin::ServiceRef).
+    pub fn get_service<T: ?Sized + 'static>(&self) -> Option<Arc<T>> {
+        self.plugin
+            .services
+            .get(&TypeId::of::<T>())
+            .and_then(|arc| arc.downcast_ref::<Arc<T>>().map(Arc::clone))
     }
 
     /// Stops propagation of this event to subsequent plugins.
     ///
-    /// Writes through to the shared [`EventContext`]; the dispatch loop checks
+    /// Writes through to the shared base context; the dispatch loop checks
     /// `is_propagating()` before handing the event to each next plugin.
     pub fn stop_propagation(&self) {
         self.base.stop_propagation();
@@ -242,22 +201,42 @@ impl AlloyContext {
     ///
     /// Only one value per type can be stored; subsequent calls overwrite.
     pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
-        self.base.set_state(value);
+        self.base
+            .state
+            .lock()
+            .unwrap()
+            .insert(TypeId::of::<T>(), Box::new(value));
     }
 
     /// Retrieves a cloned value from the shared state map.
     pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
-        self.base.get_state()
+        self.base
+            .state
+            .lock()
+            .unwrap()
+            .get(&TypeId::of::<T>())
+            .and_then(|v| v.downcast_ref::<T>())
+            .cloned()
     }
 
     /// Returns `true` if a value of type `T` exists in state.
     pub fn has_state<T: 'static>(&self) -> bool {
-        self.base.has_state::<T>()
+        self.base
+            .state
+            .lock()
+            .unwrap()
+            .contains_key(&TypeId::of::<T>())
     }
 
     /// Removes and returns a value from state.
     pub fn take_state<T: 'static>(&self) -> Option<T> {
-        self.base.take_state()
+        self.base
+            .state
+            .lock()
+            .unwrap()
+            .remove(&TypeId::of::<T>())
+            .and_then(|v| v.downcast::<T>().ok())
+            .map(|v| *v)
     }
 
     // ─── Plugin-specific ──────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ license = { workspace = true }
 default = []
 
 command = ["dep:clap"]
-builtin-plugins = []
+builtin-plugins = ["tokio/fs"]
 
 [dependencies]
 alloy-core = { workspace = true }
@@ -20,7 +20,7 @@ futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "fs"] }
+tokio = { workspace = true, features = ["rt"] }
 tower = { version = "0.5.3", features = ["filter", "util"] }
 tower-layer = "0.3.3"
 tracing = { workspace = true }

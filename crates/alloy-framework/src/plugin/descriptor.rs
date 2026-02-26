@@ -21,7 +21,7 @@ pub const ALLOY_PLUGIN_API_VERSION: u32 = 0x0001_0000;
 ///
 /// `PluginDescriptor` is `#[repr(C)]`.  Fields **must not be reordered**.
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct PluginDescriptor {
     /// Plugin API version this descriptor was compiled against.
     pub api_version: u32,

@@ -80,7 +80,9 @@ pub mod prelude {
 
     // Plugin system - primary unit of event handling
     pub use alloy_framework::define_plugin;
-    pub use alloy_framework::plugin::{PluginConfig, PluginDescriptor, PluginService, ServiceRef};
+    pub use alloy_framework::plugin::{
+        PluginConfig, PluginDescriptor, ServiceInit, ServiceMeta, ServiceRef,
+    };
 
     // Event system - for building handlers
     pub use alloy_core::{AsText, EventContext};

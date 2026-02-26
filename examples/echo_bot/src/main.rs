@@ -100,7 +100,7 @@ async fn info_handler(
 /// Records one sign-in per user per calendar day (UTC) to `signin.json`.
 async fn signin_handler(
     event: EventContext<MessageEvent>,
-    storage: ServiceRef<StorageService>,
+    storage: ServiceRef<dyn StorageService>,
 ) -> Result<RichText> {
     let path = storage.data_dir().join("signin.json");
 
@@ -155,8 +155,8 @@ async fn main() -> Result<()> {
     runtime.register_adapter::<OneBotAdapter>()?;
 
     // Load plugins
-    runtime.register_plugin(STORAGE_PLUGIN).await;
-    runtime.register_plugin(ECHO_PLUGIN).await;
+    runtime.register_plugin(&STORAGE_PLUGIN);
+    runtime.register_plugin(&ECHO_PLUGIN);
 
     runtime.run().await;
     Ok(())

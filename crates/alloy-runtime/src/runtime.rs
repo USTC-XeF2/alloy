@@ -200,23 +200,13 @@ impl AlloyRuntime {
     }
 
     /// Registers a plugin from a [`PluginDescriptor`].
-    ///
-    /// Delegates to the underlying [`PluginManager`].
-    ///
-    /// Because [`PluginDescriptor`] is `Copy`, it can be stored in a `static`
-    /// and imported from any module or crate:
-    ///
-    /// ```rust,ignore
-    /// use my_plugin::MY_PLUGIN;
-    /// runtime.register_plugin(MY_PLUGIN).await;
-    /// ```
-    pub async fn register_plugin(&self, desc: PluginDescriptor) {
-        self.plugin_manager.register_plugin(desc).await;
+    pub fn register_plugin(&self, desc: &PluginDescriptor) {
+        self.plugin_manager.register_plugin(desc);
     }
 
     /// Returns the number of registered plugins.
-    pub async fn plugin_count(&self) -> usize {
-        self.plugin_manager.plugin_count().await
+    pub fn plugin_count(&self) -> usize {
+        self.plugin_manager.plugin_count()
     }
 
     /// Returns whether the runtime is currently running.
