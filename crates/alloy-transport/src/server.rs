@@ -24,7 +24,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, LazyLock, Mutex, RwLock, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 
 use axum::{
     Router,
@@ -32,6 +32,7 @@ use axum::{
     http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
 };
+use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -125,7 +126,7 @@ struct ServerEntry {
 
 impl Drop for ServerEntry {
     fn drop(&mut self) {
-        if let Some(tx) = self.shutdown_tx.lock().unwrap().take() {
+        if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }
     }
@@ -147,7 +148,7 @@ static SERVER_REGISTRY: LazyLock<Mutex<HashMap<String, Weak<ServerEntry>>>> =
 async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
     // ── Fast path: server already exists ──────────────────────────────────────
     {
-        let registry = SERVER_REGISTRY.lock().unwrap();
+        let registry = SERVER_REGISTRY.lock();
         if let Some(weak) = registry.get(addr)
             && let Some(entry) = weak.upgrade()
         {
@@ -172,7 +173,7 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
 
     // Store a weak reference so the registry does not prevent cleanup.
     {
-        let mut registry = SERVER_REGISTRY.lock().unwrap();
+        let mut registry = SERVER_REGISTRY.lock();
         registry.insert(addr.to_string(), Arc::downgrade(&entry));
     }
 
@@ -212,7 +213,6 @@ async fn register_http_route(
         .state
         .http_routes
         .write()
-        .unwrap()
         .insert(path.clone(), handler);
     info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
 
@@ -222,7 +222,7 @@ async fn register_http_route(
     // Spawn cleanup: wait for ListenerHandle drop, then remove the route.
     tokio::spawn(async move {
         let _ = rx.await;
-        entry.state.http_routes.write().unwrap().remove(&path);
+        entry.state.http_routes.write().remove(&path);
         info!(path = %path, "Unregistered HTTP route");
         // `entry` Arc is dropped here; if last reference → server shuts down.
     });
@@ -238,12 +238,7 @@ async fn register_ws_route(
     path: String,
     handler: Arc<WsBotHandler>,
 ) -> TransportResult<ListenerHandle> {
-    entry
-        .state
-        .ws_routes
-        .write()
-        .unwrap()
-        .insert(path.clone(), handler);
+    entry.state.ws_routes.write().insert(path.clone(), handler);
     info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
 
     let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
@@ -251,7 +246,7 @@ async fn register_ws_route(
 
     tokio::spawn(async move {
         let _ = rx.await;
-        entry.state.ws_routes.write().unwrap().remove(&path);
+        entry.state.ws_routes.write().remove(&path);
         info!(path = %path, "Unregistered WebSocket route");
     });
 
@@ -305,7 +300,7 @@ async fn http_dispatch(
     body: Bytes,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let handler = state.http_routes.read().unwrap().get(&path).cloned();
+    let handler = state.http_routes.read().get(&path).cloned();
 
     match handler {
         Some(h) => h.handle(addr, headers, body).await,
@@ -333,7 +328,7 @@ async fn ws_dispatch(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let handler = state.ws_routes.read().unwrap().get(&path).cloned();
+    let handler = state.ws_routes.read().get(&path).cloned();
 
     match handler {
         Some(h) => {

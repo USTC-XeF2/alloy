@@ -34,10 +34,11 @@
 
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::future;
+use parking_lot::RwLock;
 use serde_json::{Map, Value};
 use tracing::{error, info, span, warn};
 
@@ -267,7 +268,7 @@ impl PluginManager {
         }
         let instance = desc.instantiate();
         let name = instance.name().to_string();
-        self.plugins.write().unwrap().insert(
+        self.plugins.write().insert(
             name.clone(),
             PluginEntry {
                 plugin: Arc::new(instance),
@@ -284,7 +285,7 @@ impl PluginManager {
     ///
     /// Returns `false` if the plugin is not found or if it is currently active.
     pub fn remove_plugin(&self, name: &str) -> bool {
-        let mut plugins = self.plugins.write().unwrap();
+        let mut plugins = self.plugins.write();
         if let Some(entry) = plugins.get(name)
             && entry.state == PluginLoadState::Active
         {
@@ -304,14 +305,13 @@ impl PluginManager {
 
     /// Returns the number of registered plugins (in any state).
     pub fn plugin_count(&self) -> usize {
-        self.plugins.read().unwrap().len()
+        self.plugins.read().len()
     }
 
     /// Returns a map of plugin name → load state for all registered plugins.
     pub fn plugin_states(&self) -> HashMap<String, PluginLoadState> {
         self.plugins
             .read()
-            .unwrap()
             .iter()
             .map(|(name, entry)| (name.clone(), entry.state))
             .collect()
@@ -319,7 +319,7 @@ impl PluginManager {
 
     /// Sets a plugin's load state. Returns `true` if successful, `false` if not found.
     fn set_plugin_state(&self, name: &str, state: PluginLoadState) -> bool {
-        if let Some(entry) = self.plugins.write().unwrap().get_mut(name) {
+        if let Some(entry) = self.plugins.write().get_mut(name) {
             entry.state = state;
             true
         } else {
@@ -343,7 +343,7 @@ impl PluginManager {
     pub async fn load_plugin(&self, name: &str) -> bool {
         // ── 1. Check state and deps ──────────────────────────────────────
         let plugin = {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self.plugins.read();
             let Some(entry) = plugins.get(name) else {
                 return false;
             };
@@ -354,7 +354,7 @@ impl PluginManager {
         };
 
         let missing = {
-            let svc_guard = self.services.read().unwrap();
+            let svc_guard = self.services.read();
             plugin
                 .depends_on()
                 .iter()
@@ -399,7 +399,7 @@ impl PluginManager {
         .await;
 
         {
-            let mut svc_map = self.services.write().unwrap();
+            let mut svc_map = self.services.write();
             for (id, service) in all_services {
                 svc_map.insert(id, service);
             }
@@ -419,7 +419,7 @@ impl PluginManager {
     /// Returns `true` on success; `false` if the plugin is not found or not active.
     async fn unload_plugin_unchecked(&self, name: &str) -> bool {
         let plugin = {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self.plugins.read();
             let Some(entry) = plugins.get(name) else {
                 return false;
             };
@@ -434,7 +434,7 @@ impl PluginManager {
 
         // Remove services.
         {
-            let mut svc_map = self.services.write().unwrap();
+            let mut svc_map = self.services.write();
             for id in plugin.provides() {
                 svc_map.remove(id);
             }
@@ -456,7 +456,7 @@ impl PluginManager {
     pub async fn unload_plugin(&self, name: &str) -> bool {
         // Check if plugin exists and is active.
         let plugin = {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self.plugins.read();
             let Some(entry) = plugins.get(name) else {
                 return false;
             };
@@ -469,7 +469,7 @@ impl PluginManager {
         let plugin_services = plugin.provides();
 
         // Check if any other active plugin depends on this plugin's services.
-        for (other_name, entry) in self.plugins.read().unwrap().iter() {
+        for (other_name, entry) in self.plugins.read().iter() {
             if other_name == name || entry.state != PluginLoadState::Active {
                 continue;
             }
@@ -494,7 +494,7 @@ impl PluginManager {
     /// Attempts to load all registered plugins in dependency order.
     pub async fn load_all(&self) {
         let layers = {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self.plugins.read();
             let plugins_map = plugins
                 .iter()
                 .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
@@ -515,7 +515,7 @@ impl PluginManager {
     /// Unloads all **active** plugins in reverse dependency order.
     pub async fn unload_all(&self) {
         let layers = {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self.plugins.read();
             let plugins_map = plugins
                 .iter()
                 .filter(|(_, entry)| entry.state == PluginLoadState::Active)
@@ -559,7 +559,6 @@ impl Dispatcher for PluginManager {
         let all_services: HashMap<String, (TypeId, Arc<dyn Any + Send + Sync>)> = {
             self.services
                 .read()
-                .unwrap()
                 .iter()
                 .map(|(id, (tid, arc))| (id.clone(), (*tid, arc.clone())))
                 .collect()
@@ -568,7 +567,7 @@ impl Dispatcher for PluginManager {
 
         // Snapshot active plugins — brief read lock.
         let active_plugins: Vec<(Arc<Plugin>, Arc<Value>)> = {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self.plugins.read();
             plugins
                 .iter()
                 .filter(|(_, e)| e.state == PluginLoadState::Active)

@@ -10,6 +10,7 @@ license = { workspace = true }
 alloy-core = { workspace = true }
 alloy-macros = { workspace = true }
 async-trait = { workspace = true }
+parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }

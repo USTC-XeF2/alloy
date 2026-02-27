@@ -16,6 +16,7 @@ command = ["dep:clap"]
 alloy-core = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

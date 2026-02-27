@@ -23,10 +23,11 @@
 //! ```
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
 use futures::future;
+use parking_lot::Mutex;
 use tokio::signal;
 use tracing::{error, info, warn};
 
@@ -191,10 +192,7 @@ impl AlloyRuntime {
             self.transport_context,
         ));
 
-        self.bridges
-            .lock()
-            .unwrap()
-            .insert(adapter_name.to_string(), bridge);
+        self.bridges.lock().insert(adapter_name.to_string(), bridge);
         info!(adapter = adapter_name, "Registered adapter");
         Ok(())
     }
@@ -231,7 +229,6 @@ impl AlloyRuntime {
         let futures = self
             .bridges
             .lock()
-            .unwrap()
             .iter()
             .map(|(name, bridge)| {
                 let name = name.clone();
@@ -277,7 +274,6 @@ impl AlloyRuntime {
         let futures = self
             .bridges
             .lock()
-            .unwrap()
             .iter()
             .map(|(name, bridge)| {
                 let name = name.clone();

@@ -21,9 +21,10 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use parking_lot::{Mutex, RwLock};
 use tracing::{debug, info, trace, warn};
 
 use crate::adapter::{Adapter, AdapterContext};
@@ -117,12 +118,12 @@ impl AdapterBridge {
 
     /// Returns the IDs of all active bots.
     pub fn bot_ids(&self) -> Vec<String> {
-        self.bots.read().unwrap().keys().cloned().collect()
+        self.bots.read().keys().cloned().collect()
     }
 
     /// Returns the count of active bots.
     pub fn bot_count(&self) -> usize {
-        self.bots.read().unwrap().len()
+        self.bots.read().len()
     }
 }
 
@@ -137,7 +138,7 @@ impl ConnectionHandler for AdapterBridge {
     }
 
     fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) {
-        let mut bots = self.bots.write().unwrap();
+        let mut bots = self.bots.write();
         if bots.contains_key(bot_id) {
             warn!(bot_id = %bot_id, "Bot already exists, not registering");
             return;
@@ -149,7 +150,7 @@ impl ConnectionHandler for AdapterBridge {
     }
 
     async fn on_message(&self, bot_id: &str, data: &[u8]) {
-        let Some(bot) = self.bots.read().unwrap().get(bot_id).cloned() else {
+        let Some(bot) = self.bots.read().get(bot_id).cloned() else {
             return;
         };
 
@@ -178,7 +179,7 @@ impl ConnectionHandler for AdapterBridge {
     }
 
     async fn on_disconnect(&self, bot_id: &str) {
-        let bot = self.bots.write().unwrap().remove(bot_id);
+        let bot = self.bots.write().remove(bot_id);
         if let Some(bot) = bot {
             bot.on_disconnect().await;
             info!(bot_id = %bot_id, "Connection closed");
@@ -203,19 +204,18 @@ impl AdapterContext for AdapterContextWrapper {
     }
 
     fn add_listener(&self, handle: ListenerHandle) {
-        self.bridge.listeners.lock().unwrap().push(handle);
+        self.bridge.listeners.lock().push(handle);
     }
 
     fn add_connection(&self, handle: ConnectionHandle) {
         self.bridge
             .connections
             .lock()
-            .unwrap()
             .insert(handle.id.clone(), handle);
     }
 
     fn get_bot(&self, id: &str) -> Option<BoxedBot> {
-        self.bridge.bots.read().unwrap().get(id).cloned()
+        self.bridge.bots.read().get(id).cloned()
     }
 
     fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler> {

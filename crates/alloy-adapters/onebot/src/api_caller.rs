@@ -14,11 +14,12 @@
 //! completely unaware of which transport is in use.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
@@ -142,7 +143,7 @@ impl ApiCaller for WsApiCaller {
         // Register pending response channel before sending so we never miss a
         // response that arrives before we start awaiting.
         let (tx, rx) = oneshot::channel();
-        self.pending_calls.lock().unwrap().insert(echo, tx);
+        self.pending_calls.lock().insert(echo, tx);
 
         // Serialize and send the request.
         let request = json!({
@@ -156,7 +157,7 @@ impl ApiCaller for WsApiCaller {
         let request_bytes = serde_json::to_vec(&request)?;
         if let Err(e) = self.message_tx.send(request_bytes).await {
             // Remove the pending entry so it doesn't dangle.
-            self.pending_calls.lock().unwrap().remove(&echo);
+            self.pending_calls.lock().remove(&echo);
             return Err(TransportError::SendFailed(e.to_string()).into());
         }
 
@@ -169,7 +170,7 @@ impl ApiCaller for WsApiCaller {
             }
             Err(_) => {
                 // Timed out — remove the pending entry.
-                self.pending_calls.lock().unwrap().remove(&echo);
+                self.pending_calls.lock().remove(&echo);
                 Err(ApiError::Timeout)
             }
         }
@@ -179,7 +180,7 @@ impl ApiCaller for WsApiCaller {
         let Some(echo) = data.get("echo").and_then(Value::as_u64) else {
             return false;
         };
-        let mut pending = self.pending_calls.lock().unwrap();
+        let mut pending = self.pending_calls.lock();
         if let Some(tx) = pending.remove(&echo) {
             let _ = tx.send(data.clone());
             true
@@ -191,7 +192,7 @@ impl ApiCaller for WsApiCaller {
     }
 
     fn on_disconnect(&self) {
-        let mut pending = self.pending_calls.lock().unwrap();
+        let mut pending = self.pending_calls.lock();
         let count = pending.len();
         if count > 0 {
             debug!(

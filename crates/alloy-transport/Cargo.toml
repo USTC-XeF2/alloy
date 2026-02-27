@@ -23,6 +23,7 @@ full = ["http-client", "http-server", "ws-client", "ws-server"]
 alloy-core = { workspace = true }
 alloy-macros = { workspace = true }
 futures = { workspace = true }
+parking_lot = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time"] }
 tracing = { workspace = true }
 

@@ -22,6 +22,7 @@ alloy-core = { workspace = true }
 alloy-framework = { workspace = true }
 figment = { version = "0.10.19", features = ["env"] }
 futures = { workspace = true }
+parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
