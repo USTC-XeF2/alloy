@@ -17,6 +17,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-core",
  "alloy-framework",
+ "alloy-macros",
  "alloy-runtime",
  "alloy-transport",
 ]
@@ -82,7 +83,7 @@ dependencies = [
 name = "alloy-plugin-storage"
 version = "0.1.0"
 dependencies = [
- "alloy-framework",
+ "alloy",
  "async-trait",
  "serde",
  "tokio",

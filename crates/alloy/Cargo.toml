@@ -10,14 +10,18 @@ license = { workspace = true }
 [dependencies]
 alloy-core = { workspace = true }
 alloy-framework = { workspace = true }
-alloy-runtime = { workspace = true }
+alloy-macros = { workspace = true }
+alloy-runtime = { workspace = true, optional = true }
 alloy-transport = { workspace = true }
 
 [features]
-default = ["command", "toml-config"]
+default = ["command", "runtime", "toml-config"]
 
 # Structured command support
 command = ["alloy-framework/command"]
+
+# Runtime support
+runtime = ["dep:alloy-runtime"]
 
 # Config format features
 toml-config = ["alloy-runtime/toml-config"]

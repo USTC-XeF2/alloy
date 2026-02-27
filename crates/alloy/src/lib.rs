@@ -60,8 +60,11 @@
 
 pub use alloy_core as core;
 pub use alloy_framework as framework;
-pub use alloy_runtime as runtime;
+pub use alloy_macros as macros;
 pub use alloy_transport as transport;
+
+#[cfg(feature = "runtime")]
+pub use alloy_runtime as runtime;
 
 /// Prelude module for convenient imports.
 ///
@@ -72,13 +75,12 @@ pub use alloy_transport as transport;
 /// ```
 pub mod prelude {
     // Runtime - main entry point
+    #[cfg(feature = "runtime")]
     pub use alloy_runtime::AlloyRuntime;
 
     // Plugin system - primary unit of event handling
-    pub use alloy_framework::{
-        define_plugin,
-        plugin::{PluginDescriptor, ServiceInit, ServiceMeta},
-    };
+    pub use alloy_framework::plugin::{ServiceInit, ServiceMeta};
+    pub use alloy_macros::define_plugin;
 
     // Event system - for building handlers
     pub use alloy_core::AsText;

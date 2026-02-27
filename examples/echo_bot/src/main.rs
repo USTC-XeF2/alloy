@@ -135,8 +135,8 @@ async fn signin_handler(
     Ok(RichText::msg("签到成功！", event.get_user_id()))
 }
 
-/// The echo bot plugin with command handlers for echo, info, and signin.
-static ECHO_PLUGIN: PluginDescriptor = define_plugin! {
+define_plugin! {
+    /// The echo bot plugin with command handlers for echo, info, and signin.
     name: "echo_bot",
     depends_on: [StorageService],
     handlers: [
@@ -145,7 +145,7 @@ static ECHO_PLUGIN: PluginDescriptor = define_plugin! {
         on_command::<InfoCommand>("info").handler(info_handler),
         on_command::<SigninCommand>("signin").handler(signin_handler),
     ],
-};
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
 
     // Load plugins
     runtime.register_plugin(&STORAGE_PLUGIN);
-    runtime.register_plugin(&ECHO_PLUGIN);
+    runtime.register_plugin(&ECHO_BOT_PLUGIN);
 
     runtime.run().await;
     Ok(())

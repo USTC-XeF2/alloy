@@ -22,10 +22,11 @@
 //!     Ok(event.get_plain_text().to_string())
 //! }
 //!
-//! pub static ECHO: PluginDescriptor = define_plugin! {
+//! define_plugin! {
 //!     name: "echo",
 //!     handlers: [on_message().handler(echo)],
-//! };
+//! }
+//! // Generates: pub static ECHO_PLUGIN: PluginDescriptor = { ... }
 //! ```
 //!
 //! # Service pattern
@@ -50,13 +51,14 @@
 //! }
 //!
 //! // 3. Register the service:
-//! pub static MY: PluginDescriptor = define_plugin! {
+//! define_plugin! {
 //!     name: "my_plugin",
 //!     provides: {
 //!         MyService: MyServiceImpl,
 //!     },
 //!     handlers: [],
-//! };
+//! }
+//! // Generates: pub static MY_PLUGIN_PLUGIN: PluginDescriptor = { ... }
 //! ```
 //!
 //! # Consuming services in handlers
@@ -72,7 +74,6 @@
 // ─── Submodules ──────────────────────────────────────────────────────────────
 pub mod core;
 pub mod descriptor;
-pub mod macros;
 pub mod registry;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
