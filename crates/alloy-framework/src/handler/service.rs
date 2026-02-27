@@ -38,9 +38,9 @@ use tower::util::BoxCloneSyncService;
 use tower::{BoxError, Layer, Service, ServiceBuilder};
 use tower_layer::Stack;
 
+use super::traits::Handler;
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::handler::Handler;
 
 /// A wrapper that blocks event propagation if the inner service succeeds.
 ///

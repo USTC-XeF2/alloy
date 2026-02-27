@@ -10,7 +10,6 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use alloy::prelude::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
@@ -41,7 +40,7 @@ struct InfoCommand {
 struct SigninCommand {}
 
 /// Logs every incoming message.
-async fn logging_handler(event: EventContext<MessageEvent>) {
+async fn logging_handler(event: Event<MessageEvent>) {
     let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
 
     info!(
@@ -59,8 +58,8 @@ async fn echo_handler(cmd: CommandArgs<EchoCommand>) -> Option<String> {
 
 /// Displays group information or member details (if `--user` is provided).
 async fn info_handler(
-    event: EventContext<GroupMessageEvent>,
-    bot: Arc<OneBotBot>,
+    event: Event<GroupMessageEvent>,
+    bot: Bot<OneBotBot>,
     cmd: CommandArgs<InfoCommand>,
 ) -> Result<String> {
     if let Some(user_id) = &cmd.user {
@@ -99,7 +98,7 @@ async fn info_handler(
 
 /// Records one sign-in per user per calendar day (UTC) to `signin.json`.
 async fn signin_handler(
-    event: EventContext<MessageEvent>,
+    event: Event<MessageEvent>,
     data_dir: StorageDir<Data>,
 ) -> Result<RichText> {
     let path = data_dir.join("signin.json");

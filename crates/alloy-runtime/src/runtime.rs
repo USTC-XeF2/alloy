@@ -34,7 +34,7 @@ use crate::config::{AlloyConfig, ConfigLoader};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
 use alloy_core::{AdapterBridge, ConfigurableAdapter, TransportContext};
-use alloy_framework::{PluginDescriptor, PluginManager};
+use alloy_framework::{manager::PluginManager, plugin::PluginDescriptor};
 
 /// The main Alloy runtime that orchestrates adapters, transports, and plugins.
 ///

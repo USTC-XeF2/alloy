@@ -72,7 +72,6 @@
 // ─── Submodules ──────────────────────────────────────────────────────────────
 pub mod core;
 pub mod descriptor;
-pub mod extractor;
 pub mod macros;
 pub mod registry;
 
@@ -81,7 +80,6 @@ pub use core::{
     OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType, ServiceEntry,
 };
 pub use descriptor::{ALLOY_PLUGIN_API_VERSION, PluginDescriptor};
-pub use extractor::{PluginConfig, ServiceRef};
 pub use registry::{ServiceInit, ServiceMeta};
 
 // ─── Macro-internal re-export (needed by define_plugin! at call sites) ───────

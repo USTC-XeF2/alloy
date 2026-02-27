@@ -11,8 +11,7 @@ use tower_layer::{Identity, Stack};
 
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::handler::Handler;
-use crate::service::{HandlerService, ServiceBuilderExt};
+use crate::handler::{Handler, HandlerService, ServiceBuilderExt};
 use alloy_core::EventType;
 
 use super::CURRENT_REGISTRY;

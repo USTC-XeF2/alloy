@@ -75,25 +75,28 @@ pub mod prelude {
     pub use alloy_runtime::AlloyRuntime;
 
     // Plugin system - primary unit of event handling
-    pub use alloy_framework::define_plugin;
-    pub use alloy_framework::plugin::{
-        PluginConfig, PluginDescriptor, ServiceInit, ServiceMeta, ServiceRef,
+    pub use alloy_framework::{
+        define_plugin,
+        plugin::{PluginDescriptor, ServiceInit, ServiceMeta},
     };
 
     // Event system - for building handlers
-    pub use alloy_core::{AsText, EventContext};
-    pub use alloy_framework::{Handler, HandlerService, Layer, ServiceBuilder, ServiceBuilderExt};
+    pub use alloy_core::AsText;
+    pub use alloy_framework::handler::{HandlerService, Layer, ServiceBuilderExt};
+
+    // Extractors - for handler parameters
+    pub use alloy_framework::extractor::{Bot, Event, FromContext, PluginConfig, ServiceRef};
 
     // Route convenience functions (from framework layer)
-    pub use alloy_framework::{on, on_event_type, on_message};
+    pub use alloy_framework::routing::{on, on_event_type, on_message};
 
     // Structured command support (requires "command" feature)
     #[cfg(feature = "command")]
-    pub use alloy_framework::{AtSegment, CommandArgs, ImageSegment, on_command};
+    pub use alloy_framework::command::{AtSegment, CommandArgs, ImageSegment, on_command};
 
     // Bot types - for interacting with bots in handlers
-    pub use alloy_core::Bot;
+    pub use alloy_core::{Bot as __Bot, BoxedBot};
 
     // Core traits for custom implementations
-    pub use alloy_core::{Event, Message, RichText, RichTextSegment};
+    pub use alloy_core::{Event as __Event, Message, RichText, RichTextSegment};
 }

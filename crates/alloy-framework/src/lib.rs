@@ -20,23 +20,6 @@ pub mod handler;
 pub mod manager;
 pub mod plugin;
 pub mod routing;
-pub mod service;
 
 #[cfg(feature = "command")]
 pub mod command;
-
-pub use context::{AlloyContext, BaseContext, PluginContext};
-pub use error::{EventSkipped, ExtractError, ExtractResult};
-pub use extractor::FromContext;
-pub use handler::{BoxedHandler, Handler, into_handler};
-pub use manager::{PluginLoadState, PluginManager};
-pub use plugin::{
-    Plugin, PluginConfig, PluginDescriptor, PluginLoadContext, ServiceInit, ServiceMeta, ServiceRef,
-};
-pub use routing::{FilterServiceBuilder, on, on_event_type, on_message};
-pub use service::{BoxedHandlerService, EventPredicate, HandlerService, ServiceBuilderExt};
-
-pub use tower::{Layer, ServiceBuilder};
-
-#[cfg(feature = "command")]
-pub use command::{AtSegment, CommandArgs, ImageSegment, on_command};

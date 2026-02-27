@@ -23,7 +23,7 @@ use tower_layer::{Identity, Stack};
 use alloy_core::{Event, EventType};
 
 use crate::context::AlloyContext;
-use crate::service::{EventPredicate, ServiceBuilderExt};
+use crate::handler::{EventPredicate, ServiceBuilderExt};
 
 /// Convenience type alias for the `ServiceBuilder` returned by `on_message()`,
 /// `on_event_type()`, and `on()`.

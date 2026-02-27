@@ -27,7 +27,6 @@
 
 use std::any::{Any, TypeId};
 use std::convert::Infallible;
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -234,69 +233,6 @@ impl<E: Event> AsText for E {
 }
 
 // ============================================================================
-// Event Context
-// ============================================================================
-
-/// Context wrapper that provides access to extracted event data.
-///
-/// This is the primary way handlers receive events. Use `Deref` to access
-/// fields directly on the wrapped type.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// #[handler]
-/// async fn handler(event: EventContext<PrivateMessage>) -> Outcome {
-///     // Access fields directly via Deref
-///     println!("From: {} Message: {}", event.user_id, event.get_plain_text());
-///     
-///     // The event can be passed directly to APIs
-///     bot.send(&event, "reply").await.ok();
-///     
-///     Outcome::Handled
-/// }
-/// ```
-#[derive(Clone)]
-pub struct EventContext<T: Event + Clone> {
-    /// The extracted event data.
-    data: T,
-}
-
-impl<T: Event + Clone> EventContext<T> {
-    /// Creates a new EventContext with the given data.
-    pub fn new(data: T) -> Self {
-        Self { data }
-    }
-
-    /// Returns a reference to the event as a trait object.
-    pub fn as_event(&self) -> &dyn Event {
-        &self.data as &dyn Event
-    }
-}
-
-impl<T: Event + Clone> Deref for EventContext<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl<T: Event + Clone + std::fmt::Debug> std::fmt::Debug for EventContext<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EventContext")
-            .field("data", &self.data)
-            .finish()
-    }
-}
-
-impl<T: Event + Clone> AsRef<dyn Event> for EventContext<T> {
-    fn as_ref(&self) -> &dyn Event {
-        &self.data
-    }
-}
-
-// ============================================================================
 // Boxed Event
 // ============================================================================
 
@@ -323,7 +259,7 @@ pub struct BoxedEvent {
 
 impl BoxedEvent {
     /// Creates a new `BoxedEvent` from any type implementing `Event`.
-    pub fn new<E: Event + 'static>(event: E) -> Self {
+    pub fn new<E: Event>(event: E) -> Self {
         Self {
             inner: Arc::new(event),
         }
@@ -333,11 +269,10 @@ impl BoxedEvent {
     ///
     /// This uses the `TypeId`-based downgrade mechanism to traverse the parent
     /// chain and find the matching event type.
-    pub fn extract<E: Event + Clone + 'static>(&self) -> Option<EventContext<E>> {
+    pub fn extract<E: Event>(&self) -> Option<Box<E>> {
         self.inner
             .downgrade_any(TypeId::of::<E>())
             .and_then(|boxed| boxed.downcast::<E>().ok())
-            .map(|boxed| EventContext::new(*boxed))
     }
 }
 

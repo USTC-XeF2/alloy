@@ -8,7 +8,7 @@ use tracing::{debug, error};
 
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::service::BoxedHandlerService;
+use crate::handler::BoxedHandlerService;
 
 // ─── PluginLoadContext ────────────────────────────────────────────────────────
 

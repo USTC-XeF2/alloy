@@ -45,8 +45,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use alloy_framework::{
-    AlloyContext, ExtractError, ExtractResult, FromContext, PluginDescriptor, PluginLoadContext,
-    ServiceInit, ServiceMeta, define_plugin,
+    context::AlloyContext,
+    define_plugin,
+    error::{ExtractError, ExtractResult},
+    extractor::FromContext,
+    plugin::{PluginDescriptor, PluginLoadContext, ServiceInit, ServiceMeta},
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -56,11 +59,6 @@ use tracing::error;
 
 /// Service trait that provides access to the three conventional storage
 /// directories used by Alloy bots.
-///
-/// Obtain a reference via [`ServiceRef<dyn StorageService>`] in a handler, or
-/// through [`AlloyContext::get_service::<dyn StorageService>()`].
-///
-/// [`AlloyContext::get_service::<dyn StorageService>()`]: crate::context::AlloyContext::get_service
 pub trait StorageService: Send + Sync + 'static {
     /// Returns the `<base>/cache/` directory path.
     fn cache_dir(&self) -> PathBuf;
