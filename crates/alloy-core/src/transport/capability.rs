@@ -39,10 +39,10 @@ use crate::error::TransportResult;
 #[async_trait]
 pub trait ConnectionHandler: Send + Sync {
     /// Extract a bot ID from connection metadata when a new connection arrives.
-    async fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
 
     /// Create and register a bot for a new connection.
-    async fn create_bot(&self, bot_id: &str, connection: ConnectionHandle);
+    fn create_bot(&self, bot_id: &str, connection: ConnectionHandle);
 
     /// Process incoming data from a connection.
     async fn on_message(&self, bot_id: &str, data: &[u8]);

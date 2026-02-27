@@ -14,13 +14,13 @@
 //! completely unaware of which transport is in use.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tracing::{debug, warn};
 
@@ -64,7 +64,7 @@ pub trait ApiCaller: Send + Sync {
     ///
     /// The **default returns `false`** — correct for HTTP where responses
     /// arrive synchronously inside [`call`](ApiCaller::call).
-    async fn on_incoming_response(&self, _data: &Value) -> bool {
+    fn on_incoming_response(&self, _data: &Value) -> bool {
         false
     }
 
@@ -74,7 +74,7 @@ pub trait ApiCaller: Send + Sync {
     /// futures with a [`ApiError::NotConnected`] error.
     ///
     /// The default implementation is a no-op.
-    async fn on_disconnect(&self) {}
+    fn on_disconnect(&self) {}
 }
 
 // =============================================================================
@@ -142,10 +142,7 @@ impl ApiCaller for WsApiCaller {
         // Register pending response channel before sending so we never miss a
         // response that arrives before we start awaiting.
         let (tx, rx) = oneshot::channel();
-        {
-            let mut pending = self.pending_calls.lock().await;
-            pending.insert(echo, tx);
-        }
+        self.pending_calls.lock().unwrap().insert(echo, tx);
 
         // Serialize and send the request.
         let request = json!({
@@ -159,7 +156,7 @@ impl ApiCaller for WsApiCaller {
         let request_bytes = serde_json::to_vec(&request)?;
         if let Err(e) = self.message_tx.send(request_bytes).await {
             // Remove the pending entry so it doesn't dangle.
-            self.pending_calls.lock().await.remove(&echo);
+            self.pending_calls.lock().unwrap().remove(&echo);
             return Err(TransportError::SendFailed(e.to_string()).into());
         }
 
@@ -172,17 +169,17 @@ impl ApiCaller for WsApiCaller {
             }
             Err(_) => {
                 // Timed out — remove the pending entry.
-                self.pending_calls.lock().await.remove(&echo);
+                self.pending_calls.lock().unwrap().remove(&echo);
                 Err(ApiError::Timeout)
             }
         }
     }
 
-    async fn on_incoming_response(&self, data: &Value) -> bool {
+    fn on_incoming_response(&self, data: &Value) -> bool {
         let Some(echo) = data.get("echo").and_then(Value::as_u64) else {
             return false;
         };
-        let mut pending = self.pending_calls.lock().await;
+        let mut pending = self.pending_calls.lock().unwrap();
         if let Some(tx) = pending.remove(&echo) {
             let _ = tx.send(data.clone());
             true
@@ -193,8 +190,8 @@ impl ApiCaller for WsApiCaller {
         }
     }
 
-    async fn on_disconnect(&self) {
-        let mut pending = self.pending_calls.lock().await;
+    fn on_disconnect(&self) {
+        let mut pending = self.pending_calls.lock().unwrap();
         let count = pending.len();
         if count > 0 {
             debug!(

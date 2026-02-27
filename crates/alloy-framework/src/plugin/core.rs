@@ -32,11 +32,11 @@ use crate::handler::BoxedHandlerService;
 #[derive(Clone, Debug)]
 pub struct PluginLoadContext {
     /// Raw JSON value for this plugin's config section.
-    plugin_config: serde_json::Value,
+    plugin_config: Arc<serde_json::Value>,
 }
 
 impl PluginLoadContext {
-    pub(crate) fn new(plugin_config: serde_json::Value) -> Self {
+    pub(crate) fn new(plugin_config: Arc<serde_json::Value>) -> Self {
         Self { plugin_config }
     }
 
@@ -44,11 +44,11 @@ impl PluginLoadContext {
     ///
     /// Returns `Err` if the config is missing required fields or has the wrong
     /// shape; use `#[serde(default)]` on the struct to make all fields optional.
-    pub fn get_config<T>(&self) -> Result<T, serde_json::Error>
+    pub fn get_config<T>(&self) -> serde_json::Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
-        serde_json::from_value(self.plugin_config.clone())
+        T::deserialize(self.plugin_config.as_ref())
     }
 }
 
@@ -56,10 +56,10 @@ impl PluginLoadContext {
 ///
 /// Must return `Ok(())` on success or `Err(BoxError)` on failure.
 pub type OnLoadFn =
-    Arc<dyn Fn(Arc<PluginLoadContext>) -> BoxFuture<'static, Result<(), BoxError>> + Send + Sync>;
+    Box<dyn Fn(Arc<PluginLoadContext>) -> BoxFuture<'static, Result<(), BoxError>> + Send + Sync>;
 
 /// Type of the async `on_unload` function stored inside a [`Plugin`].
-pub type OnUnloadFn = Arc<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;
+pub type OnUnloadFn = Box<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;
 
 // ─── PluginType ───────────────────────────────────────────────────────────────
 

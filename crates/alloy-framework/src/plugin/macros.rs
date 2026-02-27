@@ -420,7 +420,7 @@ macro_rules! define_plugin {
                     #[allow(unused_mut)]
                     let mut __f: ::std::option::Option<$crate::plugin::OnLoadFn> = None;
                     $(
-                        __f = Some(::std::sync::Arc::new(
+                        __f = Some(::std::boxed::Box::new(
                             |ctx: ::std::sync::Arc<$crate::plugin::PluginLoadContext>| {
                                 ::std::boxed::Box::pin(async move {
                                     $lo(ctx).await.map_err(
@@ -436,7 +436,7 @@ macro_rules! define_plugin {
                     #[allow(unused_mut)]
                     let mut __f: ::std::option::Option<$crate::plugin::OnUnloadFn> = None;
                     $(
-                        __f = Some(::std::sync::Arc::new(
+                        __f = Some(::std::boxed::Box::new(
                             || ::std::boxed::Box::pin($un()),
                         ));
                     )?

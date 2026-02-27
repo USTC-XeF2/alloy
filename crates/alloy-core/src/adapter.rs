@@ -57,13 +57,13 @@ pub trait AdapterContext: Send + Sync {
     fn transport(&self) -> &TransportContext;
 
     /// Registers a listener handle, keeping it alive for the adapter's lifetime.
-    async fn add_listener(&self, handle: ListenerHandle);
+    fn add_listener(&self, handle: ListenerHandle);
 
     /// Registers an outbound connection handle.
-    async fn add_connection(&self, handle: ConnectionHandle);
+    fn add_connection(&self, handle: ConnectionHandle);
 
     /// Returns a bot by ID, or `None` if not found.
-    async fn get_bot(&self, id: &str) -> Option<BoxedBot>;
+    fn get_bot(&self, id: &str) -> Option<BoxedBot>;
 
     /// Casts this context to a `ConnectionHandler` reference for passing to
     /// transport capabilities (e.g., `ws_server.listen(..., ctx.as_connection_handler())`).
@@ -88,7 +88,7 @@ pub trait Adapter: Send + Sync {
     /// Called when a new transport connection is established.
     /// Return the unique bot identifier derived from protocol-specific
     /// metadata (e.g., headers, query params).
-    async fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
 
     /// Create a bot instance for a new connection.
     ///

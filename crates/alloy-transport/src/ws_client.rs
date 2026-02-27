@@ -172,14 +172,14 @@ pub async fn ws_connect(
             })?;
 
     // Get bot ID from handler
-    let bot_id = handler.get_bot_id(conn_info).await?;
+    let bot_id = handler.get_bot_id(conn_info)?;
 
     info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 
     let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_tx);
 
     // Create and register the bot
-    handler.create_bot(&bot_id, handle.clone()).await;
+    handler.create_bot(&bot_id, handle.clone());
 
     let mut state = ClientLoopState::new(handler, bot_id, config, ws_stream);
 

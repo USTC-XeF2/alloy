@@ -21,10 +21,9 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 use tracing::{debug, info, trace, warn};
 
 use crate::adapter::{Adapter, AdapterContext};
@@ -68,7 +67,7 @@ pub trait Dispatcher: Send + Sync {
 pub struct AdapterBridge {
     adapter: Arc<dyn Adapter>,
     /// Active bots by ID.
-    bots: Mutex<HashMap<String, BoxedBot>>,
+    bots: RwLock<HashMap<String, BoxedBot>>,
     /// Event dispatcher — distributes parsed events to handlers.
     event_dispatcher: Arc<dyn Dispatcher>,
     /// Available transport capabilities.
@@ -88,7 +87,7 @@ impl AdapterBridge {
     ) -> Self {
         Self {
             adapter,
-            bots: Mutex::new(HashMap::new()),
+            bots: RwLock::new(HashMap::new()),
             event_dispatcher,
             transport,
             listeners: Mutex::new(Vec::new()),
@@ -117,13 +116,13 @@ impl AdapterBridge {
     }
 
     /// Returns the IDs of all active bots.
-    pub async fn bot_ids(&self) -> Vec<String> {
-        self.bots.lock().await.keys().cloned().collect()
+    pub fn bot_ids(&self) -> Vec<String> {
+        self.bots.read().unwrap().keys().cloned().collect()
     }
 
     /// Returns the count of active bots.
-    pub async fn bot_count(&self) -> usize {
-        self.bots.lock().await.len()
+    pub fn bot_count(&self) -> usize {
+        self.bots.read().unwrap().len()
     }
 }
 
@@ -133,12 +132,12 @@ impl AdapterBridge {
 
 #[async_trait]
 impl ConnectionHandler for AdapterBridge {
-    async fn get_bot_id(&self, conn_info: ConnectionInfo) -> crate::error::TransportResult<String> {
-        self.adapter.get_bot_id(conn_info).await
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> crate::error::TransportResult<String> {
+        self.adapter.get_bot_id(conn_info)
     }
 
-    async fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) {
-        let mut bots = self.bots.lock().await;
+    fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) {
+        let mut bots = self.bots.write().unwrap();
         if bots.contains_key(bot_id) {
             warn!(bot_id = %bot_id, "Bot already exists, not registering");
             return;
@@ -150,7 +149,7 @@ impl ConnectionHandler for AdapterBridge {
     }
 
     async fn on_message(&self, bot_id: &str, data: &[u8]) {
-        let Some(bot) = self.bots.lock().await.get(bot_id).cloned() else {
+        let Some(bot) = self.bots.read().unwrap().get(bot_id).cloned() else {
             return;
         };
 
@@ -163,11 +162,11 @@ impl ConnectionHandler for AdapterBridge {
             trace!(bot_id = %bot_id, event = %event.event_name(), "Received meta event");
         } else {
             let text = event.get_rich_text();
-            if !text.is_empty() {
+            if text.is_empty() {
+                info!(bot_id = %bot_id, event = %event.event_name(), "Received event");
+            } else {
                 let text: RichText = text.into();
                 info!(bot_id = %bot_id, event = %event.event_name(), text = %text, "Received message event");
-            } else {
-                info!(bot_id = %bot_id, event = %event.event_name(), "Received event");
             }
         }
 
@@ -179,7 +178,7 @@ impl ConnectionHandler for AdapterBridge {
     }
 
     async fn on_disconnect(&self, bot_id: &str) {
-        let bot = self.bots.lock().await.remove(bot_id);
+        let bot = self.bots.write().unwrap().remove(bot_id);
         if let Some(bot) = bot {
             bot.on_disconnect().await;
             info!(bot_id = %bot_id, "Connection closed");
@@ -203,20 +202,20 @@ impl AdapterContext for AdapterContextWrapper {
         &self.bridge.transport
     }
 
-    async fn add_listener(&self, handle: ListenerHandle) {
-        self.bridge.listeners.lock().await.push(handle);
+    fn add_listener(&self, handle: ListenerHandle) {
+        self.bridge.listeners.lock().unwrap().push(handle);
     }
 
-    async fn add_connection(&self, handle: ConnectionHandle) {
+    fn add_connection(&self, handle: ConnectionHandle) {
         self.bridge
             .connections
             .lock()
-            .await
+            .unwrap()
             .insert(handle.id.clone(), handle);
     }
 
-    async fn get_bot(&self, id: &str) -> Option<BoxedBot> {
-        self.bridge.bots.lock().await.get(id).cloned()
+    fn get_bot(&self, id: &str) -> Option<BoxedBot> {
+        self.bridge.bots.read().unwrap().get(id).cloned()
     }
 
     fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler> {

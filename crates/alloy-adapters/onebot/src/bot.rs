@@ -50,7 +50,7 @@ pub struct OneBotBot {
     /// Bot ID (self_id from events).
     id: String,
     /// Transport-specific API call mechanism.
-    api_caller: Arc<dyn ApiCaller>,
+    pub(crate) api_caller: Arc<dyn ApiCaller>,
 }
 
 impl OneBotBot {
@@ -111,10 +111,6 @@ impl OneBotBot {
         };
         Ok(message_id.to_string())
     }
-
-    pub(crate) async fn handle_response(&self, data: &Value) {
-        self.api_caller.on_incoming_response(data).await;
-    }
 }
 
 // =============================================================================
@@ -162,7 +158,7 @@ impl Bot for OneBotBot {
     }
 
     async fn on_disconnect(&self) {
-        self.api_caller.on_disconnect().await;
+        self.api_caller.on_disconnect();
     }
 }
 

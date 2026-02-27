@@ -63,7 +63,7 @@ pub async fn http_start_client(
     let (shutdown_tx, _shutdown_rx) = watch::channel(false);
     let connection = ConnectionHandle::new_http_client(&bot_id, post_json, shutdown_tx);
 
-    handler.create_bot(&bot_id, connection.clone()).await;
+    handler.create_bot(&bot_id, connection.clone());
 
     info!(bot_id = %bot_id, "HTTP API client bot registered");
     Ok(connection)

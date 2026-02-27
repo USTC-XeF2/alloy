@@ -219,8 +219,8 @@ struct PluginEntry {
 /// config before calling [`new`](Self::new).
 pub struct PluginManager {
     plugins: RwLock<HashMap<String, PluginEntry>>,
-    /// Per-plugin config sections, keyed by plugin name.
-    plugin_configs: HashMap<String, Value>,
+    /// Per-plugin config sections, keyed by plugin name. Stored as Arc<Value> to avoid cloning.
+    plugin_configs: HashMap<String, Arc<Value>>,
     /// Managed exclusively by [`load_all`] / [`unload_all`].
     services: RwLock<HashMap<String, (TypeId, Arc<dyn Any + Send + Sync>)>>,
 }
@@ -230,7 +230,10 @@ impl PluginManager {
     pub fn new(plugin_configs: HashMap<String, Value>) -> Self {
         Self {
             plugins: RwLock::new(HashMap::new()),
-            plugin_configs,
+            plugin_configs: plugin_configs
+                .into_iter()
+                .map(|(k, v)| (k, Arc::new(v)))
+                .collect(),
             services: RwLock::new(HashMap::new()),
         }
     }
@@ -324,6 +327,14 @@ impl PluginManager {
         }
     }
 
+    /// Retrieves the raw JSON config for a plugin by name, or an empty object if not found.
+    fn get_plugin_config(&self, name: &str) -> Arc<Value> {
+        self.plugin_configs
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Value::Object(Map::default())))
+    }
+
     /// Loads a single plugin in dependency order.
     ///
     /// If the plugin is already in `Active` state, returns `true` immediately.
@@ -341,12 +352,6 @@ impl PluginManager {
             }
             entry.plugin.clone()
         };
-
-        let config = self
-            .plugin_configs
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| Value::Object(Map::default()));
 
         let missing = {
             let svc_guard = self.services.read().unwrap();
@@ -368,6 +373,7 @@ impl PluginManager {
         }
 
         // ── 2. on_load ───────────────────────────────────────────────────
+        let config = self.get_plugin_config(name);
         let ctx = Arc::new(PluginLoadContext::new(config));
         if let Err(e) = plugin.on_load(ctx.clone()).await {
             error!(
@@ -566,15 +572,7 @@ impl Dispatcher for PluginManager {
             plugins
                 .iter()
                 .filter(|(_, e)| e.state == PluginLoadState::Active)
-                .map(|(name, e)| {
-                    let cfg = Arc::new(
-                        self.plugin_configs
-                            .get(name)
-                            .cloned()
-                            .unwrap_or_else(|| Value::Object(Map::default())),
-                    );
-                    (e.plugin.clone(), cfg)
-                })
+                .map(|(name, e)| (e.plugin.clone(), self.get_plugin_config(name)))
                 .collect()
         };
 

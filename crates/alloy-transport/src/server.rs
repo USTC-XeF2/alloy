@@ -24,7 +24,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::sync::{Arc, LazyLock, Mutex, RwLock, Weak};
 
 use axum::{
     Router,
@@ -32,7 +32,7 @@ use axum::{
     http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
 };
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use alloy_core::{
@@ -212,7 +212,7 @@ async fn register_http_route(
         .state
         .http_routes
         .write()
-        .await
+        .unwrap()
         .insert(path.clone(), handler);
     info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
 
@@ -222,7 +222,7 @@ async fn register_http_route(
     // Spawn cleanup: wait for ListenerHandle drop, then remove the route.
     tokio::spawn(async move {
         let _ = rx.await;
-        entry.state.http_routes.write().await.remove(&path);
+        entry.state.http_routes.write().unwrap().remove(&path);
         info!(path = %path, "Unregistered HTTP route");
         // `entry` Arc is dropped here; if last reference → server shuts down.
     });
@@ -242,7 +242,7 @@ async fn register_ws_route(
         .state
         .ws_routes
         .write()
-        .await
+        .unwrap()
         .insert(path.clone(), handler);
     info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
 
@@ -251,7 +251,7 @@ async fn register_ws_route(
 
     tokio::spawn(async move {
         let _ = rx.await;
-        entry.state.ws_routes.write().await.remove(&path);
+        entry.state.ws_routes.write().unwrap().remove(&path);
         info!(path = %path, "Unregistered WebSocket route");
     });
 
@@ -305,9 +305,7 @@ async fn http_dispatch(
     body: Bytes,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let routes = state.http_routes.read().await;
-    let handler = routes.get(&path).cloned();
-    drop(routes); // release read lock before the async handler call
+    let handler = state.http_routes.read().unwrap().get(&path).cloned();
 
     match handler {
         Some(h) => h.handle(addr, headers, body).await,
@@ -335,9 +333,7 @@ async fn ws_dispatch(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let routes = state.ws_routes.read().await;
-    let handler = routes.get(&path).cloned();
-    drop(routes);
+    let handler = state.ws_routes.read().unwrap().get(&path).cloned();
 
     match handler {
         Some(h) => {
@@ -418,7 +414,7 @@ impl HttpBotHandler {
         }
 
         // Ask the adapter to identify which bot this request belongs to.
-        let bot_id = match self.handler.get_bot_id(conn_info).await {
+        let bot_id = match self.handler.get_bot_id(conn_info) {
             Ok(id) => id,
             Err(e) => {
                 error!(
@@ -454,9 +450,7 @@ impl HttpBotHandler {
                     }
                 });
 
-                self.handler
-                    .create_bot(&bot_id, connection_handle.clone())
-                    .await;
+                self.handler.create_bot(&bot_id, connection_handle.clone());
                 known.insert(bot_id.clone(), connection_handle);
                 info!(bot_id = %bot_id, remote_addr = %addr, "HTTP bot created");
             }
@@ -520,7 +514,7 @@ impl WsBotHandler {
         }
 
         // Let the adapter identify which bot this connection belongs to.
-        let bot_id = match self.handler.get_bot_id(conn_info).await {
+        let bot_id = match self.handler.get_bot_id(conn_info) {
             Ok(id) => id,
             Err(e) => {
                 error!(
@@ -540,7 +534,7 @@ impl WsBotHandler {
         let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
         let connection_handle = ConnectionHandle::new_ws(bot_id.clone(), tx.clone(), shutdown_tx);
 
-        self.handler.create_bot(&bot_id, connection_handle).await;
+        self.handler.create_bot(&bot_id, connection_handle);
         self.connections
             .lock()
             .await

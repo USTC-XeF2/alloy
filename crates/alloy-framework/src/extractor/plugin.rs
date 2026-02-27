@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use serde::de::DeserializeOwned;
-
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
@@ -24,10 +22,10 @@ impl<T> std::ops::Deref for PluginConfig<T> {
     }
 }
 
-impl<T: DeserializeOwned + Default> FromContext for PluginConfig<T> {
+impl<T: serde::de::DeserializeOwned + Default> FromContext for PluginConfig<T> {
     fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         let json = ctx.get_config();
-        let t: T = serde_json::from_value((*json).clone()).unwrap_or_default();
+        let t = T::deserialize(json.as_ref()).unwrap_or_default();
         Ok(PluginConfig(t))
     }
 }

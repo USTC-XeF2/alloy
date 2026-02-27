@@ -65,7 +65,7 @@ pub struct OneBotAdapter {
 
 #[async_trait]
 impl Adapter for OneBotAdapter {
-    async fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String> {
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String> {
         // OneBot v11 uses X-Self-ID header to identify the bot
         let bot_id = conn_info
             .metadata
@@ -108,7 +108,7 @@ impl Adapter for OneBotAdapter {
             && value.get("echo").is_some()
         {
             if let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.clone().as_any()) {
-                onebot_bot.handle_response(&value).await;
+                onebot_bot.api_caller.on_incoming_response(&value);
                 trace!(bot_id = %bot_id, echo = ?value.get("echo"), "Handled API response");
             }
             return None; // API responses are not events
@@ -150,7 +150,7 @@ impl Adapter for OneBotAdapter {
                             ctx.clone().as_connection_handler(),
                         )
                         .await?;
-                        ctx.add_listener(handle).await;
+                        ctx.add_listener(handle);
                     } else {
                         warn!(
                             "WebSocket server capability not available, skipping ws-server config"
@@ -170,7 +170,7 @@ impl Adapter for OneBotAdapter {
                             config = config.with_token(t);
                         }
                         let handle = ws_client(config, ctx.clone().as_connection_handler()).await?;
-                        ctx.add_connection(handle).await;
+                        ctx.add_connection(handle);
                     } else {
                         warn!(
                             "WebSocket client capability not available, skipping ws-client config"
@@ -187,7 +187,7 @@ impl Adapter for OneBotAdapter {
                             ctx.clone().as_connection_handler(),
                         )
                         .await?;
-                        ctx.add_listener(handle).await;
+                        ctx.add_listener(handle);
                     } else {
                         warn!("HTTP server capability not available, skipping http-server config");
                     }
@@ -210,7 +210,7 @@ impl Adapter for OneBotAdapter {
                         let handle =
                             http_client(bot_id, client_config, ctx.clone().as_connection_handler())
                                 .await?;
-                        ctx.add_connection(handle).await;
+                        ctx.add_connection(handle);
                     } else {
                         warn!("HTTP client capability not available, skipping http-client config");
                     }
