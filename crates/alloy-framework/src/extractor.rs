@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::context::AlloyContext;
-use crate::error::ExtractError;
+use crate::error::{ExtractError, ExtractResult};
 use alloy_core::{Bot, BoxedBot, BoxedEvent, Event, EventContext};
 
 /// A trait for types that can be extracted from an [`AlloyContext`].
@@ -19,24 +19,6 @@ use alloy_core::{Bot, BoxedBot, BoxedEvent, Event, EventContext};
 ///
 /// The extraction can fail (returning `Err`) if the required data is not
 /// available in the context. In this case, the handler will be skipped.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy_core::{AlloyContext, FromContext, ExtractError};
-/// use std::sync::Arc;
-///
-/// struct MyExtractor {
-///     data: String,
-/// }
-///
-/// impl FromContext for MyExtractor {
-///     fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
-///         // Custom extraction logic here
-///         Ok(MyExtractor { data: "extracted".into() })
-///     }
-/// }
-/// ```
 pub trait FromContext: Sized {
     /// Attempts to extract this type from the given context.
     ///
@@ -47,7 +29,7 @@ pub trait FromContext: Sized {
     /// # Returns
     ///
     /// `Ok(Self)` if extraction succeeds, `Err(ExtractError)` otherwise.
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError>;
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self>;
 }
 
 /// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
@@ -55,7 +37,7 @@ pub trait FromContext: Sized {
 /// This is useful when a handler needs to work with any event type
 /// without knowing the concrete type at compile time.
 impl FromContext for BoxedEvent {
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(ctx.event().clone())
     }
 }
@@ -65,7 +47,7 @@ impl FromContext for BoxedEvent {
 /// This allows handlers to have optional parameters that may or may not
 /// be extractable from the context.
 impl<T: FromContext> FromContext for Option<T> {
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(T::from_context(ctx).ok())
     }
 }
@@ -89,7 +71,7 @@ impl<T: FromContext> FromContext for Option<T> {
 /// }
 /// ```
 impl<T: Event + Clone + 'static> FromContext for EventContext<T> {
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.event()
             .extract::<T>()
             .ok_or_else(|| ExtractError::EventTypeMismatch {
@@ -112,7 +94,7 @@ impl<T: Event + Clone + 'static> FromContext for EventContext<T> {
 /// }
 /// ```
 impl FromContext for BoxedBot {
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(ctx.bot_arc())
     }
 }
@@ -131,7 +113,7 @@ impl FromContext for BoxedBot {
 /// }
 /// ```
 impl<T: Bot + 'static> FromContext for Arc<T> {
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         // Get the BoxedBot
         let boxed_bot = ctx.bot_arc();
 

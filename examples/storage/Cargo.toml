@@ -1,0 +1,15 @@
+[package]
+name = "alloy-plugin-storage"
+version = "0.1.0"
+edition = "2024"
+authors = ["XeF2 <contact@xef2.top>"]
+license = "MPL-2.0"
+description = "An example plugin demonstrating storage capabilities in the Alloy framework"
+publish = false
+
+[dependencies]
+alloy-framework = { path = "../../crates/alloy-framework" }
+async-trait = "0.1.89"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.49.0", features = ["fs"] }
+tracing = "0.1.44"

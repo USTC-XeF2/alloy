@@ -36,6 +36,9 @@ pub enum ExtractError {
     #[error("required state not found in context (plugin config may not be configured)")]
     MissingState,
 
+    #[error("required service '{0}' not found")]
+    ServiceNotFound(&'static str),
+
     /// Custom extraction error.
     #[error("{0}")]
     Custom(String),

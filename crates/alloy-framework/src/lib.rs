@@ -30,7 +30,9 @@ pub use error::{EventSkipped, ExtractError, ExtractResult};
 pub use extractor::FromContext;
 pub use handler::{BoxedHandler, Handler, into_handler};
 pub use manager::{PluginLoadState, PluginManager};
-pub use plugin::{Plugin, PluginConfig, PluginDescriptor, ServiceInit, ServiceMeta, ServiceRef};
+pub use plugin::{
+    Plugin, PluginConfig, PluginDescriptor, PluginLoadContext, ServiceInit, ServiceMeta, ServiceRef,
+};
 pub use routing::{FilterServiceBuilder, on, on_event_type, on_message};
 pub use service::{BoxedHandlerService, EventPredicate, HandlerService, ServiceBuilderExt};
 

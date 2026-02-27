@@ -76,6 +76,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-plugin-storage"
+version = "0.1.0"
+dependencies = [
+ "alloy-framework",
+ "async-trait",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "alloy-runtime"
 version = "0.1.0"
 dependencies = [
@@ -507,6 +518,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-adapter-onebot",
+ "alloy-plugin-storage",
  "anyhow",
  "clap",
  "serde_json",

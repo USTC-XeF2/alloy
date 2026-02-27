@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use crate::context::AlloyContext;
-use crate::error::ExtractError;
+use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
 
 /// A wrapper type for extracting parsed clap commands from context.
@@ -44,7 +44,7 @@ impl<T: Parser> std::ops::DerefMut for CommandArgs<T> {
 }
 
 impl<T: Parser + Clone + Send + Sync + 'static> FromContext for CommandArgs<T> {
-    fn from_context(ctx: &AlloyContext) -> Result<Self, ExtractError> {
+    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.get_state::<ParsedCommand<T>>()
             .map(|parsed| CommandArgs(parsed.0.clone()))
             .ok_or_else(|| {

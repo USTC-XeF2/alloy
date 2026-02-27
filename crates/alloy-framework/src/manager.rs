@@ -599,7 +599,7 @@ impl Dispatcher for PluginManager {
             };
             let ctx = Arc::new(AlloyContext::new(
                 base.clone(),
-                PluginContext::new(config, plugin_services),
+                PluginContext::new(plugin.name(), config, plugin_services),
             ));
 
             let plugin_clone = plugin.clone();

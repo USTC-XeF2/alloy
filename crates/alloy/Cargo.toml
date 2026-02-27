@@ -19,9 +19,6 @@ default = ["command", "toml-config"]
 # Structured command support
 command = ["alloy-framework/command"]
 
-# Built-in plugin support
-builtin-plugins = ["alloy-framework/builtin-plugins"]
-
 # Config format features
 toml-config = ["alloy-runtime/toml-config"]
 yaml-config = ["alloy-runtime/yaml-config"]

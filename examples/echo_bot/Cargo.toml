@@ -8,8 +8,9 @@ description = "A simple echo bot example for the Alloy framework"
 publish = false
 
 [dependencies]
-alloy = { path = "../../crates/alloy", features = ["ws-server", "builtin-plugins"] }
+alloy = { path = "../../crates/alloy", features = ["ws-server"] }
 alloy-adapter-onebot = { path = "../../crates/alloy-adapters/onebot" }
+alloy-plugin-storage = { path = "../../examples/storage" }
 anyhow = "1.0.102"
 serde_json = "1.0.149"
 time = { version = "0.3.47", features = ["local-offset", "macros"] }

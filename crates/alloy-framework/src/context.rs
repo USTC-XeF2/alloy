@@ -5,18 +5,17 @@
 //!
 //! - [`BaseContext`] — the **shared** base for one dispatch cycle.  A single
 //!   `Arc<BaseContext>` is created per incoming event and passed to every
-//!   plugin.  It holds the event, the bot, the propagation flag, and the
-//!   cross-plugin state map.
+//!   plugin.  It holds the event, the bot, and the propagation flag.
 //!
 //! - [`PluginContext`] — **plugin-specific** data attached per-plugin.
-//!   Currently holds only the plugin's config section, but serves as the
-//!   extension point for future per-plugin fields.
+//!   Each plugin gets its own isolated state storage, config section, and
+//!   access to declared services. State is not shared between plugins.
 //!
 //! - [`AlloyContext`] — the full context handed to handlers, combining an
 //!   `Arc<BaseContext>` with a `PluginContext`.  Calling
 //!   [`stop_propagation`](AlloyContext::stop_propagation) on any plugin's
 //!   `AlloyContext` writes through to the shared base, stopping the chain
-//!   for all subsequent plugins.
+//!   for all subsequent plugins. Each plugin's state is completely isolated.
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -45,16 +44,13 @@ type ServiceSnapshot = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
 ///
 /// - Stopping propagation in one plugin is immediately visible to the dispatch
 ///   loop and to all subsequent plugins.
-/// - State written by one plugin via [`AlloyContext::set_state`] is readable
-///   by later plugins via their own `AlloyContext`.
 /// - The event and bot are accessed without copying.
+/// - Each plugin has its own isolated state through [`PluginContext`].
 pub struct BaseContext {
     event: BoxedEvent,
     bot: BoxedBot,
     /// Cleared by any handler that calls [`AlloyContext::stop_propagation`].
     is_propagating: AtomicBool,
-    /// Type-keyed state shared across all plugins for this event.
-    state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
 }
 
 impl BaseContext {
@@ -64,7 +60,6 @@ impl BaseContext {
             event,
             bot,
             is_propagating: AtomicBool::new(true),
-            state: Mutex::new(HashMap::new()),
         }
     }
 
@@ -80,11 +75,9 @@ impl BaseContext {
 
 impl std::fmt::Debug for BaseContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let state_count = self.state.lock().map(|s| s.len()).unwrap_or(0);
         f.debug_struct("BaseContext")
             .field("event", &self.event)
             .field("is_propagating", &self.is_propagating())
-            .field("state_entries", &state_count)
             .finish_non_exhaustive()
     }
 }
@@ -96,25 +89,37 @@ impl std::fmt::Debug for BaseContext {
 /// Plugin-specific data carried alongside the shared [`BaseContext`].
 ///
 /// Every plugin gets its own `PluginContext` for each event dispatch.
-/// This is intentionally a plain struct rather than a field on [`AlloyContext`]
-/// so that future per-plugin fields (e.g. per-plugin rate-limit state,
-/// per-plugin metadata) have a clear home without polluting the shared base.
+/// This context includes:
+/// - The plugin's config section from `alloy.yaml`
+/// - Services accessible to this plugin
+/// - **Isolated state storage** unique to this plugin (not shared with other plugins)
 ///
-/// `services` is intentionally restricted to the services declared by this
-/// plugin in its [`define_plugin!`] descriptor (`provides` + `depends_on`).
-/// This prevents a plugin from reaching services it never declared a need for.
+/// This is intentionally a separate struct so that each plugin has its own:
+/// - State space (via the `state` field)
+/// - Config and services snapshot (via the other fields)
+/// - Guarantees about data isolation during event processing
 #[derive(Debug)]
 pub struct PluginContext {
+    /// The name of the plugin.
+    name: String,
     /// The plugin's config section from `alloy.yaml` (or an empty object).
     config: Arc<Value>,
     /// Services accessible to this plugin — only those it declared.
     services: ServiceSnapshot,
+    /// Per-plugin isolated state storage for this event dispatch.
+    /// Each plugin gets its own independent state that is not shared.
+    state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
 }
 
 impl PluginContext {
-    /// Creates a new `PluginContext` with the given config and services.
-    pub(crate) fn new(config: Arc<Value>, services: ServiceSnapshot) -> Self {
-        Self { config, services }
+    /// Creates a new `PluginContext` with the given plugin name, config, and services.
+    pub(crate) fn new(name: &str, config: Arc<Value>, services: ServiceSnapshot) -> Self {
+        Self {
+            name: name.to_string(),
+            config,
+            services,
+            state: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -125,20 +130,21 @@ impl PluginContext {
 /// The full context object passed to handlers during event processing.
 ///
 /// `AlloyContext` composes the **shared** [`BaseContext`] (base) with
-/// **plugin-specific** [`PluginContext`] data.  All plugins handling the same
-/// event share the same `Arc<BaseContext>`, so:
+/// **plugin-specific** [`PluginContext`] data.  Each plugin gets:
 ///
-/// - Calling [`stop_propagation`](Self::stop_propagation) prevents subsequent
-///   plugins from running.
-/// - State written with [`set_state`](Self::set_state) is visible to plugins
-///   processed later in the same dispatch cycle.
+/// - **Isolated state**: Via `set_state`, `get_state`, etc. — each plugin's
+///   state is completely isolated and not visible to other plugins.
+/// - **Shared propagation**: Calling [`stop_propagation`](Self::stop_propagation)
+///   prevents subsequent plugins from running.
+/// - **Shared event/bot**: Access to the event and bot without copying.
 ///
 /// # Example
 ///
 /// ```rust,ignore
 /// async fn handle(ctx: Arc<AlloyContext>) {
 ///     println!("event: {:?}", ctx.event());
-///     ctx.stop_propagation();           // no further plugins will run
+///     ctx.set_state("my_data".to_string());  // isolated to this plugin
+///     ctx.stop_propagation();                // no further plugins will run
 ///     ctx.bot().send(...).await.ok();
 /// }
 /// ```
@@ -197,20 +203,21 @@ impl AlloyContext {
         self.base.is_propagating()
     }
 
-    /// Stores a value in the shared cross-plugin state map.
+    /// Stores a value in this plugin's isolated state map.
     ///
+    /// Each plugin has its own isolated state that is not visible to other plugins.
     /// Only one value per type can be stored; subsequent calls overwrite.
     pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
-        self.base
+        self.plugin
             .state
             .lock()
             .unwrap()
             .insert(TypeId::of::<T>(), Box::new(value));
     }
 
-    /// Retrieves a cloned value from the shared state map.
+    /// Retrieves a cloned value from this plugin's isolated state map.
     pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
-        self.base
+        self.plugin
             .state
             .lock()
             .unwrap()
@@ -219,18 +226,18 @@ impl AlloyContext {
             .cloned()
     }
 
-    /// Returns `true` if a value of type `T` exists in state.
+    /// Returns `true` if a value of type `T` exists in this plugin's state.
     pub fn has_state<T: 'static>(&self) -> bool {
-        self.base
+        self.plugin
             .state
             .lock()
             .unwrap()
             .contains_key(&TypeId::of::<T>())
     }
 
-    /// Removes and returns a value from state.
+    /// Removes and returns a value from this plugin's state.
     pub fn take_state<T: 'static>(&self) -> Option<T> {
-        self.base
+        self.plugin
             .state
             .lock()
             .unwrap()
@@ -241,13 +248,13 @@ impl AlloyContext {
 
     // ─── Plugin-specific ──────────────────────────────────────────────────────
 
-    /// Returns the plugin's config section from `alloy.yaml`.
-    pub fn config(&self) -> &Arc<serde_json::Value> {
-        &self.plugin.config
+    /// Returns the name of the currently executing plugin.
+    pub fn get_plugin_name(&self) -> &str {
+        &self.plugin.name
     }
 
-    /// Returns a reference to the plugin-specific context.
-    pub fn plugin_ctx(&self) -> &PluginContext {
-        &self.plugin
+    /// Returns the plugin's config section from `alloy.yaml`.
+    pub fn get_config(&self) -> Arc<serde_json::Value> {
+        self.plugin.config.clone()
     }
 }

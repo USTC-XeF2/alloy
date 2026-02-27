@@ -254,9 +254,7 @@ where
                         let bot = ctx.bot_arc();
                         let event = ctx.event().clone();
                         let msg = err.to_string();
-                        tokio::spawn(async move {
-                            let _ = bot.send(&*event, &msg).await;
-                        });
+                        let _ = bot.send(&*event, &msg).await;
                     }
                     Ok(())
                 }

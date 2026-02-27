@@ -70,24 +70,19 @@
 //! ```
 
 // ─── Submodules ──────────────────────────────────────────────────────────────
-pub mod config;
 pub mod core;
 pub mod descriptor;
+pub mod extractor;
 pub mod macros;
 pub mod registry;
-pub mod service_ref;
-
-#[cfg(feature = "builtin-plugins")]
-pub mod builtin;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
-pub use config::PluginConfig;
 pub use core::{
     OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType, ServiceEntry,
 };
 pub use descriptor::{ALLOY_PLUGIN_API_VERSION, PluginDescriptor};
+pub use extractor::{PluginConfig, ServiceRef};
 pub use registry::{ServiceInit, ServiceMeta};
-pub use service_ref::ServiceRef;
 
 // ─── Macro-internal re-export (needed by define_plugin! at call sites) ───────
 #[doc(hidden)]

@@ -63,10 +63,6 @@ pub use alloy_framework as framework;
 pub use alloy_runtime as runtime;
 pub use alloy_transport as transport;
 
-// Built-in plugins
-#[cfg(feature = "builtin-plugins")]
-pub use alloy_framework::plugin::builtin as builtin_plugins;
-
 /// Prelude module for convenient imports.
 ///
 /// This module provides all commonly used types for building bot applications:

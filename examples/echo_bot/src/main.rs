@@ -12,9 +12,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use alloy::builtin_plugins::storage::{STORAGE_PLUGIN, StorageService};
 use alloy::prelude::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
+use alloy_plugin_storage::{Data, STORAGE_PLUGIN, StorageDir, StorageService};
 use anyhow::Result;
 use clap::Parser;
 use time::OffsetDateTime;
@@ -100,9 +100,9 @@ async fn info_handler(
 /// Records one sign-in per user per calendar day (UTC) to `signin.json`.
 async fn signin_handler(
     event: EventContext<MessageEvent>,
-    storage: ServiceRef<dyn StorageService>,
+    data_dir: StorageDir<Data>,
 ) -> Result<RichText> {
-    let path = storage.data_dir().join("signin.json");
+    let path = data_dir.join("signin.json");
 
     // Load existing records (user_id → last-signin-date).
     let mut records: HashMap<String, String> = if path.exists() {

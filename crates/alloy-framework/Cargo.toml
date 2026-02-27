@@ -11,7 +11,6 @@ license = { workspace = true }
 default = []
 
 command = ["dep:clap"]
-builtin-plugins = ["tokio/fs"]
 
 [dependencies]
 alloy-core = { workspace = true }
