@@ -215,7 +215,7 @@ where
 
         async move {
             if ctx.event().event_type() != EventType::Message {
-                return Err(Box::new(EventSkipped) as BoxError);
+                return Err(EventSkipped.into());
             }
 
             let rich_text = ctx.event().get_rich_text();
@@ -223,7 +223,7 @@ where
 
             let expected_cmd = format!("/{name}");
             if args.is_empty() || args[0].to_lowercase() != expected_cmd.to_lowercase() {
-                return Err(Box::new(EventSkipped) as BoxError);
+                return Err(EventSkipped.into());
             }
 
             CURRENT_REGISTRY.with(|reg| {

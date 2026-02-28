@@ -33,7 +33,7 @@ use std::task::{Context, Poll};
 
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use tower::filter::{FilterLayer, Predicate};
+use tower::filter::{AsyncFilterLayer, AsyncPredicate, FilterLayer, Predicate};
 use tower::util::BoxCloneSyncService;
 use tower::{BoxError, Layer, Service, ServiceBuilder};
 use tower_layer::Stack;
@@ -130,6 +130,39 @@ impl Predicate<Arc<AlloyContext>> for EventPredicate {
         } else {
             Err(Box::new(EventSkipped))
         }
+    }
+}
+
+/// A type-erased, [`AsyncPredicate`]-implementing wrapper for asynchronous closures.
+#[derive(Clone)]
+pub struct AsyncEventPredicate(
+    Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture<'static, bool> + Send + Sync>,
+);
+
+impl AsyncEventPredicate {
+    /// Creates a new `AsyncEventPredicate` from an asynchronous closure.
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(Arc<AlloyContext>) -> BoxFuture<'static, bool> + Send + Sync + 'static,
+    {
+        Self(Arc::new(f))
+    }
+}
+
+impl AsyncPredicate<Arc<AlloyContext>> for AsyncEventPredicate {
+    type Future = BoxFuture<'static, Result<Arc<AlloyContext>, BoxError>>;
+    type Request = Arc<AlloyContext>;
+
+    fn check(&mut self, request: Arc<AlloyContext>) -> Self::Future {
+        let f = self.0.clone();
+        async move {
+            if f(request.clone()).await {
+                Ok(request)
+            } else {
+                Err(EventSkipped.into())
+            }
+        }
+        .boxed()
     }
 }
 
@@ -251,6 +284,15 @@ pub trait ServiceBuilderExt<L> {
     where
         F: Fn(&AlloyContext) -> bool + Send + Sync + 'static;
 
+    /// Attaches an asynchronous filter predicate directly to the service builder.
+    fn rule_async<F, Fut>(
+        self,
+        predicate: F,
+    ) -> ServiceBuilder<Stack<AsyncFilterLayer<AsyncEventPredicate>, L>>
+    where
+        F: Fn(Arc<AlloyContext>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = bool> + Send + 'static;
+
     /// Adds a blocking layer that prevents event propagation if the inner service succeeds.
     ///
     /// When the inner service completes with `Ok`, this calls `ctx.stop_propagation()` to stop
@@ -273,6 +315,17 @@ impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
         F: Fn(&AlloyContext) -> bool + Send + Sync + 'static,
     {
         self.filter(EventPredicate::new(predicate))
+    }
+
+    fn rule_async<F, Fut>(
+        self,
+        predicate: F,
+    ) -> ServiceBuilder<Stack<AsyncFilterLayer<AsyncEventPredicate>, L>>
+    where
+        F: Fn(Arc<AlloyContext>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = bool> + Send + 'static,
+    {
+        self.filter_async(AsyncEventPredicate::new(move |ctx| predicate(ctx).boxed()))
     }
 
     fn block(self) -> ServiceBuilder<Stack<BlockLayer, L>> {
