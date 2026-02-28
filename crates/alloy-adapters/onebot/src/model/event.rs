@@ -402,7 +402,7 @@ pub struct HeartbeatEvent {
 /// Parses raw JSON into the most specific `BoxedEvent`.
 ///
 /// The adapter calls this from `parse_event`.
-pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
+pub fn parse_onebot_event(raw: &str) -> serde_json::Result<BoxedEvent> {
     // Pre-parse to extract type discriminators
     let v: Value = serde_json::from_str(raw)?;
     let post_type = v.get("post_type").and_then(|v| v.as_str()).unwrap_or("");
@@ -411,7 +411,7 @@ pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
         ($ty:ty) => {{
             let mut event: $ty = serde_json::from_value(v)?;
             event.set_raw(raw);
-            Ok(BoxedEvent::new(event))
+            Ok(Arc::new(event))
         }};
     }
 
@@ -470,7 +470,7 @@ pub fn parse_onebot_event(raw: &str) -> Result<BoxedEvent, serde_json::Error> {
             // Unknown post_type — fall back to root event
             let mut event: OneBotEvent = serde_json::from_value(v)?;
             event.set_raw(raw);
-            Ok(BoxedEvent::new(event))
+            Ok(Arc::new(event))
         }
     }
 }

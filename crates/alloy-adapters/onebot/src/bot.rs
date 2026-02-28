@@ -16,7 +16,7 @@
 //!         onebot.send_private_msg(12345678, "Hello!", false).await.ok();
 //!         
 //!         // Or use the generic send method (passes event directly)
-//!         bot.send(event.as_event(), "Reply!").await.ok();
+//!         bot.send(event.as_ref(), "Reply!").await.ok();
 //!     }
 //! }
 //! ```

@@ -39,6 +39,17 @@ impl<T: FromContext> FromContext for Option<T> {
     }
 }
 
+/// Implementation for `ExtractResult<T>` where `T: FromContext`.
+///
+/// This allows handlers to have parameters that can return detailed
+/// extraction errors.
+#[async_trait]
+impl<T: FromContext> FromContext for ExtractResult<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        Ok(T::from_context(ctx).await)
+    }
+}
+
 /// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
 ///
 /// This is useful when a handler needs to work with any event type
@@ -59,7 +70,7 @@ impl FromContext for BoxedEvent {
 ///
 /// async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
 ///     // Use the bot to send a message back
-///     bot.send(event.as_event(), "Hello!").await.ok();
+///     bot.send(event.as_ref(), "Hello!").await.ok();
 /// }
 /// ```
 #[async_trait]

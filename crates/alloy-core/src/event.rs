@@ -212,6 +212,16 @@ pub trait Event: AsText + Any + Send + Sync {
         Self: Sized;
 }
 
+impl std::fmt::Debug for dyn Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Event")
+            .field("name", &self.event_name())
+            .field("platform", &self.platform())
+            .field("type", &self.event_type())
+            .finish()
+    }
+}
+
 // ============================================================================
 // AsText Blanket Implementation
 // ============================================================================
@@ -232,63 +242,4 @@ impl<E: Event> AsText for E {
     }
 }
 
-// ============================================================================
-// Boxed Event
-// ============================================================================
-
-/// A type-erased container for events that supports runtime downcasting.
-///
-/// `BoxedEvent` wraps any type implementing [`Event`] in an `Arc`, allowing
-/// it to be passed through the dispatcher without knowing its concrete type.
-///
-/// # Deref to Event Trait
-///
-/// `BoxedEvent` implements `Deref<Target = dyn Event>`, allowing you to call
-/// any trait methods directly without using `.inner()`:
-///
-/// ```rust,ignore
-/// let event: BoxedEvent = /* ... */;
-/// let name = event.event_name();
-/// let text = event.get_plain_text();
-/// let typ = event.event_type();
-/// ```
-#[derive(Clone)]
-pub struct BoxedEvent {
-    inner: Arc<dyn Event>,
-}
-
-impl BoxedEvent {
-    /// Creates a new `BoxedEvent` from any type implementing `Event`.
-    pub fn new<E: Event>(event: E) -> Self {
-        Self {
-            inner: Arc::new(event),
-        }
-    }
-
-    /// Attempts to extract a typed event using the event's parent chain.
-    ///
-    /// This uses the `TypeId`-based downgrade mechanism to traverse the parent
-    /// chain and find the matching event type.
-    pub fn extract<E: Event>(&self) -> Option<Box<E>> {
-        self.inner
-            .downgrade_any(TypeId::of::<E>())
-            .and_then(|boxed| boxed.downcast::<E>().ok())
-    }
-}
-
-impl std::ops::Deref for BoxedEvent {
-    type Target = dyn Event;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.as_ref()
-    }
-}
-
-impl std::fmt::Debug for BoxedEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BoxedEvent")
-            .field("event_name", &self.event_name())
-            .field("platform", &self.platform())
-            .finish()
-    }
-}
+pub type BoxedEvent = Arc<dyn Event>;

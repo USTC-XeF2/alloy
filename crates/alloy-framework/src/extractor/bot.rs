@@ -30,7 +30,7 @@ impl<T: BotTrait> std::ops::Deref for Bot<T> {
 
 impl<T: BotTrait> AsRef<dyn BotTrait> for Bot<T> {
     fn as_ref(&self) -> &dyn BotTrait {
-        &*self.0
+        self.0.as_ref()
     }
 }
 

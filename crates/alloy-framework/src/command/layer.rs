@@ -253,7 +253,7 @@ where
                         let bot = ctx.bot_arc();
                         let event = ctx.event().clone();
                         let msg = err.to_string();
-                        let _ = bot.send(&*event, &msg).await;
+                        let _ = bot.send(event.as_ref(), &msg).await;
                     }
                     Ok(())
                 }

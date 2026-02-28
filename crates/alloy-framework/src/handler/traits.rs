@@ -64,7 +64,7 @@ impl HandleResponse for String {
     async fn into_response(self, ctx: Arc<AlloyContext>) {
         let bot = ctx.bot_arc();
         let event = ctx.event();
-        if let Err(e) = bot.send(&**event, &self).await {
+        if let Err(e) = bot.send(event.as_ref(), &self).await {
             error!("Failed to send message: {e}");
         }
     }
@@ -76,7 +76,7 @@ impl<S: MessageSegment> HandleResponse for Message<S> {
     async fn into_response(self, ctx: Arc<AlloyContext>) {
         let bot = ctx.bot_arc();
         let event = ctx.event();
-        if let Err(e) = bot.send_message(&**event, &self).await {
+        if let Err(e) = bot.send_message(event.as_ref(), &self).await {
             error!("Failed to send message: {e}");
         }
     }

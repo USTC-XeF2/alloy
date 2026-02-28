@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use async_trait::async_trait;
 
 use crate::context::AlloyContext;
@@ -19,7 +21,7 @@ use alloy_core::Event as EventTrait;
 ///     println!("From: {} Message: {}", event.user_id, event.get_plain_text());
 ///     
 ///     // The event can be passed directly to APIs
-///     bot.send(&event, "reply").await.ok();
+///     bot.send(event.as_ref(), "reply").await.ok();
 ///     
 ///     Outcome::Handled
 /// }
@@ -30,11 +32,6 @@ impl<T: EventTrait> Event<T> {
     /// Creates a new Event with the given data.
     pub(crate) fn new(data: T) -> Self {
         Self(data)
-    }
-
-    /// Returns a reference to the event as a trait object.
-    pub fn as_event(&self) -> &dyn EventTrait {
-        &self.0
     }
 }
 
@@ -80,7 +77,8 @@ impl<T: EventTrait + std::fmt::Debug> std::fmt::Debug for Event<T> {
 impl<T: EventTrait> FromContext for Event<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.event()
-            .extract::<T>()
+            .downgrade_any(TypeId::of::<T>())
+            .and_then(|boxed| boxed.downcast::<T>().ok())
             .map(|boxed| Event::new(*boxed))
             .ok_or_else(|| ExtractError::EventTypeMismatch {
                 expected: std::any::type_name::<T>(),
