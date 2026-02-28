@@ -39,10 +39,10 @@
 //!         url: ws://127.0.0.1:8080
 //! ```
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use figment::value::{Tag, Value};
+use figment::value::Value;
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
@@ -83,38 +83,6 @@ pub struct AlloyConfig {
     /// [`AlloyContext`]: alloy_framework::context::AlloyContext
     #[serde(default)]
     pub plugins: HashMap<String, Value>,
-}
-
-impl AlloyConfig {
-    /// Extracts adapter-specific configuration.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let onebot_config: OneBotConfig = config.extract_adapter("onebot")?;
-    /// ```
-    pub fn extract_adapter<T: serde::de::DeserializeOwned>(
-        &self,
-        adapter_name: &str,
-    ) -> Result<T, figment::Error> {
-        let value = self
-            .adapters
-            .get(adapter_name)
-            .cloned()
-            .unwrap_or_else(|| Value::Dict(Tag::default(), BTreeMap::default()));
-
-        figment::Figment::from(figment::providers::Serialized::defaults(value)).extract()
-    }
-
-    /// Checks if an adapter has configuration.
-    pub fn has_adapter(&self, adapter_name: &str) -> bool {
-        self.adapters.contains_key(adapter_name)
-    }
-
-    /// Checks if a plugin has an explicit configuration section.
-    pub fn has_plugin(&self, plugin_name: &str) -> bool {
-        self.plugins.contains_key(plugin_name)
-    }
 }
 
 // =============================================================================

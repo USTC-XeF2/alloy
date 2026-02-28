@@ -11,4 +11,3 @@ alloy = { path = "../../crates/alloy", default-features = false }
 async-trait = "0.1.89"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.49.0", features = ["fs"] }
-tracing = "0.1.44"

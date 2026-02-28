@@ -9,7 +9,6 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::TransportResult;
-use crate::event::BoxedEvent;
 
 /// Type-erased async function that performs an HTTP POST and returns JSON.
 ///
@@ -21,15 +20,6 @@ pub type PostJsonFn = Arc<
         + Send
         + Sync,
 >;
-
-// =============================================================================
-// Message Handler
-// =============================================================================
-
-/// A handler for incoming messages from a transport connection.
-///
-/// The handler receives raw bytes and returns parsed events (if any).
-pub type MessageHandler = Arc<dyn Fn(&[u8]) -> Option<BoxedEvent> + Send + Sync>;
 
 /// Information about a connection.
 #[derive(Debug, Clone)]

@@ -15,5 +15,5 @@ pub use capability::{
 };
 pub use config::{HttpClientConfig, WsClientConfig};
 pub use connection::{
-    ConnectionHandle, ConnectionInfo, ConnectionKind, ListenerHandle, MessageHandler, PostJsonFn,
+    ConnectionHandle, ConnectionInfo, ConnectionKind, ListenerHandle, PostJsonFn,
 };

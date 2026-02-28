@@ -285,21 +285,19 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
             #fw::plugin::ServiceEntry {
                 id:      <dyn #t as #fw::plugin::ServiceMeta>::ID,
                 type_id: ::std::any::TypeId::of::<dyn #t>(),
-                factory: ::std::sync::Arc::new(
-                    |ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
-                        ::std::boxed::Box::pin(async move {
-                            match <#i as #fw::plugin::ServiceInit>::init(ctx).await {
-                                ::std::result::Result::Ok(impl_val) => {
-                                    let trait_arc: ::std::sync::Arc<dyn #t> =
-                                        ::std::sync::Arc::new(impl_val);
-                                    ::std::result::Result::Ok(::std::sync::Arc::new(trait_arc)
-                                        as ::std::sync::Arc<dyn ::std::any::Any + Send + Sync>)
-                                }
-                                ::std::result::Result::Err(e) => ::std::result::Result::Err(e),
+                factory: |ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
+                    ::std::boxed::Box::pin(async move {
+                        match <#i as #fw::plugin::ServiceInit>::init(ctx).await {
+                            ::std::result::Result::Ok(impl_val) => {
+                                let trait_arc: ::std::sync::Arc<dyn #t> =
+                                    ::std::sync::Arc::new(impl_val);
+                                ::std::result::Result::Ok(::std::sync::Arc::new(trait_arc)
+                                    as ::std::sync::Arc<dyn ::std::any::Any + Send + Sync>)
                             }
-                        })
-                    },
-                ),
+                            ::std::result::Result::Err(e) => ::std::result::Result::Err(e),
+                        }
+                    })
+                },
             }
         }
     });
@@ -317,22 +315,18 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     // ── on_load / on_unload closures ──────────────────────────────────────────
     let on_load_tokens = if let Some(f) = &on_load {
         quote! {
-            ::std::option::Option::Some(::std::boxed::Box::new(
-                |ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
-                    ::std::boxed::Box::pin(async move {
-                        #f(ctx).await.map_err(|e| -> ::tower::BoxError { e.into() })
-                    })
-                },
-            ))
+            ::std::option::Option::Some(|ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
+                ::std::boxed::Box::pin(async move {
+                    #f(ctx).await.map_err(|e| -> ::tower::BoxError { e.into() })
+                })
+            })
         }
     } else {
         quote! { ::std::option::Option::None }
     };
     let on_unload_tokens = if let Some(f) = &on_unload {
         quote! {
-            ::std::option::Option::Some(::std::boxed::Box::new(
-                || ::std::boxed::Box::pin(#f()),
-            ))
+            ::std::option::Option::Some(|| ::std::boxed::Box::pin(#f()))
         }
     } else {
         quote! { ::std::option::Option::None }

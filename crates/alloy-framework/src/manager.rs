@@ -32,7 +32,7 @@
 //! manager.unload_all().await;
 //! ```
 
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ use parking_lot::RwLock;
 use serde_json::{Map, Value};
 use tracing::{error, info, span, warn};
 
-use crate::context::{AlloyContext, BaseContext, PluginContext};
+use crate::context::{AlloyContext, BaseContext, PluginContext, ServiceArc};
 use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
 use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
 
@@ -223,7 +223,7 @@ pub struct PluginManager {
     /// Per-plugin config sections, keyed by plugin name. Stored as Arc<Value> to avoid cloning.
     plugin_configs: HashMap<String, Arc<Value>>,
     /// Managed exclusively by [`load_all`] / [`unload_all`].
-    services: RwLock<HashMap<String, (TypeId, Arc<dyn Any + Send + Sync>)>>,
+    services: RwLock<HashMap<String, (TypeId, ServiceArc)>>,
 }
 
 impl PluginManager {
@@ -377,13 +377,11 @@ impl PluginManager {
 
         // ── 2. Initialise services in parallel ───────────────────────────
         let all_services = future::join_all(plugin.service_factories().iter().map(|entry| {
-            let factory = entry.factory.clone();
             let id = entry.id.to_string();
-            let type_id = entry.type_id;
             let ctx = ctx.clone();
             async move {
-                match tokio::spawn(factory(ctx)).await {
-                    Ok(Ok(arc)) => Ok((id, (type_id, arc))),
+                match tokio::spawn((entry.factory)(ctx)).await {
+                    Ok(Ok(arc)) => Ok((id, (entry.type_id, arc))),
                     Ok(Err(e)) => Err((id, e)),
                     Err(panic) => Err((id, panic.to_string())),
                 }
@@ -587,13 +585,7 @@ impl Dispatcher for PluginManager {
 
         // Snapshot the global service map once for this dispatch cycle.
         // Each plugin will receive a filtered subset of this snapshot.
-        let all_services: HashMap<String, (TypeId, Arc<dyn Any + Send + Sync>)> = {
-            self.services
-                .read()
-                .iter()
-                .map(|(id, (tid, arc))| (id.clone(), (*tid, arc.clone())))
-                .collect()
-        };
+        let all_services = self.services.read().clone();
         let base = Arc::new(BaseContext::new(event, bot));
 
         // Snapshot active plugins — brief read lock.
@@ -622,7 +614,7 @@ impl Dispatcher for PluginManager {
                 all_services
                     .iter()
                     .filter(|(id, _)| declared.contains(id.as_str()))
-                    .map(|(_, (type_id, arc))| (*type_id, arc.clone()))
+                    .map(|(_, entry)| entry.clone())
                     .collect()
             };
             let ctx = Arc::new(AlloyContext::new(

@@ -187,7 +187,7 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
                     error!(error = %e, "Shared server error");
                 }
             }
-            _ = shutdown_token.cancelled() => {
+            () = shutdown_token.cancelled() => {
                 info!(addr = %actual_addr, "Shared server shutting down");
             }
         }

@@ -28,12 +28,12 @@ use alloy_core::{BoxedBot, BoxedEvent};
 
 use crate::error::{ExtractError, ExtractResult};
 
-/// A read-only snapshot of all registered inter-plugin services.
+/// Type alias for the heterogeneous service map values stored in the global registry.
 ///
-/// Keyed by `TypeId` so handlers can retrieve services by their concrete type.
-/// Created by [`PluginManager`](crate::manager::PluginManager) once per
-/// dispatch and shared (via `Arc`) across every [`AlloyContext`] for that event.
-type ServiceSnapshot = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
+/// The inner `dyn Any` is actually an `Arc<dyn ServiceTrait>` upcast to `Any` by the
+/// plugin's service factory.  Consumers downcast it back to `Arc<dyn ServiceTrait>`
+/// to call methods on the trait object.
+pub type ServiceArc = Arc<dyn Any + Send + Sync>;
 
 // =============================================================================
 // BaseContext — shared base, one per dispatch cycle
@@ -107,7 +107,7 @@ pub struct PluginContext {
     /// The plugin's config section from `alloy.yaml` (or an empty object).
     config: Arc<Value>,
     /// Services accessible to this plugin — only those it declared.
-    services: ServiceSnapshot,
+    services: HashMap<TypeId, ServiceArc>,
     /// Per-plugin isolated state storage for this event dispatch.
     /// Each plugin gets its own independent state that is not shared.
     state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
@@ -115,7 +115,11 @@ pub struct PluginContext {
 
 impl PluginContext {
     /// Creates a new `PluginContext` with the given plugin name, config, and services.
-    pub(crate) fn new(name: &str, config: Arc<Value>, services: ServiceSnapshot) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        config: Arc<Value>,
+        services: HashMap<TypeId, ServiceArc>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             config,
