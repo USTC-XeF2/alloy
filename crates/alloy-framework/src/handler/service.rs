@@ -1,184 +1,93 @@
 //! Core handler service for the Alloy framework.
 //!
-//! [`HandlerService<H, T>`] is the fundamental building block: it wraps a
+//! [`HandlerService<F, R, T>`] is the fundamental building block: it wraps a
 //! single handler and implements `tower::Service<Arc<AlloyContext>>`. All
 //! filtering and other cross-cutting concerns are expressed as ordinary tower
 //! [`Layer`]s stacked *on top*.
-//!
-//! # Design
-//!
-//! The `on_xxx()` helpers return a [`tower::ServiceBuilder`] with the relevant
-//! layer pre-stacked. Call `.handler(f)` (from [`ServiceBuilderHandlerExt`]) to
-//! attach a handler and obtain the final service:
-//!
-//! ```text
-//! on_message()           ← ServiceBuilder<Stack<FilterLayer, Identity>>
-//!     .handler(my_fn)    ← applies FilterLayer to HandlerService<F, T>
-//! ```
-//!
-//! The result is type-erased into [`BoxedHandlerService`] by
-//! `runtime.register_service(svc)`.
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use alloy::prelude::*;
-//!
-//! runtime.register_service(on_message().handler(my_handler)).await;
-//! ```
 
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use async_trait::async_trait;
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use tower::filter::{AsyncFilterLayer, AsyncPredicate, FilterLayer, Predicate};
-use tower::util::BoxCloneSyncService;
-use tower::{BoxError, Layer, Service, ServiceBuilder};
-use tower_layer::Stack;
+use tower::{BoxError, Service};
+use tracing::error;
 
-use super::traits::Handler;
+use super::traits::FromCtxFn;
 use crate::context::AlloyContext;
-use crate::error::EventSkipped;
+use alloy_core::{Message, MessageSegment};
 
-/// A wrapper that blocks event propagation if the inner service succeeds.
-///
-/// If the inner service returns `Ok`, this calls `ctx.stop_propagation()` to prevent
-/// further handlers from processing the event. The handler itself completes normally.
-/// If the inner service returns an error, it is passed through unchanged.
-#[derive(Clone)]
-pub struct BlockLayer;
+// ============================================================================
+// HandlerResponse
+// ============================================================================
 
-impl<S> Layer<S> for BlockLayer {
-    type Service = BlockService<S>;
+/// A trait for types that can be returned from handlers.
+#[async_trait]
+pub trait HandlerResponse: Send + 'static {
+    /// Process the handler response, performing any necessary side effects (e.g. sending messages).
+    async fn process_response(self, ctx: &AlloyContext);
+}
 
-    fn layer(&self, inner: S) -> Self::Service {
-        BlockService { inner }
+/// Implementation for `()` - no response needed.
+#[async_trait]
+impl HandlerResponse for () {
+    async fn process_response(self, _ctx: &AlloyContext) {
+        // No action needed
     }
 }
 
-pub struct BlockService<S> {
-    inner: S,
-}
-
-impl<S> Clone for BlockService<S>
-where
-    S: Clone,
-{
-    fn clone(&self) -> Self {
-        BlockService {
-            inner: self.inner.clone(),
+/// Implementation for `String` - send message on Ok, log errors on Err.
+#[async_trait]
+impl HandlerResponse for String {
+    async fn process_response(self, ctx: &AlloyContext) {
+        let bot = ctx.bot_arc();
+        let event = ctx.event();
+        if let Err(e) = bot.send(event.as_ref(), &self).await {
+            error!("Failed to send message: {e}");
         }
     }
 }
 
-impl<S> Service<Arc<AlloyContext>> for BlockService<S>
-where
-    S: Service<Arc<AlloyContext>, Response = (), Error = BoxError> + Clone + Send + 'static,
-    S::Future: Send + 'static,
-{
-    type Response = ();
-    type Error = BoxError;
-    type Future = BoxFuture<'static, Result<(), Self::Error>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+/// Implementation for `Message<S>` - sends the message using `send_message`.
+#[async_trait]
+impl<S: MessageSegment> HandlerResponse for Message<S> {
+    async fn process_response(self, ctx: &AlloyContext) {
+        let bot = ctx.bot_arc();
+        let event = ctx.event();
+        if let Err(e) = bot.send_message(event.as_ref(), &self).await {
+            error!("Failed to send message: {e}");
+        }
     }
+}
 
-    fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
-        let mut inner = self.inner.clone();
-        async move {
-            match inner.call(ctx.clone()).await {
-                Ok(()) => {
-                    ctx.stop_propagation();
-                    Ok(())
-                }
-                Err(e) => Err(e),
+/// Implementation for `Option<T>` where T implements HandlerResponse.
+///
+/// On Some, the inner value's response is handled. On None, no action is taken.
+#[async_trait]
+impl<T: HandlerResponse> HandlerResponse for Option<T> {
+    async fn process_response(self, ctx: &AlloyContext) {
+        if let Some(t) = self {
+            t.process_response(ctx).await;
+        }
+    }
+}
+
+/// Implementation for `Result<T, E>` where T implements HandlerResponse.
+///
+/// On Ok, the inner value's response is handled. On Err, the error is logged.
+#[async_trait]
+impl<T: HandlerResponse, E: std::fmt::Display + Send + 'static> HandlerResponse for Result<T, E> {
+    async fn process_response(self, ctx: &AlloyContext) {
+        match self {
+            Ok(t) => t.process_response(ctx).await,
+            Err(e) => {
+                error!("Handler error: {e}");
             }
         }
-        .boxed()
     }
 }
-
-// ============================================================================
-// EventPredicate
-// ============================================================================
-
-/// A type-erased, [`Predicate`]-implementing wrapper for synchronous closures.
-///
-/// When the inner predicate returns `false` the request is rejected with [`EventSkipped`].
-#[derive(Clone)]
-pub struct EventPredicate(Arc<dyn Fn(&AlloyContext) -> bool + Send + Sync>);
-
-impl EventPredicate {
-    /// Creates a new `EventPredicate` from a synchronous closure.
-    pub fn new<F>(f: F) -> Self
-    where
-        F: Fn(&AlloyContext) -> bool + Send + Sync + 'static,
-    {
-        Self(Arc::new(f))
-    }
-}
-
-impl Predicate<Arc<AlloyContext>> for EventPredicate {
-    type Request = Arc<AlloyContext>;
-
-    fn check(&mut self, request: Arc<AlloyContext>) -> Result<Arc<AlloyContext>, BoxError> {
-        if (self.0)(&request) {
-            Ok(request)
-        } else {
-            Err(Box::new(EventSkipped))
-        }
-    }
-}
-
-/// A type-erased, [`AsyncPredicate`]-implementing wrapper for asynchronous closures.
-#[derive(Clone)]
-pub struct AsyncEventPredicate(
-    Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture<'static, bool> + Send + Sync>,
-);
-
-impl AsyncEventPredicate {
-    /// Creates a new `AsyncEventPredicate` from an asynchronous closure.
-    pub fn new<F>(f: F) -> Self
-    where
-        F: Fn(Arc<AlloyContext>) -> BoxFuture<'static, bool> + Send + Sync + 'static,
-    {
-        Self(Arc::new(f))
-    }
-}
-
-impl AsyncPredicate<Arc<AlloyContext>> for AsyncEventPredicate {
-    type Future = BoxFuture<'static, Result<Arc<AlloyContext>, BoxError>>;
-    type Request = Arc<AlloyContext>;
-
-    fn check(&mut self, request: Arc<AlloyContext>) -> Self::Future {
-        let f = self.0.clone();
-        async move {
-            if f(request.clone()).await {
-                Ok(request)
-            } else {
-                Err(EventSkipped.into())
-            }
-        }
-        .boxed()
-    }
-}
-
-// ============================================================================
-// Type alias for the boxed handler service stored by the runtime
-// ============================================================================
-
-/// A type-erased, `Clone + Send + Sync` tower service that processes
-/// `Arc<AlloyContext>`.
-///
-/// Created by `runtime.register_service(svc)` via
-/// `BoxCloneSyncService::new(svc)`.
-///
-/// The error type is [`BoxError`]: filter layers return [`crate::error::EventSkipped`]
-/// on mismatch, which the runtime silently ignores.
-pub type BoxedHandlerService = BoxCloneSyncService<Arc<AlloyContext>, (), BoxError>;
 
 // ============================================================================
 // HandlerService
@@ -196,14 +105,21 @@ pub type BoxedHandlerService = BoxCloneSyncService<Arc<AlloyContext>, (), BoxErr
 /// // Apply a filter layer on top:
 /// let filtered = on_message().layer(svc);
 /// ```
-pub struct HandlerService<H, T> {
-    handler: H,
-    // PhantomData<fn() -> T> is Send + Sync regardless of T's variance,
-    // and avoids implying ownership of T.
-    _marker: PhantomData<fn() -> T>,
+pub struct HandlerService<F, R, T> {
+    handler: F,
+    _marker: PhantomData<(R, T)>,
 }
 
-impl<H: Clone, T> Clone for HandlerService<H, T> {
+impl<F, R, T> HandlerService<F, R, T> {
+    pub fn new(handler: F) -> Self {
+        Self {
+            handler,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: Clone, R, T> Clone for HandlerService<F, R, T> {
     fn clone(&self) -> Self {
         HandlerService {
             handler: self.handler.clone(),
@@ -212,34 +128,18 @@ impl<H: Clone, T> Clone for HandlerService<H, T> {
     }
 }
 
-impl<H, T> HandlerService<H, T>
-where
-    H: Handler<T>,
-{
-    /// Wraps `handler` in a `HandlerService`.
-    pub fn new(handler: H) -> Self {
-        Self {
-            handler,
-            _marker: PhantomData,
-        }
-    }
-}
-
 /// Allows `HandlerService::new(f)` to be omitted in favour of `f.into()` when
 /// the target type can be inferred from context.
-impl<H, T> From<H> for HandlerService<H, T>
-where
-    H: Handler<T>,
-{
-    fn from(handler: H) -> Self {
+impl<F, R, T> From<F> for HandlerService<F, R, T> {
+    fn from(handler: F) -> Self {
         HandlerService::new(handler)
     }
 }
 
-impl<H, T> Service<Arc<AlloyContext>> for HandlerService<H, T>
+impl<F, R, T> Service<Arc<AlloyContext>> for HandlerService<F, R, T>
 where
-    H: Handler<T> + Clone + Send + Sync + 'static,
-    T: 'static,
+    F: FromCtxFn<R, T>,
+    R: HandlerResponse,
 {
     type Response = ();
     type Error = BoxError;
@@ -252,83 +152,11 @@ where
     fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
         let handler = self.handler.clone();
         async move {
-            handler.call(ctx).await;
+            if let Ok(r) = handler.call(ctx.clone()).await {
+                r.process_response(&ctx).await;
+            }
             Ok(())
         }
         .boxed()
-    }
-}
-
-// ============================================================================
-// ServiceBuilderExt
-// ============================================================================
-
-/// Extension trait for [`tower::ServiceBuilder`] that adds convenience methods
-/// for building handler services with filtering and other cross-cutting concerns.
-///
-/// This trait is automatically available via `use alloy::prelude::*`.
-pub trait ServiceBuilderExt<L> {
-    /// Wrap `handler` in a [`HandlerService`] and apply all stacked layers,
-    /// returning the final composed service.
-    ///
-    /// Equivalent to `.service(HandlerService::new(handler))`.
-    fn handler<H, T>(self, handler: H) -> L::Service
-    where
-        H: Handler<T>,
-        L: Layer<HandlerService<H, T>>;
-
-    /// Attaches a synchronous filter predicate directly to the service builder.
-    ///
-    /// Equivalent to `.filter(EventPredicate::new(predicate))` but more concise.
-    fn rule<F>(self, predicate: F) -> ServiceBuilder<Stack<FilterLayer<EventPredicate>, L>>
-    where
-        F: Fn(&AlloyContext) -> bool + Send + Sync + 'static;
-
-    /// Attaches an asynchronous filter predicate directly to the service builder.
-    fn rule_async<F, Fut>(
-        self,
-        predicate: F,
-    ) -> ServiceBuilder<Stack<AsyncFilterLayer<AsyncEventPredicate>, L>>
-    where
-        F: Fn(Arc<AlloyContext>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = bool> + Send + 'static;
-
-    /// Adds a blocking layer that prevents event propagation if the inner service succeeds.
-    ///
-    /// When the inner service completes with `Ok`, this calls `ctx.stop_propagation()` to stop
-    /// further handlers from processing the event. The current handler executes normally and
-    /// completes successfully. If the inner service returns an error, it passes through unchanged.
-    fn block(self) -> ServiceBuilder<Stack<BlockLayer, L>>;
-}
-
-impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
-    fn handler<H, T>(self, handler: H) -> L::Service
-    where
-        H: Handler<T>,
-        L: Layer<HandlerService<H, T>>,
-    {
-        self.service(HandlerService::new(handler))
-    }
-
-    fn rule<F>(self, predicate: F) -> ServiceBuilder<Stack<FilterLayer<EventPredicate>, L>>
-    where
-        F: Fn(&AlloyContext) -> bool + Send + Sync + 'static,
-    {
-        self.filter(EventPredicate::new(predicate))
-    }
-
-    fn rule_async<F, Fut>(
-        self,
-        predicate: F,
-    ) -> ServiceBuilder<Stack<AsyncFilterLayer<AsyncEventPredicate>, L>>
-    where
-        F: Fn(Arc<AlloyContext>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = bool> + Send + 'static,
-    {
-        self.filter_async(AsyncEventPredicate::new(move |ctx| predicate(ctx).boxed()))
-    }
-
-    fn block(self) -> ServiceBuilder<Stack<BlockLayer, L>> {
-        self.layer(BlockLayer)
     }
 }

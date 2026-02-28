@@ -1,9 +1,9 @@
-//! Handler system for the Alloy framework.
+//! Function handler trait system for the Alloy framework.
 //!
-//! This module defines the [`Handler`] trait that forms the foundation of event
-//! handling in Alloy. Unlike the previous macro-based approach, handlers are now
-//! implemented via blanket implementations for functions with different arities,
-//! similar to Axum's handler system.
+//! This module defines the [`FromCtxFn`] trait for functions that extract
+//! parameters from the application context. Handlers are implemented via blanket
+//! implementations for async functions with different arities, providing a flexible
+//! and ergonomic API similar to Axum's handler system.
 //!
 //! # Example
 //!
@@ -32,140 +32,63 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::future::BoxFuture;
-use tracing::error;
 
 use crate::context::AlloyContext;
+use crate::error::ExtractResult;
 use crate::extractor::FromContext;
-use alloy_core::{Message, MessageSegment};
 
 // ============================================================================
-// HandleResponse - Handle handler return values
+// FromCtxFn Trait
 // ============================================================================
 
-/// A trait for types that can handle handler return values.
-#[async_trait]
-pub trait HandleResponse: Send {
-    /// Convert this value into a response.
-    async fn into_response(self, ctx: Arc<AlloyContext>);
-}
-
-/// Implementation for `()` - no response needed.
-#[async_trait]
-impl HandleResponse for () {
-    async fn into_response(self, _ctx: Arc<AlloyContext>) {
-        // No action needed
-    }
-}
-
-/// Implementation for `String` - send message on Ok, log errors on Err.
-#[async_trait]
-impl HandleResponse for String {
-    async fn into_response(self, ctx: Arc<AlloyContext>) {
-        let bot = ctx.bot_arc();
-        let event = ctx.event();
-        if let Err(e) = bot.send(event.as_ref(), &self).await {
-            error!("Failed to send message: {e}");
-        }
-    }
-}
-
-/// Implementation for `Message<S>` - sends the message using `send_message`.
-#[async_trait]
-impl<S: MessageSegment> HandleResponse for Message<S> {
-    async fn into_response(self, ctx: Arc<AlloyContext>) {
-        let bot = ctx.bot_arc();
-        let event = ctx.event();
-        if let Err(e) = bot.send_message(event.as_ref(), &self).await {
-            error!("Failed to send message: {e}");
-        }
-    }
-}
-
-/// Implementation for `Option<T>` where T implements HandleResponse.
+/// A generic trait for async functions that extract parameters from the application context.
 ///
-/// On Some, the inner value's response is handled. On None, no action is taken.
-#[async_trait]
-impl<T: HandleResponse> HandleResponse for Option<T> {
-    async fn into_response(self, ctx: Arc<AlloyContext>) {
-        if let Some(t) = self {
-            t.into_response(ctx).await;
-        }
-    }
-}
-
-/// Implementation for `Result<T, E>` where T implements HandleResponse.
+/// This trait enables handlers to be implemented as ordinary async functions with
+/// 0-16 parameters, where each parameter implements [`FromContext`] for automatic extraction.
+/// This design is inspired by Axum's handler system and provides a clean, elegant API
+/// for defining event handlers.
 ///
-/// On Ok, the inner value's response is handled. On Err, the error is logged.
-#[async_trait]
-impl<T: HandleResponse, E: std::fmt::Display + Send> HandleResponse for Result<T, E> {
-    async fn into_response(self, ctx: Arc<AlloyContext>) {
-        match self {
-            Ok(t) => t.into_response(ctx).await,
-            Err(e) => {
-                error!("Handler error: {e}");
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Handler Trait
-// ============================================================================
-
-/// The core trait for event handlers in the Alloy framework.
+/// # Type Parameters
 ///
-/// Handlers process events. Unlike the previous design, handlers no longer
-/// control event propagation - that's managed by [`Matcher`](super::matcher::Matcher).
+/// - `R`: The return type of the function (typically implements [`HandlerResponse`])
+/// - `T`: A tuple type parameter representing the function's parameters (used for specialization)
 ///
 /// # Blanket Implementation
 ///
 /// This trait is automatically implemented for async functions that:
-/// - Take 0-16 parameters that implement [`FromContext`]
-/// - Return a type that implements [`HandleResponse`]
+/// - Take 0-16 parameters, each implementing [`FromContext`]
+/// - Return a type implementing [`HandlerResponse`]
+/// - Are `Clone + Send + Sync + 'static`
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// // No return value
-/// async fn simple_handler(event: EventContext<MessageEvent>) {
+/// use alloy_core::{AlloyContext, FromContext, EventContext};
+///
+/// // Simple handler with no context extraction
+/// async fn simple_handler() {
+///     println!("Handling event");
+/// }
+///
+/// // Handler with message event extraction
+/// async fn echo_handler(event: EventContext<MessageEvent>) {
 ///     println!("Message: {}", event.get_plain_text());
 /// }
 ///
-/// // Return Result<(), Error>
-/// async fn result_handler(event: EventContext<MessageEvent>) -> Result<(), anyhow::Error> {
-///     // Process event...
-///     Ok(())
-/// }
-///
-/// // Return Result<String, Error> - automatically sends the message
-/// async fn reply_handler(event: EventContext<MessageEvent>) -> Result<String, anyhow::Error> {
-///     Ok(format!("You said: {}", event.get_plain_text()))
+/// // Handler with multiple extractors
+/// async fn complex_handler(
+///     msg: EventContext<MessageEvent>,
+///     state: State<AppState>,
+/// ) {
+///     // Process message and state...
 /// }
 /// ```
 #[async_trait]
-pub trait Handler<T>: Clone + Send + Sync + 'static {
-    /// Call the handler with the given context.
-    async fn call(self, ctx: Arc<AlloyContext>);
-}
-
-// ============================================================================
-// BoxedHandler - Type-erased handler stored in collections
-// ============================================================================
-
-/// A type-erased handler that can be stored in collections.
-///
-/// Internally a closure that captures the original handler and calls it
-/// with a cloned copy on each invocation.
-pub type BoxedHandler = Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture<'static, ()> + Send + Sync>;
-
-/// Convert a handler function into a boxed handler.
-pub fn into_handler<F, T>(f: F) -> BoxedHandler
-where
-    F: Handler<T> + Send + Sync + 'static,
-    T: 'static,
-{
-    Arc::new(move |ctx| f.clone().call(ctx))
+pub trait FromCtxFn<R, T>: Clone + Send + Sync + 'static {
+    /// Call this function with the given context, extracting all parameters.
+    ///
+    /// Returns an error if any parameter extraction fails (e.g., required context is missing).
+    async fn call(self, ctx: Arc<AlloyContext>) -> ExtractResult<R>;
 }
 
 // ============================================================================
@@ -178,22 +101,19 @@ macro_rules! impl_handler {
         $($ty:ident),*
     ) => {
         #[allow(non_snake_case)]
+        #[allow(unused_variables)]
         #[async_trait]
-        impl<F, Fut, Res, $($ty,)*> Handler<($($ty,)*)> for F
+        impl<F, Fut, Res, $($ty,)*> FromCtxFn<Res, ($($ty,)*)> for F
         where
             F: FnOnce($($ty,)*) -> Fut + Clone + Send + Sync + 'static,
             Fut: Future<Output = Res> + Send + 'static,
-            Res: HandleResponse + 'static,
+            Res: Send + 'static,
             $( $ty: FromContext + Send + 'static, )*
         {
-            async fn call(self, ctx: Arc<AlloyContext>) {
-                let ($($ty,)*) = futures::join!($($ty::from_context(&ctx),)*);
-                $(
-                    let Ok($ty) = $ty else { return };
-                )*
+            async fn call(self, ctx: Arc<AlloyContext>) -> ExtractResult<Res> {
+                let ($($ty,)*) = futures::try_join!($($ty::from_context(&ctx),)*)?;
 
-                let res = (self)($($ty,)*).await;
-                res.into_response(ctx).await;
+                Ok((self)($($ty,)*).await)
             }
         }
     };

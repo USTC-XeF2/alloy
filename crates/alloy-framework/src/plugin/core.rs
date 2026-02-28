@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use tower::util::BoxCloneSyncService;
 use tower::{BoxError, Service};
 use tracing::{debug, error};
 
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::handler::BoxedHandlerService;
 
 // ─── PluginLoadContext ────────────────────────────────────────────────────────
 
@@ -167,6 +167,8 @@ pub struct ServiceEntry {
             + Sync,
     >,
 }
+
+type BoxedHandlerService = BoxCloneSyncService<Arc<AlloyContext>, (), BoxError>;
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 

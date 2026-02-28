@@ -40,7 +40,8 @@ pub type FilterServiceBuilder = ServiceBuilder<Stack<FilterLayer<EventPredicate>
 /// runtime.register_service(on_event_type(EventType::Message).handler(handler)).await;
 /// ```
 pub fn on_event_type(event_type: EventType) -> FilterServiceBuilder {
-    ServiceBuilder::new().rule(move |ctx: &AlloyContext| ctx.event().event_type() == event_type)
+    ServiceBuilder::new()
+        .rule_sync(move |ctx: &AlloyContext| ctx.event().event_type() == event_type)
 }
 
 /// Creates a [`ServiceBuilder`] that only passes through **message** events.
@@ -71,5 +72,6 @@ pub fn on_message() -> FilterServiceBuilder {
 /// ```
 pub fn on<E: Event + 'static>() -> FilterServiceBuilder {
     let type_id = TypeId::of::<E>();
-    ServiceBuilder::new().rule(move |ctx: &AlloyContext| ctx.event().as_any().type_id() == type_id)
+    ServiceBuilder::new()
+        .rule_sync(move |ctx: &AlloyContext| ctx.event().as_any().type_id() == type_id)
 }

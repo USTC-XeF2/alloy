@@ -11,7 +11,7 @@ use tower_layer::{Identity, Stack};
 
 use crate::context::AlloyContext;
 use crate::error::EventSkipped;
-use crate::handler::{Handler, HandlerService, ServiceBuilderExt};
+use crate::handler::{FromCtxFn, HandlerResponse, HandlerService, ServiceBuilderExt};
 use alloy_core::EventType;
 
 use super::CURRENT_REGISTRY;
@@ -138,9 +138,10 @@ where
     ///     .reply_error(false)
     ///     .handler(my_handler)
     /// ```
-    pub fn handler<H, U>(self, handler: H) -> CommandService<T, HandlerService<H, U>>
+    pub fn handler<F, R, U>(self, handler: F) -> CommandService<T, HandlerService<F, R, U>>
     where
-        H: Handler<U>,
+        F: FromCtxFn<R, U>,
+        R: HandlerResponse,
     {
         self.build().handler(handler)
     }

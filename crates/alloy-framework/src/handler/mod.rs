@@ -15,7 +15,7 @@
 //! The [`Handler`] trait is the foundation. It's automatically implemented for
 //! async functions that:
 //! - Accept 0-16 parameters that implement [`FromContext`]
-//! - Return a type implementing [`HandleResponse`]
+//! - Return a type implementing [`HandlerResponse`]
 //!
 //! ```rust,ignore
 //! use alloy_framework::*;
@@ -48,13 +48,12 @@
 //!     .handler(my_handler)  ← HandlerService + FilterLayer + Identity
 //! ```
 
+pub mod builder;
 pub mod service;
 pub mod traits;
 
-pub use service::{
-    BlockLayer, BlockService, BoxedHandlerService, EventPredicate, HandlerService,
-    ServiceBuilderExt,
-};
-pub use traits::{BoxedHandler, HandleResponse, Handler, into_handler};
+pub use builder::{BlockLayer, BlockService, EventPredicate, ServiceBuilderExt};
+pub use service::{HandlerResponse, HandlerService};
+pub use traits::FromCtxFn;
 
 pub use tower::Layer;
