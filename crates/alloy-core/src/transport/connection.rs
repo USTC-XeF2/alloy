@@ -5,8 +5,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
-use crate::error::{TransportError, TransportResult};
+use crate::error::TransportResult;
 use crate::event::BoxedEvent;
 
 /// Type-erased async function that performs an HTTP POST and returns JSON.
@@ -74,32 +76,28 @@ impl ConnectionInfo {
 pub struct ListenerHandle {
     /// Unique identifier for this listener.
     pub id: String,
-    /// Shutdown signal sender.
-    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Cancellation token for graceful shutdown.
+    shutdown_token: CancellationToken,
 }
 
 impl ListenerHandle {
     /// Creates a new listener handle.
-    pub fn new(id: impl Into<String>, shutdown_tx: tokio::sync::oneshot::Sender<()>) -> Self {
+    pub fn new(id: impl Into<String>, shutdown_token: CancellationToken) -> Self {
         Self {
             id: id.into(),
-            shutdown_tx: Some(shutdown_tx),
+            shutdown_token,
         }
     }
 
     /// Stops the listener.
-    pub fn stop(mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
+    pub fn stop(self) {
+        self.shutdown_token.cancel();
     }
 }
 
 impl Drop for ListenerHandle {
     fn drop(&mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
+        self.shutdown_token.cancel();
     }
 }
 
@@ -116,7 +114,7 @@ pub enum ConnectionKind {
     /// WebSocket connection (outbound dial or inbound accept — identical after handshake).
     Ws {
         /// Channel to the WS write loop; send serialised frames here.
-        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+        message_tx: mpsc::Sender<Vec<u8>>,
     },
     /// HTTP outbound API client.
     ///
@@ -133,7 +131,7 @@ pub enum ConnectionKind {
     /// SSE / response-channel delivery; it is not used for API calls.
     HttpServer {
         /// Outgoing message queue (reserved for future SSE / push mechanisms).
-        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+        message_tx: mpsc::Sender<Vec<u8>>,
     },
 }
 
@@ -161,8 +159,8 @@ pub struct ConnectionHandle {
     pub id: String,
     /// Transport-specific data for this connection.
     pub kind: ConnectionKind,
-    /// Shutdown signal sender.
-    shutdown_tx: Arc<tokio::sync::watch::Sender<bool>>,
+    /// Cancellation token for graceful shutdown.
+    shutdown_token: CancellationToken,
 }
 
 impl ConnectionHandle {
@@ -176,13 +174,13 @@ impl ConnectionHandle {
     /// after the handshake, their behavior is identical.
     pub fn new_ws(
         id: impl Into<String>,
-        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
-        shutdown_tx: tokio::sync::watch::Sender<bool>,
+        message_tx: mpsc::Sender<Vec<u8>>,
+        shutdown_token: CancellationToken,
     ) -> Self {
         Self {
             id: id.into(),
             kind: ConnectionKind::Ws { message_tx },
-            shutdown_tx: Arc::new(shutdown_tx),
+            shutdown_token,
         }
     }
 
@@ -193,64 +191,30 @@ impl ConnectionHandle {
     pub fn new_http_client(
         id: impl Into<String>,
         post_json: PostJsonFn,
-        shutdown_tx: tokio::sync::watch::Sender<bool>,
+        shutdown_token: CancellationToken,
     ) -> Self {
         Self {
             id: id.into(),
             kind: ConnectionKind::HttpClient { post_json },
-            shutdown_tx: Arc::new(shutdown_tx),
+            shutdown_token,
         }
     }
 
     /// Creates a handle for an HTTP inbound webhook server connection.
     pub fn new_http_server(
         id: impl Into<String>,
-        message_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
-        shutdown_tx: tokio::sync::watch::Sender<bool>,
+        message_tx: mpsc::Sender<Vec<u8>>,
+        shutdown_token: CancellationToken,
     ) -> Self {
         Self {
             id: id.into(),
             kind: ConnectionKind::HttpServer { message_tx },
-            shutdown_tx: Arc::new(shutdown_tx),
+            shutdown_token,
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Common accessors
-    // -------------------------------------------------------------------------
-
-    /// Sends raw bytes over this connection.
-    ///
-    /// Valid for `WsClient`, `WsServer`, and `HttpServer` connections.
-    /// Returns [`TransportError::SendFailed`] for `HttpClient` connections
-    /// (those issue API calls via [`ConnectionKind::HttpClient::http`] instead).
-    pub async fn send(&self, data: Vec<u8>) -> TransportResult<()> {
-        let tx = match &self.kind {
-            ConnectionKind::Ws { message_tx } | ConnectionKind::HttpServer { message_tx } => {
-                message_tx
-            }
-            ConnectionKind::HttpClient { .. } => {
-                return Err(TransportError::SendFailed(
-                    "HTTP client connections do not use a raw send channel; \
-                     use HttpClientCapability::post_json instead"
-                        .into(),
-                ));
-            }
-        };
-        tx.send(data)
-            .await
-            .map_err(|e| TransportError::SendFailed(e.to_string()))
-    }
-
-    /// Sends a JSON value over this connection.
-    pub async fn send_json(&self, value: &Value) -> TransportResult<()> {
-        let data = serde_json::to_vec(value)
-            .map_err(|e| TransportError::SendFailed(format!("JSON serialization failed: {e}")))?;
-        self.send(data).await
-    }
-
     /// Signals the transport loop to shut down this connection.
-    pub fn close(&self) {
-        let _ = self.shutdown_tx.send(true);
+    pub fn close(self) {
+        self.shutdown_token.cancel();
     }
 }

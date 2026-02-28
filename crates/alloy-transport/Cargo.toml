@@ -14,7 +14,7 @@ default = []
 http-client = ["dep:reqwest"]
 http-server = ["dep:axum"]
 ws-client = ["dep:tokio-tungstenite"]
-ws-server = ["dep:axum"]
+ws-server = ["dep:axum", "axum/ws"]
 
 # Convenience feature groups
 full = ["http-client", "http-server", "ws-client", "ws-server"]
@@ -25,8 +25,9 @@ alloy-macros = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time"] }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
-axum = { version = "0.8.8", features = ["ws"], optional = true }
+axum = { version = "0.8.8", optional = true }
 reqwest = { version = "0.13.2", features = ["json"], optional = true }
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"], optional = true }

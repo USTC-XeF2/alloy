@@ -63,7 +63,7 @@ impl OneBotBot {
             // HTTP outbound: all data lives directly in the variant
             ConnectionKind::HttpClient { post_json } => Arc::new(HttpApiCaller::new(post_json)),
             // WebSocket: echo-based async caller
-            ConnectionKind::Ws { ref message_tx } => Arc::new(WsApiCaller::new(message_tx.clone())),
+            ConnectionKind::Ws { message_tx } => Arc::new(WsApiCaller::new(message_tx)),
             // HTTP server: receive-only, cannot issue API calls
             ConnectionKind::HttpServer { .. } => Arc::new(DisabledApiCaller::new()),
         };

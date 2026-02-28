@@ -5,7 +5,7 @@ use std::sync::Arc;
 use alloy_macros::register_capability;
 use futures::FutureExt;
 use reqwest::ClientBuilder;
-use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use alloy_core::{
@@ -60,8 +60,8 @@ pub async fn http_start_client(
         .boxed()
     });
 
-    let (shutdown_tx, _shutdown_rx) = watch::channel(false);
-    let connection = ConnectionHandle::new_http_client(&bot_id, post_json, shutdown_tx);
+    let shutdown_token = CancellationToken::new();
+    let connection = ConnectionHandle::new_http_client(&bot_id, post_json, shutdown_token.clone());
 
     handler.create_bot(&bot_id, connection.clone());
 

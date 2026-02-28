@@ -33,7 +33,9 @@ use axum::{
     response::IntoResponse,
 };
 use parking_lot::{Mutex, RwLock};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use alloy_core::{
@@ -42,10 +44,7 @@ use alloy_core::{
 use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
-use {
-    axum::{body::Bytes, response::Response, routing::post},
-    tokio::sync::watch,
-};
+use axum::{body::Bytes, response::Response, routing::post};
 
 #[cfg(feature = "ws-server")]
 use {
@@ -68,7 +67,7 @@ use {
 #[cfg(feature = "http-server")]
 struct HttpBotHandler {
     handler: Arc<dyn ConnectionHandler>,
-    known_bots: Arc<tokio::sync::Mutex<HashMap<String, ConnectionHandle>>>,
+    known_bots: Mutex<HashMap<String, ConnectionHandle>>,
 }
 
 /// Handles all WebSocket connections arriving at a single registered path.
@@ -79,7 +78,7 @@ struct HttpBotHandler {
 struct WsBotHandler {
     handler: Arc<dyn ConnectionHandler>,
     /// Active connections: bot_id → sender half of the outgoing message channel.
-    connections: Arc<tokio::sync::Mutex<HashMap<String, mpsc::Sender<Vec<u8>>>>>,
+    connections: Mutex<HashMap<String, mpsc::Sender<Vec<u8>>>>,
 }
 
 // ─── Shared runtime state (one per bound address) ───────────────────────────────
@@ -120,15 +119,13 @@ struct ServerEntry {
     actual_addr: String,
     /// Route tables and other shared axum state.
     state: Arc<SharedState>,
-    /// Sends the shutdown signal to the axum task on first drop.
-    shutdown_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// Cancellation token for graceful shutdown.
+    shutdown_token: CancellationToken,
 }
 
 impl Drop for ServerEntry {
     fn drop(&mut self) {
-        if let Some(tx) = self.shutdown_tx.lock().take() {
-            let _ = tx.send(());
-        }
+        self.shutdown_token.cancel();
     }
 }
 
@@ -158,17 +155,17 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
 
     // ── Slow path: bind a new listener and start serving ──────────────────────
     let state = Arc::new(SharedState::new());
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
     let actual_addr_str = actual_addr.to_string();
 
     let router = build_router(state.clone());
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let shutdown_token = CancellationToken::new();
 
     let entry = Arc::new(ServerEntry {
         actual_addr: actual_addr_str.clone(),
         state: state.clone(),
-        shutdown_tx: Mutex::new(Some(shutdown_tx)),
+        shutdown_token: shutdown_token.clone(),
     });
 
     // Store a weak reference so the registry does not prevent cleanup.
@@ -190,67 +187,13 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
                     error!(error = %e, "Shared server error");
                 }
             }
-            _ = &mut shutdown_rx => {
+            _ = shutdown_token.cancelled() => {
                 info!(addr = %actual_addr, "Shared server shutting down");
             }
         }
     });
 
     Ok(entry)
-}
-
-// ─── Route registration helpers ───────────────────────────────────────────────
-
-/// Inserts an HTTP POST handler into the route table of `entry` and returns a
-/// [`ListenerHandle`] that removes it when dropped.
-#[cfg(feature = "http-server")]
-async fn register_http_route(
-    entry: Arc<ServerEntry>,
-    path: String,
-    handler: Arc<HttpBotHandler>,
-) -> TransportResult<ListenerHandle> {
-    entry
-        .state
-        .http_routes
-        .write()
-        .insert(path.clone(), handler);
-    info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
-
-    let handle_id = format!("http-server-{}{}", entry.actual_addr, path);
-    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-
-    // Spawn cleanup: wait for ListenerHandle drop, then remove the route.
-    tokio::spawn(async move {
-        let _ = rx.await;
-        entry.state.http_routes.write().remove(&path);
-        info!(path = %path, "Unregistered HTTP route");
-        // `entry` Arc is dropped here; if last reference → server shuts down.
-    });
-
-    Ok(ListenerHandle::new(handle_id, tx))
-}
-
-/// Inserts a WebSocket upgrade handler into the route table of `entry` and
-/// returns a [`ListenerHandle`] that removes it when dropped.
-#[cfg(feature = "ws-server")]
-async fn register_ws_route(
-    entry: Arc<ServerEntry>,
-    path: String,
-    handler: Arc<WsBotHandler>,
-) -> TransportResult<ListenerHandle> {
-    entry.state.ws_routes.write().insert(path.clone(), handler);
-    info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
-
-    let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
-    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-
-    tokio::spawn(async move {
-        let _ = rx.await;
-        entry.state.ws_routes.write().remove(&path);
-        info!(path = %path, "Unregistered WebSocket route");
-    });
-
-    Ok(ListenerHandle::new(handle_id, tx))
 }
 
 // ─── Router construction ──────────────────────────────────────────────────────
@@ -391,9 +334,26 @@ pub async fn http_listen(
 
     let route_handler = Arc::new(HttpBotHandler {
         handler,
-        known_bots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        known_bots: Mutex::new(HashMap::new()),
     });
-    register_http_route(entry, path, route_handler).await
+    entry
+        .state
+        .http_routes
+        .write()
+        .insert(path.clone(), route_handler);
+    info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
+
+    let handle_id = format!("http-server-{}{}", entry.actual_addr, path);
+    let shutdown_token = CancellationToken::new();
+    let token_clone = shutdown_token.clone();
+
+    tokio::spawn(async move {
+        token_clone.cancelled().await;
+        entry.state.http_routes.write().remove(&path);
+        info!(path = %path, "Unregistered HTTP route");
+    });
+
+    Ok(ListenerHandle::new(handle_id, shutdown_token))
 }
 
 #[cfg(feature = "http-server")]
@@ -423,13 +383,13 @@ impl HttpBotHandler {
 
         // First request from this bot → create the bot and its outgoing channel.
         {
-            let mut known = self.known_bots.lock().await;
+            let mut known = self.known_bots.lock();
             if !known.contains_key(&bot_id) {
                 let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-                let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+                let shutdown_token = CancellationToken::new();
 
                 let connection_handle =
-                    ConnectionHandle::new_http_server(bot_id.clone(), message_tx, shutdown_tx);
+                    ConnectionHandle::new_http_server(bot_id.clone(), message_tx, shutdown_token);
 
                 // Drain the outgoing queue; adapters can plug in SSE or similar
                 // by overriding this logic in their own transport wrapper.
@@ -491,9 +451,26 @@ pub async fn ws_listen(
 
     let route_handler = Arc::new(WsBotHandler {
         handler,
-        connections: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        connections: Mutex::new(HashMap::new()),
     });
-    register_ws_route(entry, path, route_handler).await
+    entry
+        .state
+        .ws_routes
+        .write()
+        .insert(path.clone(), route_handler);
+    info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
+
+    let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
+    let shutdown_token = CancellationToken::new();
+    let token_clone = shutdown_token.clone();
+
+    tokio::spawn(async move {
+        token_clone.cancelled().await;
+        entry.state.ws_routes.write().remove(&path);
+        info!(path = %path, "Unregistered WebSocket route");
+    });
+
+    Ok(ListenerHandle::new(handle_id, shutdown_token))
 }
 
 #[cfg(feature = "ws-server")]
@@ -526,14 +503,12 @@ impl WsBotHandler {
 
         // Per-connection outgoing channel: adapter writes here → forwarded to ws_tx.
         let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
-        let connection_handle = ConnectionHandle::new_ws(bot_id.clone(), tx.clone(), shutdown_tx);
+        let shutdown_token = CancellationToken::new();
+        let connection_handle =
+            ConnectionHandle::new_ws(bot_id.clone(), tx.clone(), shutdown_token);
 
         self.handler.create_bot(&bot_id, connection_handle);
-        self.connections
-            .lock()
-            .await
-            .insert(bot_id.clone(), tx.clone());
+        self.connections.lock().insert(bot_id.clone(), tx.clone());
 
         // ── Send task: forwards outgoing frames to the WebSocket write half ───────
         let bot_id_send = bot_id.clone();
@@ -579,7 +554,7 @@ impl WsBotHandler {
 
         // ── Cleanup ───────────────────────────────────────────────────────────────
         send_task.abort();
-        self.connections.lock().await.remove(&bot_id);
+        self.connections.lock().remove(&bot_id);
         self.handler.on_disconnect(&bot_id).await;
         info!(bot_id = %bot_id, "WebSocket connection closed");
     }

@@ -6,9 +6,10 @@ use std::time::Duration;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, trace, warn};
 
 use alloy_core::{
@@ -156,7 +157,7 @@ pub async fn ws_connect(
 ) -> TransportResult<ConnectionHandle> {
     // Create channels
     let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    let shutdown_token = CancellationToken::new();
 
     // Initial connection
     let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &config.url);
@@ -176,7 +177,7 @@ pub async fn ws_connect(
 
     info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 
-    let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_tx);
+    let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_token.clone());
 
     // Create and register the bot
     handler.create_bot(&bot_id, handle.clone());
@@ -188,13 +189,11 @@ pub async fn ws_connect(
         loop {
             tokio::select! {
                 // Check for shutdown
-                _ = shutdown_rx.changed() => {
-                    if *shutdown_rx.borrow() {
-                        info!(bot_id = %state.bot_id, "WebSocket client shutting down");
-                        let _ = state.ws_tx.close().await;
-                        state.handler.on_disconnect(&state.bot_id).await;
-                        break;
-                    }
+                _ = shutdown_token.cancelled() => {
+                    info!(bot_id = %state.bot_id, "WebSocket client shutting down");
+                    let _ = state.ws_tx.close().await;
+                    state.handler.on_disconnect(&state.bot_id).await;
+                    break;
                 }
 
                 // Receive messages to send
