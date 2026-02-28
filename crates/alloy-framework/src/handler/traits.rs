@@ -187,8 +187,9 @@ macro_rules! impl_handler {
             $( $ty: FromContext + Send + 'static, )*
         {
             async fn call(self, ctx: Arc<AlloyContext>) {
+                let ($($ty,)*) = futures::join!($($ty::from_context(&ctx),)*);
                 $(
-                    let Ok($ty) = $ty::from_context(&ctx) else { return };
+                    let Ok($ty) = $ty else { return };
                 )*
 
                 let res = (self)($($ty,)*).await;

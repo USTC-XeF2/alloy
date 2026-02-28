@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
@@ -9,10 +11,9 @@ use alloy_core::Bot as BotTrait;
 ///
 /// This is the primary way handlers receive and use the bot. Use `Deref` to access
 /// the bot interface directly.
-#[derive(Clone)]
 pub struct Bot<T: BotTrait>(pub Arc<T>);
 
-impl<T: BotTrait + 'static> Bot<T> {
+impl<T: BotTrait> Bot<T> {
     /// Creates a new Bot wrapper with the given bot instance.
     pub(crate) fn new(bot: Arc<T>) -> Self {
         Self(bot)
@@ -27,8 +28,8 @@ impl<T: BotTrait> std::ops::Deref for Bot<T> {
     }
 }
 
-impl<T: BotTrait + 'static> AsRef<dyn BotTrait + 'static> for Bot<T> {
-    fn as_ref(&self) -> &(dyn BotTrait + 'static) {
+impl<T: BotTrait> AsRef<dyn BotTrait> for Bot<T> {
+    fn as_ref(&self) -> &dyn BotTrait {
         &*self.0
     }
 }
@@ -42,8 +43,9 @@ impl<T: BotTrait + std::fmt::Debug> std::fmt::Debug for Bot<T> {
 /// Implementation for extracting `Bot<T>` where `T: Bot`.
 ///
 /// This enables handlers to inject a concrete bot type and access protocol-specific APIs:
-impl<T: BotTrait + 'static> FromContext for Bot<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+#[async_trait]
+impl<T: BotTrait> FromContext for Bot<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         // Get the BoxedBot
         let boxed_bot = ctx.bot_arc();
 

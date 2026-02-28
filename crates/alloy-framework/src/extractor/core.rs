@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::context::AlloyContext;
 use crate::error::ExtractResult;
 use alloy_core::{BoxedBot, BoxedEvent};
@@ -12,7 +14,8 @@ use alloy_core::{BoxedBot, BoxedEvent};
 ///
 /// The extraction can fail (returning `Err`) if the required data is not
 /// available in the context. In this case, the handler will be skipped.
-pub trait FromContext: Sized {
+#[async_trait]
+pub trait FromContext: Sized + Send {
     /// Attempts to extract this type from the given context.
     ///
     /// # Arguments
@@ -22,26 +25,28 @@ pub trait FromContext: Sized {
     /// # Returns
     ///
     /// `Ok(Self)` if extraction succeeds, `Err(ExtractError)` otherwise.
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self>;
-}
-
-/// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
-///
-/// This is useful when a handler needs to work with any event type
-/// without knowing the concrete type at compile time.
-impl FromContext for BoxedEvent {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        Ok(ctx.event().clone())
-    }
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self>;
 }
 
 /// Implementation for `Option<T>` where `T: FromContext`.
 ///
 /// This allows handlers to have optional parameters that may or may not
 /// be extractable from the context.
+#[async_trait]
 impl<T: FromContext> FromContext for Option<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        Ok(T::from_context(ctx).ok())
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        Ok(T::from_context(ctx).await.ok())
+    }
+}
+
+/// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
+///
+/// This is useful when a handler needs to work with any event type
+/// without knowing the concrete type at compile time.
+#[async_trait]
+impl FromContext for BoxedEvent {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        Ok(ctx.event().clone())
     }
 }
 
@@ -57,8 +62,9 @@ impl<T: FromContext> FromContext for Option<T> {
 ///     bot.send(event.as_event(), "Hello!").await.ok();
 /// }
 /// ```
+#[async_trait]
 impl FromContext for BoxedBot {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(ctx.bot_arc())
     }
 }

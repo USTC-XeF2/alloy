@@ -65,8 +65,7 @@ fn parse_provides(input: ParseStream) -> Result<Vec<ProvidesEntry>> {
 fn parse_depends_on(input: ParseStream) -> Result<Vec<Path>> {
     let content;
     bracketed!(content in input);
-    let paths: Punctuated<_, Token![,]> =
-        content.parse_terminated(Path::parse, Token![,])?;
+    let paths: Punctuated<_, Token![,]> = content.parse_terminated(Path::parse, Token![,])?;
     Ok(paths.into_iter().collect())
 }
 
@@ -182,7 +181,7 @@ impl Parse for DefinePluginInput {
 /// `"echo_bot"` → `ECHO_BOT_PLUGIN`  (uppercased, `-` → `_`, with `_PLUGIN` suffix).
 fn name_to_static_ident(name: &LitStr) -> Ident {
     let upper = name.value().to_uppercase().replace('-', "_");
-    let with_suffix = format!("{}_PLUGIN", upper);
+    let with_suffix = format!("{upper}_PLUGIN");
     Ident::new(&with_suffix, Span::call_site())
 }
 
@@ -192,16 +191,14 @@ fn doc_attrs_to_string(attrs: &[Attribute]) -> Option<String> {
     let lines: Vec<String> = attrs
         .iter()
         .filter_map(|attr| {
-            if let syn::Meta::NameValue(nv) = &attr.meta {
-                if attr.path().is_ident("doc") {
-                    if let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(s),
-                        ..
-                    }) = &nv.value
-                    {
-                        return Some(s.value().trim().to_owned());
-                    }
-                }
+            if let syn::Meta::NameValue(nv) = &attr.meta
+                && attr.path().is_ident("doc")
+                && let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) = &nv.value
+            {
+                return Some(s.value().trim().to_owned());
             }
             None
         })
@@ -254,13 +251,15 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
         quote! { ::std::option::Option::None }
     };
 
-    let version_tokens = match &metadata.version {
-        Some(v) => quote! { #v },
-        None => quote! { ::std::env!("CARGO_PKG_VERSION") },
+    let version_tokens = if let Some(v) = &metadata.version {
+        quote! { #v }
+    } else {
+        quote! { ::std::env!("CARGO_PKG_VERSION") }
     };
-    let desc_tokens = match &metadata.desc {
-        Some(d) => quote! { #d },
-        None => quote! { ::std::env!("CARGO_PKG_DESCRIPTION") },
+    let desc_tokens = if let Some(d) = &metadata.desc {
+        quote! { #d }
+    } else {
+        quote! { ::std::env!("CARGO_PKG_DESCRIPTION") }
     };
     let plugin_type_tokens = match &metadata.plugin_type {
         Some(pt) if pt == "service" => quote! { #fw::plugin::PluginType::Service },
@@ -289,11 +288,15 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
                 factory: ::std::sync::Arc::new(
                     |ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
                         ::std::boxed::Box::pin(async move {
-                            let impl_val = <#i as #fw::plugin::ServiceInit>::init(ctx).await;
-                            let trait_arc: ::std::sync::Arc<dyn #t> =
-                                ::std::sync::Arc::new(impl_val);
-                            ::std::sync::Arc::new(trait_arc)
-                                as ::std::sync::Arc<dyn ::std::any::Any + Send + Sync>
+                            match <#i as #fw::plugin::ServiceInit>::init(ctx).await {
+                                ::std::result::Result::Ok(impl_val) => {
+                                    let trait_arc: ::std::sync::Arc<dyn #t> =
+                                        ::std::sync::Arc::new(impl_val);
+                                    ::std::result::Result::Ok(::std::sync::Arc::new(trait_arc)
+                                        as ::std::sync::Arc<dyn ::std::any::Any + Send + Sync>)
+                                }
+                                ::std::result::Result::Err(e) => ::std::result::Result::Err(e),
+                            }
                         })
                     },
                 ),
@@ -312,8 +315,8 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     });
 
     // ── on_load / on_unload closures ──────────────────────────────────────────
-    let on_load_tokens = match &on_load {
-        Some(f) => quote! {
+    let on_load_tokens = if let Some(f) = &on_load {
+        quote! {
             ::std::option::Option::Some(::std::boxed::Box::new(
                 |ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
                     ::std::boxed::Box::pin(async move {
@@ -321,16 +324,18 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
                     })
                 },
             ))
-        },
-        None => quote! { ::std::option::Option::None },
+        }
+    } else {
+        quote! { ::std::option::Option::None }
     };
-    let on_unload_tokens = match &on_unload {
-        Some(f) => quote! {
+    let on_unload_tokens = if let Some(f) = &on_unload {
+        quote! {
             ::std::option::Option::Some(::std::boxed::Box::new(
                 || ::std::boxed::Box::pin(#f()),
             ))
-        },
-        None => quote! { ::std::option::Option::None },
+        }
+    } else {
+        quote! { ::std::option::Option::None }
     };
 
     // ── Final expansion: emit a `pub static` item ─────────────────────────────
@@ -377,12 +382,12 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
 pub fn expand_service_meta(attr: TokenStream, item: TokenStream) -> TokenStream {
     let id: LitStr = match syn::parse2(attr) {
         Ok(id) => id,
-        Err(err) => return err.to_compile_error().into(),
+        Err(err) => return err.to_compile_error(),
     };
 
     let item_trait: ItemTrait = match syn::parse2(item) {
         Ok(trait_item) => trait_item,
-        Err(err) => return err.to_compile_error().into(),
+        Err(err) => return err.to_compile_error(),
     };
 
     let trait_name = &item_trait.ident;
@@ -396,5 +401,5 @@ pub fn expand_service_meta(attr: TokenStream, item: TokenStream) -> TokenStream 
         }
     };
 
-    expanded.into()
+    expanded
 }

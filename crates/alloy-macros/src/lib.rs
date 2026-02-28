@@ -85,6 +85,7 @@ pub fn derive_bot_event(input: TokenStream) -> TokenStream {
         Err(err) => err.to_compile_error().into(),
     }
 }
+
 /// Registers an async function as a transport capability implementation.
 ///
 /// # Usage
@@ -124,10 +125,10 @@ pub fn derive_bot_event(input: TokenStream) -> TokenStream {
 pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream {
     capability::register_capability(attr, item)
 }
-/// Creates a `pub static` [`PluginDescriptor`] — the static, `Copy` handle to a plugin.
+
+/// Creates a `pub static` [`PluginDescriptor`] — the static handle to a plugin.
 ///
-/// The name of the generated static is the **uppercase form** of `name` with `_PLUGIN` suffix
-/// (e.g. `"echo_bot"` → `ECHO_BOT_PLUGIN`, `"my-plugin"` → `MY_PLUGIN_PLUGIN`).
+/// The name of the generated static is the **uppercase form** of `name` with `_PLUGIN` suffix.
 ///
 /// # Syntax
 ///

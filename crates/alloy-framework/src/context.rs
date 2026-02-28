@@ -26,6 +26,8 @@ use serde_json::Value;
 
 use alloy_core::{BoxedBot, BoxedEvent};
 
+use crate::error::{ExtractError, ExtractResult};
+
 /// A read-only snapshot of all registered inter-plugin services.
 ///
 /// Keyed by `TypeId` so handlers can retrieve services by their concrete type.
@@ -188,6 +190,11 @@ impl AlloyContext {
             .services
             .get(&TypeId::of::<T>())
             .and_then(|arc| arc.downcast_ref::<Arc<T>>().map(Arc::clone))
+    }
+
+    pub fn require_service<T: ?Sized + 'static>(&self) -> ExtractResult<Arc<T>> {
+        self.get_service::<T>()
+            .ok_or(ExtractError::ServiceNotFound(std::any::type_name::<T>()))
     }
 
     /// Stops propagation of this event to subsequent plugins.

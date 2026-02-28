@@ -372,36 +372,67 @@ impl PluginManager {
             return false;
         }
 
-        // ── 2. on_load ───────────────────────────────────────────────────
         let config = self.get_plugin_config(name);
         let ctx = Arc::new(PluginLoadContext::new(config));
-        if let Err(e) = plugin.on_load(ctx.clone()).await {
-            error!(
-                plugin = %name,
-                error  = %e,
-                "Plugin on_load returned an error — plugin will not be loaded"
-            );
-            self.set_plugin_state(name, PluginLoadState::Failed);
-            return false;
-        }
 
-        // ── 3. Initialise services in parallel ───────────────────────────
+        // ── 2. Initialise services in parallel ───────────────────────────
         let all_services = future::join_all(plugin.service_factories().iter().map(|entry| {
             let factory = entry.factory.clone();
             let id = entry.id.to_string();
             let type_id = entry.type_id;
             let ctx = ctx.clone();
             async move {
-                let arc = factory(ctx).await;
-                (id, (type_id, arc))
+                match tokio::spawn(factory(ctx)).await {
+                    Ok(Ok(arc)) => Ok((id, (type_id, arc))),
+                    Ok(Err(e)) => Err((id, e)),
+                    Err(panic) => Err((id, panic.to_string())),
+                }
             }
         }))
         .await;
 
+        // Check if any service initialization failed
+        for result in &all_services {
+            if let Err((svc_id, e)) = result {
+                error!(
+                    plugin = %name,
+                    service_id = %svc_id,
+                    error = %e,
+                    "Service initialization failed — plugin will not be loaded"
+                );
+                self.set_plugin_state(name, PluginLoadState::Failed);
+                return false;
+            }
+        }
+
+        // Register all services
         {
             let mut svc_map = self.services.write();
-            for (id, service) in all_services {
+            for (id, service) in all_services.into_iter().flatten() {
                 svc_map.insert(id, service);
+            }
+        }
+
+        // ── 3. on_load ───────────────────────────────────────────────────
+        match tokio::spawn(async move { plugin.on_load(ctx).await }).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                error!(
+                    plugin = %name,
+                    error  = %e,
+                    "Plugin on_load returned an error — plugin will not be loaded"
+                );
+                self.set_plugin_state(name, PluginLoadState::Failed);
+                return false;
+            }
+            Err(panic) => {
+                error!(
+                    plugin = %name,
+                    error  = %panic,
+                    "Plugin on_load panicked — plugin will not be loaded"
+                );
+                self.set_plugin_state(name, PluginLoadState::Failed);
+                return false;
             }
         }
 

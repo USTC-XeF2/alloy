@@ -5,7 +5,6 @@ use alloy::framework::plugin::{PluginLoadContext, ServiceInit};
 use alloy::macros::service_meta;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 // ─── StorageService trait ─────────────────────────────────────────────────────
 
@@ -65,7 +64,7 @@ impl ServiceInit for StorageServiceImpl {
     /// Constructs the service and creates the three conventional subdirectories.
     ///
     /// Reads `base_dir` from config; falls back to `"."` when absent.
-    async fn init(ctx: Arc<PluginLoadContext>) -> Self {
+    async fn init(ctx: Arc<PluginLoadContext>) -> Result<Self, String> {
         let cfg: StorageConfig = ctx.get_config().unwrap_or_default();
         let service = StorageServiceImpl {
             base_dir: cfg.base_dir,
@@ -75,14 +74,14 @@ impl ServiceInit for StorageServiceImpl {
         for sub in &subdirs {
             let dir = service.base_dir.join(sub);
             if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-                error!(
-                    path  = %dir.display(),
-                    error = %e,
-                    "Failed to create storage directory"
-                );
+                return Err(format!(
+                    "Failed to create storage directory '{}': {}",
+                    dir.display(),
+                    e
+                ));
             }
         }
 
-        service
+        Ok(service)
     }
 }

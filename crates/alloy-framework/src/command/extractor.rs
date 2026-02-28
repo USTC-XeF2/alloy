@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use clap::Parser;
 
 use crate::context::AlloyContext;
@@ -43,10 +44,11 @@ impl<T: Parser> std::ops::DerefMut for CommandArgs<T> {
     }
 }
 
-impl<T: Parser + Clone + Send + Sync + 'static> FromContext for CommandArgs<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+#[async_trait]
+impl<T: Parser + Clone + Send + 'static> FromContext for CommandArgs<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.get_state::<ParsedCommand<T>>()
-            .map(|parsed| CommandArgs(parsed.0.clone()))
+            .map(|parsed| CommandArgs(parsed.0))
             .ok_or_else(|| {
                 ExtractError::custom(format!(
                     "CommandArgs<{}> not found in context. Make sure to use on_command::<T>() matcher.",

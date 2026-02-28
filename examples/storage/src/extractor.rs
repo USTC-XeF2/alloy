@@ -3,11 +3,8 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use alloy::framework::{
-    context::AlloyContext,
-    error::{ExtractError, ExtractResult},
-    extractor::FromContext,
-};
+use alloy::framework::{context::AlloyContext, error::ExtractResult, extractor::FromContext};
+use async_trait::async_trait;
 
 use crate::service::StorageService;
 
@@ -17,7 +14,7 @@ use crate::service::StorageService;
 ///
 /// Implemented by marker types ([`Data`], [`Cache`], [`Config`]) to specify
 /// which directory to extract when using [`StorageDir<T>`] as a handler parameter.
-pub trait StorageDirSelector: 'static {
+pub trait StorageDirSelector: Send + 'static {
     /// Extract the directory path from the given storage service.
     fn select(service: Arc<dyn StorageService>) -> PathBuf;
 }
@@ -71,7 +68,6 @@ impl StorageDirSelector for Config {
 ///     Ok(state)
 /// }
 /// ```
-#[derive(Debug, Clone)]
 pub struct StorageDir<T: StorageDirSelector>(pub PathBuf, PhantomData<T>);
 
 impl<T: StorageDirSelector> Deref for StorageDir<T> {
@@ -82,11 +78,10 @@ impl<T: StorageDirSelector> Deref for StorageDir<T> {
     }
 }
 
+#[async_trait]
 impl<T: StorageDirSelector> FromContext for StorageDir<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        let storage = ctx
-            .get_service::<dyn StorageService>()
-            .ok_or(ExtractError::ServiceNotFound("StorageService"))?;
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        let storage = ctx.require_service::<dyn StorageService>()?;
         Ok(StorageDir(T::select(storage), PhantomData))
     }
 }
@@ -95,7 +90,6 @@ impl<T: StorageDirSelector> FromContext for StorageDir<T> {
 ///
 /// This automatically appends the plugin name to the selected directory.
 /// For example, `PluginStorageDir<Data>` returns `<base>/data/<plugin_name>/`.
-#[derive(Debug, Clone)]
 pub struct PluginStorageDir<T: StorageDirSelector>(pub PathBuf, PhantomData<T>);
 
 impl<T: StorageDirSelector> Deref for PluginStorageDir<T> {
@@ -106,14 +100,11 @@ impl<T: StorageDirSelector> Deref for PluginStorageDir<T> {
     }
 }
 
-impl<T: StorageDirSelector> FromContext for PluginStorageDir<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        let storage = ctx
-            .get_service::<dyn StorageService>()
-            .ok_or(ExtractError::ServiceNotFound("StorageService"))?;
-        let base_path = T::select(storage);
-
-        let plugin_path = base_path.join(ctx.get_plugin_name());
+#[async_trait]
+impl<T: StorageDirSelector + Send> FromContext for PluginStorageDir<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        let storage = ctx.require_service::<dyn StorageService>()?;
+        let plugin_path = T::select(storage).join(ctx.get_plugin_name());
         Ok(PluginStorageDir(plugin_path, PhantomData))
     }
 }

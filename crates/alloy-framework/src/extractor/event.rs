@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
@@ -22,7 +24,6 @@ use alloy_core::Event as EventTrait;
 ///     Outcome::Handled
 /// }
 /// ```
-#[derive(Clone)]
 pub struct Event<T: EventTrait>(pub T);
 
 impl<T: EventTrait> Event<T> {
@@ -75,8 +76,9 @@ impl<T: EventTrait + std::fmt::Debug> std::fmt::Debug for Event<T> {
 ///     println!("Notice: {}", event.event_name());
 /// }
 /// ```
+#[async_trait]
 impl<T: EventTrait> FromContext for Event<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.event()
             .extract::<T>()
             .map(|boxed| Event::new(*boxed))

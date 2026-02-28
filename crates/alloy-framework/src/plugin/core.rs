@@ -158,8 +158,11 @@ pub struct ServiceEntry {
     pub type_id: TypeId,
     /// Async factory: initialises the impl, upcasts to `Arc<dyn ServiceTrait>`,
     /// then wraps in a second `Arc` to erase the type.
+    /// Returns `Ok(Arc<dyn Any>)` on success, or `Err(String)` on failure.
     pub factory: Arc<
-        dyn Fn(Arc<PluginLoadContext>) -> BoxFuture<'static, Arc<dyn Any + Send + Sync>>
+        dyn Fn(
+                Arc<PluginLoadContext>,
+            ) -> BoxFuture<'static, Result<Arc<dyn Any + Send + Sync>, String>>
             + Send
             + Sync,
     >,

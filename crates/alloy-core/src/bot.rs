@@ -31,7 +31,7 @@ use crate::message::ErasedMessage;
 /// Concrete implementations (e.g., `OneBotBot`) should provide
 /// strongly-typed API methods on top of `call_api`.
 #[async_trait]
-pub trait Bot: Send + Sync {
+pub trait Bot: Send + Sync + 'static {
     /// Returns the bot's unique identifier.
     fn id(&self) -> &str;
 

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use crate::context::AlloyContext;
-use crate::error::{ExtractError, ExtractResult};
+use crate::error::ExtractResult;
 use crate::extractor::FromContext;
 
 /// Extractor that provides a handler with its plugin's typed configuration.
@@ -22,8 +24,9 @@ impl<T> std::ops::Deref for PluginConfig<T> {
     }
 }
 
-impl<T: serde::de::DeserializeOwned + Default> FromContext for PluginConfig<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+#[async_trait]
+impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         let json = ctx.get_config();
         let t = T::deserialize(json.as_ref()).unwrap_or_default();
         Ok(PluginConfig(t))
@@ -62,10 +65,9 @@ impl<T: ?Sized> std::ops::Deref for ServiceRef<T> {
     }
 }
 
-impl<T: ?Sized + 'static> FromContext for ServiceRef<T> {
-    fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        ctx.get_service::<T>()
-            .map(ServiceRef)
-            .ok_or(ExtractError::ServiceNotFound(std::any::type_name::<T>()))
+#[async_trait]
+impl<T: ?Sized + Send + Sync + 'static> FromContext for ServiceRef<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        ctx.require_service::<T>().map(ServiceRef)
     }
 }
