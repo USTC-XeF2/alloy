@@ -41,6 +41,61 @@ pub type ServiceArc = Arc<dyn Any + Send + Sync>;
 pub type ServiceMap = HashMap<TypeId, (String, ServiceArc)>;
 
 // =============================================================================
+// State — isolated state storage system
+// =============================================================================
+
+/// An isolated state storage container for both per-dispatch handler state
+/// and persistent per-plugin state.
+///
+/// `State` provides type-indexed storage for arbitrary values, allowing different
+/// contexts to maintain their own independent state. Each value is stored by its
+/// type ID, so only one value per type can be stored at a time.
+#[derive(Debug)]
+pub struct State {
+    /// Per-type isolated state storage.
+    data: Mutex<HashMap<TypeId, Box<dyn Any + Send>>>,
+}
+
+impl State {
+    /// Creates a new empty `State`.
+    pub(crate) fn new() -> Self {
+        Self {
+            data: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Stores a value in the state map.
+    ///
+    /// Only one value per type can be stored; subsequent calls overwrite.
+    pub fn set<T: Send + 'static>(&self, value: T) {
+        self.data.lock().insert(TypeId::of::<T>(), Box::new(value));
+    }
+
+    /// Retrieves a cloned value from the state map.
+    pub fn get<T: Clone + 'static>(&self) -> Option<T> {
+        self.data
+            .lock()
+            .get(&TypeId::of::<T>())
+            .and_then(|v| v.downcast_ref::<T>())
+            .cloned()
+    }
+
+    /// Returns `true` if a value of type `T` exists in the state.
+    pub fn has<T: 'static>(&self) -> bool {
+        self.data.lock().contains_key(&TypeId::of::<T>())
+    }
+
+    /// Removes and returns a value from the state map.
+    pub fn take<T: 'static>(&self) -> Option<T> {
+        self.data
+            .lock()
+            .remove(&TypeId::of::<T>())
+            .and_then(|v| v.downcast::<T>().ok())
+            .map(|v| *v)
+    }
+}
+
+// =============================================================================
 // BaseContext — shared base, one per dispatch cycle
 // =============================================================================
 
@@ -100,10 +155,12 @@ impl std::fmt::Debug for BaseContext {
 /// - The plugin's name
 /// - The plugin's config section from `alloy.yaml`
 /// - Reference to the global service map for dynamic service access
+/// - A per-plugin isolated state storage
 ///
 /// This is intentionally a separate struct so that each plugin has its own:
 /// - Config and declarations (via these fields)
 /// - Guarantees about data isolation during event processing
+/// - Persistent state storage that persists across all event dispatches
 /// - Dynamic service access via the global service map
 #[derive(Debug)]
 pub struct PluginContext {
@@ -117,6 +174,9 @@ pub struct PluginContext {
     /// Reference to the global service map managed by PluginManager.
     /// Services are looked up dynamically from here, not stored locally.
     all_services: Arc<RwLock<ServiceMap>>,
+    /// Per-plugin persistent state storage.
+    /// This state persists across all event dispatches for this plugin instance.
+    state: State,
 }
 
 impl PluginContext {
@@ -132,6 +192,7 @@ impl PluginContext {
             config,
             service_ids,
             all_services,
+            state: State::new(),
         }
     }
 
@@ -166,6 +227,11 @@ impl PluginContext {
         }
         None
     }
+
+    /// Returns a reference to the plugin's persistent state.
+    pub fn state(&self) -> &State {
+        &self.state
+    }
 }
 
 // =============================================================================
@@ -177,18 +243,20 @@ impl PluginContext {
 /// `AlloyContext` composes the **shared** [`BaseContext`] (base) with
 /// **plugin-specific** [`PluginContext`] data.  Each plugin gets:
 ///
-/// - **Isolated state**: Via `set_state`, `get_state`, etc. — each plugin's
-///   state is completely isolated and not visible to other plugins.
+/// - **Handler state**: Via `set_state`, `get_state`, etc. — per-dispatch
+///   isolated state that is completely isolated and not visible to other plugins.
 /// - **Shared propagation**: Calling [`stop_propagation`](Self::stop_propagation)
 ///   prevents subsequent plugins from running.
 /// - **Shared event/bot**: Access to the event and bot without copying.
+/// - **Access to plugin persistent state**: Via `plugin().state()`
 ///
 /// # Example
 ///
 /// ```rust,ignore
 /// async fn handle(ctx: Arc<AlloyContext>) {
 ///     println!("event: {:?}", ctx.event());
-///     ctx.set_state("my_data".to_string());  // isolated to this plugin
+///     ctx.set_state("my_data".to_string());  // handler state, isolated to this dispatch
+///     ctx.plugin().state().set_state(42);    // plugin persistent state
 ///     ctx.stop_propagation();                // no further plugins will run
 ///     ctx.bot().send(...).await.ok();
 /// }
@@ -199,7 +267,7 @@ pub struct AlloyContext {
     plugin: Arc<PluginContext>,
     /// Per-plugin isolated state storage for this event dispatch.
     /// Each plugin gets its own independent state that is not shared.
-    state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
+    state: State,
 }
 
 impl AlloyContext {
@@ -208,7 +276,7 @@ impl AlloyContext {
         Self {
             base,
             plugin,
-            state: Mutex::new(HashMap::new()),
+            state: State::new(),
         }
     }
 
@@ -249,34 +317,7 @@ impl AlloyContext {
         self.base.is_propagating()
     }
 
-    /// Stores a value in this plugin's isolated state map.
-    ///
-    /// Each plugin has its own isolated state that is not visible to other plugins.
-    /// Only one value per type can be stored; subsequent calls overwrite.
-    pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
-        self.state.lock().insert(TypeId::of::<T>(), Box::new(value));
-    }
-
-    /// Retrieves a cloned value from this plugin's isolated state map.
-    pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
-        self.state
-            .lock()
-            .get(&TypeId::of::<T>())
-            .and_then(|v| v.downcast_ref::<T>())
-            .cloned()
-    }
-
-    /// Returns `true` if a value of type `T` exists in this plugin's state.
-    pub fn has_state<T: 'static>(&self) -> bool {
-        self.state.lock().contains_key(&TypeId::of::<T>())
-    }
-
-    /// Removes and returns a value from this plugin's state.
-    pub fn take_state<T: 'static>(&self) -> Option<T> {
-        self.state
-            .lock()
-            .remove(&TypeId::of::<T>())
-            .and_then(|v| v.downcast::<T>().ok())
-            .map(|v| *v)
+    pub fn state(&self) -> &State {
+        &self.state
     }
 }

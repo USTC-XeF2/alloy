@@ -47,20 +47,11 @@ impl<T: Parser> std::ops::DerefMut for CommandArgs<T> {
 #[async_trait]
 impl<T: Parser + Clone + Send + 'static> FromContext for CommandArgs<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        ctx.get_state::<ParsedCommand<T>>()
-            .map(|parsed| CommandArgs(parsed.0))
-            .ok_or_else(|| {
-                ExtractError::custom(format!(
-                    "CommandArgs<{}> not found in context. Make sure to use on_command::<T>() matcher.",
-                    std::any::type_name::<T>()
-                ))
-            })
+        ctx.state()
+            .get::<Self>()
+            .ok_or_else(|| ExtractError::StateNotFound(std::any::type_name::<Self>()))
     }
 }
-
-/// Internal wrapper for storing parsed commands in context.
-#[derive(Clone)]
-pub struct ParsedCommand<T>(pub T);
 
 #[cfg(test)]
 mod tests {

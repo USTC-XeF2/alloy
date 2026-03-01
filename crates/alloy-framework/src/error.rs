@@ -29,12 +29,8 @@ pub enum ExtractError {
         expected: &'static str,
     },
 
-    /// A required value was not found in the context state.
-    ///
-    /// Typically means the plugin's `config_type` was not declared, or
-    /// [`Plugin::init_config`] was not called before event dispatch.
-    #[error("required state not found in context (plugin config may not be configured)")]
-    MissingState,
+    #[error("required state '{0}' not found in context")]
+    StateNotFound(&'static str),
 
     #[error("required service '{0}' not found")]
     ServiceNotFound(&'static str),
@@ -42,13 +38,6 @@ pub enum ExtractError {
     /// Custom extraction error.
     #[error("{0}")]
     Custom(String),
-}
-
-impl ExtractError {
-    /// Creates a custom extraction error.
-    pub fn custom(msg: impl Into<String>) -> Self {
-        Self::Custom(msg.into())
-    }
 }
 
 /// Result type for extraction operations.

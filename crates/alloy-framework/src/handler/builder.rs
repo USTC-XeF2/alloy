@@ -33,16 +33,8 @@ impl<S> Layer<S> for BlockLayer {
     }
 }
 
+#[derive(Clone)]
 pub struct BlockService<S>(S);
-
-impl<S> Clone for BlockService<S>
-where
-    S: Clone,
-{
-    fn clone(&self) -> Self {
-        BlockService(self.0.clone())
-    }
-}
 
 impl<S> Service<Arc<AlloyContext>> for BlockService<S>
 where

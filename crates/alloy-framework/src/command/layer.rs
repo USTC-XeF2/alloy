@@ -15,7 +15,7 @@ use crate::handler::{FromCtxFn, HandlerResponse, HandlerService, ServiceBuilderE
 use alloy_core::EventType;
 
 use super::CURRENT_REGISTRY;
-use super::extractor::ParsedCommand;
+use super::extractor::CommandArgs;
 use super::split::rich_text_shell_split;
 
 /// Creates a tower [`Layer`] that parses messages as the given clap command.
@@ -171,6 +171,7 @@ where
 /// parsed value is stored in context (via [`CommandArgs`]) and the inner
 /// service is called; otherwise the event is dropped (or an error/help reply
 /// is sent if the corresponding option is enabled).
+#[derive(Clone)]
 pub struct CommandService<T, S> {
     name: String,
     reply_help: bool,
@@ -178,19 +179,6 @@ pub struct CommandService<T, S> {
     block: bool,
     inner: S,
     _marker: PhantomData<T>,
-}
-
-impl<T, S: Clone> Clone for CommandService<T, S> {
-    fn clone(&self) -> Self {
-        CommandService {
-            name: self.name.clone(),
-            reply_help: self.reply_help,
-            reply_error: self.reply_error,
-            block: self.block,
-            inner: self.inner.clone(),
-            _marker: PhantomData,
-        }
-    }
 }
 
 impl<T, S> Service<Arc<AlloyContext>> for CommandService<T, S>
@@ -241,7 +229,7 @@ where
 
             match result {
                 Ok(cmd) => {
-                    ctx.set_state(ParsedCommand(cmd));
+                    ctx.state().set(CommandArgs(cmd));
                     inner.call(ctx).await
                 }
                 Err(err) => {
