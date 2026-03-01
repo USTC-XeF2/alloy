@@ -76,6 +76,6 @@ impl FromContext for BoxedEvent {
 #[async_trait]
 impl FromContext for BoxedBot {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        Ok(ctx.bot_arc())
+        Ok(ctx.bot().clone())
     }
 }

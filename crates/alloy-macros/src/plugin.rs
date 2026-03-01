@@ -8,10 +8,19 @@ use syn::{
 
 // ─── Input AST types ─────────────────────────────────────────────────────────
 
-/// One `Trait: ImplType` entry in `provides: { … }`.
+/// One `Trait: ImplType` entry in `provides: { … }`, with optional `#[cfg(...)]` attributes.
 struct ProvidesEntry {
+    attrs: Vec<Attribute>,
     trait_path: Path,
     impl_type: Type,
+}
+
+/// One dependency entry in `depends_on: [ … ]`, with optional `#[cfg(...)]` attributes.
+/// If prefixed with `!`, the dependency is required; otherwise, it's optional.
+struct DependsOnEntry {
+    attrs: Vec<Attribute>,
+    path: Path,
+    is_required: bool,
 }
 
 /// Optional overrides from `metadata: { … }`.
@@ -29,7 +38,7 @@ pub struct DefinePluginInput {
     doc_attrs: Vec<Attribute>,
     name: LitStr,
     provides: Vec<ProvidesEntry>,
-    depends_on: Vec<Path>,
+    depends_on: Vec<DependsOnEntry>,
     handlers: Vec<Expr>,
     on_load: Option<Path>,
     on_unload: Option<Path>,
@@ -38,7 +47,7 @@ pub struct DefinePluginInput {
 
 // ─── Parsing ──────────────────────────────────────────────────────────────────
 
-/// Parse `{ Trait: ImplType, … }`.
+/// Parse `{ Trait: ImplType, … }` with optional `#[cfg(...)]` attributes.
 fn parse_provides(input: ParseStream) -> Result<Vec<ProvidesEntry>> {
     let content;
     braced!(content in input);
@@ -50,10 +59,12 @@ fn parse_provides(input: ParseStream) -> Result<Vec<ProvidesEntry>> {
         if content.is_empty() {
             break;
         }
+        let attrs = Attribute::parse_outer(&content)?;
         let trait_path = content.parse()?;
         content.parse::<Token![:]>()?;
         let impl_type: Type = content.parse()?;
         entries.push(ProvidesEntry {
+            attrs,
             trait_path,
             impl_type,
         });
@@ -61,12 +72,37 @@ fn parse_provides(input: ParseStream) -> Result<Vec<ProvidesEntry>> {
     Ok(entries)
 }
 
-/// Parse `[ Trait, … ]`.
-fn parse_depends_on(input: ParseStream) -> Result<Vec<Path>> {
+/// Parse `[ Trait, … ]` or `[ !Trait, … ]` with optional `#[cfg(...)]` attributes.
+/// Entries prefixed with `!` are required; otherwise optional.
+fn parse_depends_on(input: ParseStream) -> Result<Vec<DependsOnEntry>> {
     let content;
     bracketed!(content in input);
-    let paths: Punctuated<_, Token![,]> = content.parse_terminated(Path::parse, Token![,])?;
-    Ok(paths.into_iter().collect())
+    let mut entries = Vec::new();
+    while !content.is_empty() {
+        while content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+        if content.is_empty() {
+            break;
+        }
+        let attrs = Attribute::parse_outer(&content)?;
+
+        // Check for optional `!` prefix
+        let is_required = if content.peek(Token![!]) {
+            content.parse::<Token![!]>()?;
+            true
+        } else {
+            false
+        };
+
+        let path = content.parse()?;
+        entries.push(DependsOnEntry {
+            attrs,
+            path,
+            is_required,
+        });
+    }
+    Ok(entries)
 }
 
 /// Parse `[ expr, … ]`.
@@ -232,15 +268,28 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     // ── provides IDs (static slice) ───────────────────────────────────────────
     let provides_ids = provides.iter().map(|e| {
         let t = &e.trait_path;
-        quote! { <dyn #t as #fw::plugin::ServiceMeta>::ID }
+        let attrs = &e.attrs;
+        quote! { #(#attrs)* <dyn #t as #fw::plugin::ServiceMeta>::ID }
     });
     let provides_ids_tokens = quote! { &[ #( #provides_ids ),* ] };
 
-    // ── depends_on IDs (static slice) ─────────────────────────────────────────
-    let dep_ids = depends_on.iter().map(|p| {
-        quote! { <dyn #p as #fw::plugin::ServiceMeta>::ID }
-    });
-    let depends_on_ids_tokens = quote! { &[ #( #dep_ids ),* ] };
+    // ── depends_on IDs (static slice of DependsOnEntry) ──────────────────────
+    let depends_on_entries: Vec<_> = depends_on
+        .iter()
+        .map(|e| {
+            let p = &e.path;
+            let attrs = &e.attrs;
+            let required = e.is_required;
+            quote! {
+                #(#attrs)*
+                #fw::plugin::DependsOnEntry {
+                    name: <dyn #p as #fw::plugin::ServiceMeta>::ID,
+                    required: #required,
+                }
+            }
+        })
+        .collect();
+    let depends_on_tokens = quote! { &[ #( #depends_on_entries ),* ] };
 
     // ── metadata: full_desc — explicit beats doc, doc beats None ──────────────
     let full_desc_tokens = if let Some(fd) = &metadata.full_desc {
@@ -281,11 +330,13 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     let service_entries = provides.iter().map(|e| {
         let t = &e.trait_path;
         let i = &e.impl_type;
+        let attrs = &e.attrs;
         quote! {
+            #(#attrs)*
             #fw::plugin::ServiceEntry {
                 id:      <dyn #t as #fw::plugin::ServiceMeta>::ID,
                 type_id: ::std::any::TypeId::of::<dyn #t>(),
-                factory: |ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
+                factory: |ctx: ::std::sync::Arc<#fw::context::PluginContext>| {
                     ::std::boxed::Box::pin(async move {
                         match <#i as #fw::plugin::ServiceInit>::init(ctx).await {
                             ::std::result::Result::Ok(impl_val) => {
@@ -302,11 +353,6 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
         }
     });
 
-    // ── depends_on vec (runtime) ──────────────────────────────────────────────
-    let dep_id_vecs = depends_on.iter().map(|p| {
-        quote! { <dyn #p as #fw::plugin::ServiceMeta>::ID }
-    });
-
     // ── handler vec ───────────────────────────────────────────────────────────
     let handler_entries = handlers.iter().map(|h| {
         quote! { #fw::plugin::__BoxCloneSyncService::new(#h) }
@@ -315,7 +361,7 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     // ── on_load / on_unload closures ──────────────────────────────────────────
     let on_load_tokens = if let Some(f) = &on_load {
         quote! {
-            ::std::option::Option::Some(|ctx: ::std::sync::Arc<#fw::plugin::PluginLoadContext>| {
+            ::std::option::Option::Some(|ctx: ::std::sync::Arc<#fw::context::PluginContext>| {
                 ::std::boxed::Box::pin(async move {
                     #f(ctx).await.map_err(|e| -> ::tower::BoxError { e.into() })
                 })
@@ -337,7 +383,7 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
         #(#doc_attrs)*
         pub static #static_ident: #fw::plugin::PluginDescriptor = {
             const __ALLOY_PROVIDES_IDS:  &[&'static str] = #provides_ids_tokens;
-            const __ALLOY_DEPENDS_ON_IDS: &[&'static str] = #depends_on_ids_tokens;
+            const __ALLOY_DEPENDS_ON: &[#fw::plugin::DependsOnEntry] = #depends_on_tokens;
 
             const __ALLOY_META: #fw::plugin::PluginMetadata = #fw::plugin::PluginMetadata {
                 version:     #version_tokens,
@@ -349,7 +395,7 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
             fn __alloy_plugin_create() -> #fw::plugin::Plugin {
                 #fw::plugin::Plugin::__new(
                     #name,
-                    vec![ #( #dep_id_vecs ),* ],
+                    vec![ #( #depends_on_entries ),* ],
                     vec![ #( #handler_entries ),* ],
                     vec![ #( #service_entries ),* ],
                     #on_load_tokens,
@@ -362,7 +408,7 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
                 api_version: #fw::plugin::ALLOY_PLUGIN_API_VERSION,
                 name:        #name,
                 provides:    __ALLOY_PROVIDES_IDS,
-                depends_on:  __ALLOY_DEPENDS_ON_IDS,
+                depends_on:  __ALLOY_DEPENDS_ON,
                 create:      __alloy_plugin_create,
                 metadata:    __ALLOY_META,
             }

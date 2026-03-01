@@ -78,7 +78,7 @@ pub mod registry;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
 pub use core::{
-    OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType, ServiceEntry,
+    DependsOnEntry, OnLoadFn, OnUnloadFn, Plugin, PluginMetadata, PluginType, ServiceEntry,
 };
 pub use descriptor::{ALLOY_PLUGIN_API_VERSION, PluginDescriptor};
 pub use registry::{ServiceInit, ServiceMeta};

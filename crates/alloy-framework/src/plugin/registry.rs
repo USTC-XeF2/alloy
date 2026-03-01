@@ -33,7 +33,7 @@
 //!
 //! #[async_trait::async_trait]
 //! impl ServiceInit for MyServiceImpl {
-//!     async fn init(ctx: Arc<PluginLoadContext>) -> Self {
+//!     async fn init(ctx: Arc<PluginContext>) -> Self {
 //!         let cfg = ctx.get_config::<MyConfig>().unwrap_or_default();
 //!         MyServiceImpl { value: cfg.value }
 //!     }
@@ -66,7 +66,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::PluginLoadContext;
+use crate::context::PluginContext;
 
 // ─── ServiceMeta ──────────────────────────────────────────────────────────────
 
@@ -101,5 +101,5 @@ pub trait ServiceInit: Send + Sync + Sized + 'static {
     ///
     /// Returns `Ok(Self)` on success, or `Err(String)` on failure. If service
     /// initialization fails, the entire plugin load operation is marked as failed.
-    async fn init(ctx: Arc<PluginLoadContext>) -> Result<Self, String>;
+    async fn init(ctx: Arc<PluginContext>) -> Result<Self, String>;
 }

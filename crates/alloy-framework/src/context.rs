@@ -18,15 +18,15 @@
 //!   for all subsequent plugins. Each plugin's state is completely isolated.
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
+use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 
-use alloy_core::{BoxedBot, BoxedEvent};
-
 use crate::error::{ExtractError, ExtractResult};
+use alloy_core::{BoxedBot, BoxedEvent};
 
 /// Type alias for the heterogeneous service map values stored in the global registry.
 ///
@@ -34,6 +34,11 @@ use crate::error::{ExtractError, ExtractResult};
 /// plugin's service factory.  Consumers downcast it back to `Arc<dyn ServiceTrait>`
 /// to call methods on the trait object.
 pub type ServiceArc = Arc<dyn Any + Send + Sync>;
+
+/// Maps `TypeId` → `(String ID, ServiceArc)` for fast O(1) service lookups by type.
+/// Used as the primary service registry since most queries happen by TypeId.
+/// The String ID is preserved for logging and debugging purposes.
+pub type ServiceMap = HashMap<TypeId, (String, ServiceArc)>;
 
 // =============================================================================
 // BaseContext — shared base, one per dispatch cycle
@@ -92,40 +97,74 @@ impl std::fmt::Debug for BaseContext {
 ///
 /// Every plugin gets its own `PluginContext` for each event dispatch.
 /// This context includes:
+/// - The plugin's name
 /// - The plugin's config section from `alloy.yaml`
-/// - Services accessible to this plugin
-/// - **Isolated state storage** unique to this plugin (not shared with other plugins)
+/// - Reference to the global service map for dynamic service access
 ///
 /// This is intentionally a separate struct so that each plugin has its own:
-/// - State space (via the `state` field)
-/// - Config and services snapshot (via the other fields)
+/// - Config and declarations (via these fields)
 /// - Guarantees about data isolation during event processing
+/// - Dynamic service access via the global service map
 #[derive(Debug)]
 pub struct PluginContext {
     /// The name of the plugin.
     name: String,
     /// The plugin's config section from `alloy.yaml` (or an empty object).
     config: Arc<Value>,
-    /// Services accessible to this plugin — only those it declared.
-    services: HashMap<TypeId, ServiceArc>,
-    /// Per-plugin isolated state storage for this event dispatch.
-    /// Each plugin gets its own independent state that is not shared.
-    state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
+    /// Service IDs this plugin declared (via `provides` or `depends_on`).
+    /// Used to check if a service lookup should be allowed.
+    service_ids: HashSet<String>,
+    /// Reference to the global service map managed by PluginManager.
+    /// Services are looked up dynamically from here, not stored locally.
+    all_services: Arc<RwLock<ServiceMap>>,
 }
 
 impl PluginContext {
-    /// Creates a new `PluginContext` with the given plugin name, config, and services.
+    /// Creates a new `PluginContext` with the given plugin name, config, and service declarations.
     pub(crate) fn new(
-        name: &str,
+        name: String,
         config: Arc<Value>,
-        services: HashMap<TypeId, ServiceArc>,
+        service_ids: HashSet<String>,
+        all_services: Arc<RwLock<ServiceMap>>,
     ) -> Self {
         Self {
-            name: name.to_string(),
+            name,
             config,
-            services,
-            state: Mutex::new(HashMap::new()),
+            service_ids,
+            all_services,
         }
+    }
+
+    /// Returns the name of the plugin.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Deserialise the plugin config section into `T`.
+    ///
+    /// Returns `Err` if the config is missing required fields or has the wrong
+    /// shape; use `#[serde(default)]` on the struct to make all fields optional.
+    pub fn get_config<T>(&self) -> serde_json::Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        T::deserialize(self.config.as_ref())
+    }
+
+    /// Looks up a service by its trait-object type.
+    ///
+    /// Returns `None` if the service of type `T` was not declared by this
+    /// plugin (via `provides` or `depends_on`) or if its provider plugin
+    /// failed to load.  For ergonomic handler injection prefer
+    /// [`ServiceRef<dyn YourTrait>`](crate::plugin::ServiceRef).
+    pub fn get_service<T: ?Sized + 'static>(&self) -> Option<Arc<T>> {
+        let services = self.all_services.read();
+        if let Some((id, arc)) = services.get(&TypeId::of::<T>())
+            && self.service_ids.contains(id)
+        {
+            return arc.downcast_ref::<Arc<T>>().map(Arc::clone);
+        }
+        None
     }
 }
 
@@ -157,13 +196,20 @@ impl PluginContext {
 #[derive(Debug)]
 pub struct AlloyContext {
     base: Arc<BaseContext>,
-    plugin: PluginContext,
+    plugin: Arc<PluginContext>,
+    /// Per-plugin isolated state storage for this event dispatch.
+    /// Each plugin gets its own independent state that is not shared.
+    state: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
 }
 
 impl AlloyContext {
     /// Creates a new `AlloyContext` from a shared base and plugin-specific data.
-    pub(crate) fn new(base: Arc<BaseContext>, plugin: PluginContext) -> Self {
-        Self { base, plugin }
+    pub(crate) fn new(base: Arc<BaseContext>, plugin: Arc<PluginContext>) -> Self {
+        Self {
+            base,
+            plugin,
+            state: Mutex::new(HashMap::new()),
+        }
     }
 
     // ─── Shared base delegation ───────────────────────────────────────────────
@@ -178,26 +224,15 @@ impl AlloyContext {
         &self.base.bot
     }
 
-    /// Returns a clone of the bot `Arc`.
-    pub fn bot_arc(&self) -> BoxedBot {
-        self.base.bot.clone()
+    /// Returns a reference to the plugin-specific context data.
+    pub fn plugin(&self) -> &PluginContext {
+        &self.plugin
     }
 
-    /// Looks up a service by its trait-object type.
-    ///
-    /// Returns `None` if the service of type `T` was not declared by this
-    /// plugin (via `provides` or `depends_on`) or if its provider plugin
-    /// failed to load.  For ergonomic handler injection prefer
-    /// [`ServiceRef<dyn YourTrait>`](crate::plugin::ServiceRef).
-    pub fn get_service<T: ?Sized + 'static>(&self) -> Option<Arc<T>> {
-        self.plugin
-            .services
-            .get(&TypeId::of::<T>())
-            .and_then(|arc| arc.downcast_ref::<Arc<T>>().map(Arc::clone))
-    }
-
+    /// Looks up a service by its trait-object type, returning an error if not found.
     pub fn require_service<T: ?Sized + 'static>(&self) -> ExtractResult<Arc<T>> {
-        self.get_service::<T>()
+        self.plugin
+            .get_service::<T>()
             .ok_or(ExtractError::ServiceNotFound(std::any::type_name::<T>()))
     }
 
@@ -219,19 +254,13 @@ impl AlloyContext {
     /// Each plugin has its own isolated state that is not visible to other plugins.
     /// Only one value per type can be stored; subsequent calls overwrite.
     pub fn set_state<T: Send + Sync + 'static>(&self, value: T) {
-        self.plugin
-            .state
-            .lock()
-            .unwrap()
-            .insert(TypeId::of::<T>(), Box::new(value));
+        self.state.lock().insert(TypeId::of::<T>(), Box::new(value));
     }
 
     /// Retrieves a cloned value from this plugin's isolated state map.
     pub fn get_state<T: Clone + 'static>(&self) -> Option<T> {
-        self.plugin
-            .state
+        self.state
             .lock()
-            .unwrap()
             .get(&TypeId::of::<T>())
             .and_then(|v| v.downcast_ref::<T>())
             .cloned()
@@ -239,33 +268,15 @@ impl AlloyContext {
 
     /// Returns `true` if a value of type `T` exists in this plugin's state.
     pub fn has_state<T: 'static>(&self) -> bool {
-        self.plugin
-            .state
-            .lock()
-            .unwrap()
-            .contains_key(&TypeId::of::<T>())
+        self.state.lock().contains_key(&TypeId::of::<T>())
     }
 
     /// Removes and returns a value from this plugin's state.
     pub fn take_state<T: 'static>(&self) -> Option<T> {
-        self.plugin
-            .state
+        self.state
             .lock()
-            .unwrap()
             .remove(&TypeId::of::<T>())
             .and_then(|v| v.downcast::<T>().ok())
             .map(|v| *v)
-    }
-
-    // ─── Plugin-specific ──────────────────────────────────────────────────────
-
-    /// Returns the name of the currently executing plugin.
-    pub fn get_plugin_name(&self) -> &str {
-        &self.plugin.name
-    }
-
-    /// Returns the plugin's config section from `alloy.yaml`.
-    pub fn get_config(&self) -> Arc<serde_json::Value> {
-        self.plugin.config.clone()
     }
 }

@@ -104,7 +104,7 @@ impl<T: StorageDirSelector> Deref for PluginStorageDir<T> {
 impl<T: StorageDirSelector + Send> FromContext for PluginStorageDir<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;
-        let plugin_path = T::select(storage).join(ctx.get_plugin_name());
+        let plugin_path = T::select(storage).join(ctx.plugin().name());
         Ok(PluginStorageDir(plugin_path, PhantomData))
     }
 }

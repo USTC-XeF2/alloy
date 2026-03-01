@@ -46,12 +46,10 @@ impl<T: BotTrait + std::fmt::Debug> std::fmt::Debug for Bot<T> {
 #[async_trait]
 impl<T: BotTrait> FromContext for Bot<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        // Get the BoxedBot
-        let boxed_bot = ctx.bot_arc();
-
-        // Try to downcast to the concrete type
-        let any_arc = boxed_bot.as_any();
-        Arc::downcast::<T>(any_arc)
+        ctx.bot()
+            .clone()
+            .as_any()
+            .downcast::<T>()
             .map(Bot::new)
             .map_err(|_| ExtractError::BotTypeMismatch {
                 expected: std::any::type_name::<T>(),

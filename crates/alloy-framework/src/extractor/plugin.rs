@@ -27,9 +27,9 @@ impl<T> std::ops::Deref for PluginConfig<T> {
 #[async_trait]
 impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        let json = ctx.get_config();
-        let t = T::deserialize(json.as_ref()).unwrap_or_default();
-        Ok(PluginConfig(t))
+        Ok(PluginConfig(
+            ctx.plugin().get_config::<T>().unwrap_or_default(),
+        ))
     }
 }
 

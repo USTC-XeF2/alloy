@@ -32,7 +32,6 @@
 //! manager.unload_all().await;
 //! ```
 
-use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -42,8 +41,8 @@ use parking_lot::RwLock;
 use serde_json::{Map, Value};
 use tracing::{error, info, span, warn};
 
-use crate::context::{AlloyContext, BaseContext, PluginContext, ServiceArc};
-use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
+use crate::context::{AlloyContext, BaseContext, PluginContext, ServiceMap};
+use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor};
 use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
 
 // =============================================================================
@@ -95,29 +94,20 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
         .collect();
 
     for (name, plugin) in plugins {
-        for &dep_id in plugin.depends_on() {
-            match provider_map.get(dep_id) {
-                Some(provider_name) if provider_name != name => {
+        for entry in plugin.depends_on() {
+            if let Some(provider_name) = provider_map.get(entry.name) {
+                if provider_name == name {
+                    warn!(
+                        plugin  = %name,
+                        service = entry.name,
+                        "Plugin depends on a service it provides itself — ignored"
+                    );
+                } else {
                     dependents
                         .get_mut(provider_name)
                         .unwrap()
                         .push(name.clone());
                     *in_degree.get_mut(name).unwrap() += 1;
-                }
-                Some(_) => {
-                    warn!(
-                        plugin  = %name,
-                        service = dep_id,
-                        "Plugin depends on a service it provides itself — ignored"
-                    );
-                }
-                None => {
-                    warn!(
-                        plugin     = %name,
-                        dependency = dep_id,
-                        "Unresolved dependency — no loaded plugin provides '{dep_id}'; \
-                         load order for this dependency is not guaranteed"
-                    );
                 }
             }
         }
@@ -193,6 +183,7 @@ pub enum PluginLoadState {
 struct PluginEntry {
     plugin: Arc<Plugin>,
     state: PluginLoadState,
+    context: Arc<PluginContext>,
 }
 
 // =============================================================================
@@ -223,7 +214,8 @@ pub struct PluginManager {
     /// Per-plugin config sections, keyed by plugin name. Stored as Arc<Value> to avoid cloning.
     plugin_configs: HashMap<String, Arc<Value>>,
     /// Managed exclusively by [`load_all`] / [`unload_all`].
-    services: RwLock<HashMap<String, (TypeId, ServiceArc)>>,
+    /// Wrapped in Arc for sharing with PluginContext instances.
+    services: Arc<RwLock<ServiceMap>>,
 }
 
 impl PluginManager {
@@ -235,7 +227,7 @@ impl PluginManager {
                 .into_iter()
                 .map(|(k, v)| (k, Arc::new(v)))
                 .collect(),
-            services: RwLock::new(HashMap::new()),
+            services: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -268,11 +260,29 @@ impl PluginManager {
         }
         let instance = desc.instantiate();
         let name = instance.name().to_string();
+
+        // Build the list of enabled service IDs (both provides and depends_on)
+        let service_ids: HashSet<String> = instance
+            .depends_on()
+            .iter()
+            .map(|entry| &entry.name)
+            .chain(instance.provides().iter())
+            .map(ToString::to_string)
+            .collect();
+
+        let context = Arc::new(PluginContext::new(
+            name.clone(),
+            self.get_plugin_config(&name),
+            service_ids,
+            self.services.clone(),
+        ));
+
         self.plugins.write().insert(
             name.clone(),
             PluginEntry {
                 plugin: Arc::new(instance),
                 state: PluginLoadState::Registered,
+                context,
             },
         );
         info!(plugin = %name, "Plugin registered");
@@ -338,11 +348,13 @@ impl PluginManager {
     /// Loads a single plugin in dependency order.
     ///
     /// If the plugin is already in `Active` state, returns `true` immediately.
-    /// Returns `false` on any failure (missing dependencies, `on_load` error, etc.);
+    /// Returns `false` on any failure (missing required dependencies, `on_load` error, etc.);
     /// returns `true` on success.
+    ///
+    /// The PluginContext was created at registration time and is reused from there.
     pub async fn load_plugin(&self, name: &str) -> bool {
-        // ── 1. Check state and deps ──────────────────────────────────────
-        let plugin = {
+        // ── 1. Check state and required deps ─────────────────────────────
+        let (plugin, ctx) = {
             let plugins = self.plugins.read();
             let Some(entry) = plugins.get(name) else {
                 return false;
@@ -350,38 +362,37 @@ impl PluginManager {
             if entry.state == PluginLoadState::Active {
                 return true;
             }
-            entry.plugin.clone()
+            (entry.plugin.clone(), entry.context.clone())
         };
 
+        // Check only required dependencies — optional deps missing is not an error
         let missing = {
             let svc_guard = self.services.read();
+            let id_set: HashSet<&str> = svc_guard.values().map(|(id, _)| id.as_str()).collect();
             plugin
                 .depends_on()
                 .iter()
-                .find(|dep| !svc_guard.contains_key(**dep))
-                .map(|&s| s.to_string())
+                .find(|entry| entry.required && !id_set.contains(entry.name))
+                .map(|entry| entry.name)
         };
 
         if let Some(dep) = missing {
             error!(
                 plugin = %name,
                 missing_dependency = %dep,
-                "Plugin dependency not satisfied — plugin will not be loaded"
+                "Required plugin dependency not satisfied — plugin will not be loaded"
             );
             self.set_plugin_state(name, PluginLoadState::Failed);
             return false;
         }
 
-        let config = self.get_plugin_config(name);
-        let ctx = Arc::new(PluginLoadContext::new(config));
-
         // ── 2. Initialise services in parallel ───────────────────────────
-        let all_services = future::join_all(plugin.service_factories().iter().map(|entry| {
+        let all_services = future::join_all(plugin.service_entrys().iter().map(|entry| {
             let id = entry.id.to_string();
             let ctx = ctx.clone();
             async move {
                 match tokio::spawn((entry.factory)(ctx)).await {
-                    Ok(Ok(arc)) => Ok((id, (entry.type_id, arc))),
+                    Ok(Ok(arc)) => Ok((entry.type_id, (id, arc))),
                     Ok(Err(e)) => Err((id, e)),
                     Err(panic) => Err((id, panic.to_string())),
                 }
@@ -464,8 +475,8 @@ impl PluginManager {
         // Remove services.
         {
             let mut svc_map = self.services.write();
-            for id in plugin.provides() {
-                svc_map.remove(id);
+            for entry in plugin.service_entrys() {
+                svc_map.remove(&entry.type_id);
             }
         }
 
@@ -497,19 +508,18 @@ impl PluginManager {
 
         let plugin_services = plugin.provides();
 
-        // Check if any other active plugin depends on this plugin's services.
+        // Check if any other active plugin has required dependencies on this plugin's services.
         for (other_name, entry) in self.plugins.read().iter() {
             if other_name == name || entry.state != PluginLoadState::Active {
                 continue;
             }
-            let other = &entry.plugin;
-            for &dep in other.depends_on() {
-                if plugin_services.contains(&dep) {
+            for dep in entry.plugin.depends_on() {
+                if dep.required && plugin_services.contains(&dep.name) {
                     error!(
                         plugin = %name,
                         dependent = %other_name,
-                        service = %dep,
-                        "Cannot unload plugin — other active plugins depend on its services"
+                        service = %dep.name,
+                        "Cannot unload plugin — other active plugins require its services"
                     );
                     return false;
                 }
@@ -580,47 +590,31 @@ impl Dispatcher for PluginManager {
     /// [`AlloyContext::stop_propagation`], the loop exits immediately and
     /// subsequent plugins are skipped. Panics within a plugin are caught and logged,
     /// but do not halt the dispatch process.
+    ///
+    /// Each plugin uses its fixed PluginContext that was created at load time,
+    /// ensuring consistent context across event dispatches.
     async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) {
         let event_name = event.event_name();
 
-        // Snapshot the global service map once for this dispatch cycle.
-        // Each plugin will receive a filtered subset of this snapshot.
-        let all_services = self.services.read().clone();
         let base = Arc::new(BaseContext::new(event, bot));
 
-        // Snapshot active plugins — brief read lock.
-        let active_plugins: Vec<(Arc<Plugin>, Arc<Value>)> = {
+        // Snapshot active plugins and their fixed contexts — brief read lock.
+        let active_plugins: Vec<(Arc<Plugin>, Arc<PluginContext>)> = {
             let plugins = self.plugins.read();
             plugins
                 .iter()
                 .filter(|(_, e)| e.state == PluginLoadState::Active)
-                .map(|(name, e)| (e.plugin.clone(), self.get_plugin_config(name)))
+                .map(|(_, e)| (e.plugin.clone(), e.context.clone()))
                 .collect()
         };
 
         // Dispatch sequentially in isolated tasks; stop early if propagation is halted.
-        for (plugin, config) in active_plugins {
+        for (plugin, plugin_ctx) in active_plugins {
             if !base.is_propagating() {
                 break;
             }
 
-            let declared: HashSet<&str> = plugin
-                .depends_on()
-                .iter()
-                .copied()
-                .chain(plugin.provides().iter().copied())
-                .collect();
-            let plugin_services = {
-                all_services
-                    .iter()
-                    .filter(|(id, _)| declared.contains(id.as_str()))
-                    .map(|(_, entry)| entry.clone())
-                    .collect()
-            };
-            let ctx = Arc::new(AlloyContext::new(
-                base.clone(),
-                PluginContext::new(plugin.name(), config, plugin_services),
-            ));
+            let ctx = Arc::new(AlloyContext::new(base.clone(), plugin_ctx.clone()));
 
             let plugin_clone = plugin.clone();
 

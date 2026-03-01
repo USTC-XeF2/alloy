@@ -42,7 +42,7 @@ impl HandlerResponse for () {
 #[async_trait]
 impl HandlerResponse for String {
     async fn process_response(self, ctx: &AlloyContext) {
-        let bot = ctx.bot_arc();
+        let bot = ctx.bot();
         let event = ctx.event();
         if let Err(e) = bot.send(event.as_ref(), &self).await {
             error!("Failed to send message: {e}");
@@ -54,7 +54,7 @@ impl HandlerResponse for String {
 #[async_trait]
 impl<S: MessageSegment> HandlerResponse for Message<S> {
     async fn process_response(self, ctx: &AlloyContext) {
-        let bot = ctx.bot_arc();
+        let bot = ctx.bot();
         let event = ctx.event();
         if let Err(e) = bot.send_message(event.as_ref(), &self).await {
             error!("Failed to send message: {e}");

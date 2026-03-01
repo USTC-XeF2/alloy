@@ -251,10 +251,9 @@ where
                         reply_error
                     };
                     if should_reply {
-                        let bot = ctx.bot_arc();
-                        let event = ctx.event().clone();
-                        let msg = err.to_string();
-                        let _ = bot.send(event.as_ref(), &msg).await;
+                        let bot = ctx.bot();
+                        let event = ctx.event();
+                        let _ = bot.send(event.as_ref(), &err.to_string()).await;
                     }
                     Ok(())
                 }

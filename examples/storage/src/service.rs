@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use alloy::framework::plugin::{PluginLoadContext, ServiceInit};
+use alloy::framework::{context::PluginContext, plugin::ServiceInit};
 use alloy::macros::service_meta;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -64,7 +64,7 @@ impl ServiceInit for StorageServiceImpl {
     /// Constructs the service and creates the three conventional subdirectories.
     ///
     /// Reads `base_dir` from config; falls back to `"."` when absent.
-    async fn init(ctx: Arc<PluginLoadContext>) -> Result<Self, String> {
+    async fn init(ctx: Arc<PluginContext>) -> Result<Self, String> {
         let cfg: StorageConfig = ctx.get_config().unwrap_or_default();
         let service = StorageServiceImpl {
             base_dir: cfg.base_dir,

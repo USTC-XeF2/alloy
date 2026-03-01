@@ -1,7 +1,6 @@
 //! Plugin descriptor — the static, `Copy` handle to a plugin.
 
-use super::Plugin;
-use super::core::PluginMetadata;
+use super::core::{DependsOnEntry, Plugin, PluginMetadata};
 
 // ─── API versioning ─────────────────────────────────────────────────────────────────────────────
 
@@ -32,8 +31,9 @@ pub struct PluginDescriptor {
     /// Service IDs registered into the global service map during load.
     pub provides: &'static [&'static str],
 
-    /// Service IDs required from the registry before `on_load`.
-    pub depends_on: &'static [&'static str],
+    /// All dependencies declared in `depends_on: [...]`, with `required` flag indicating
+    /// whether each is mandatory (`true` for marked with `!`) or optional (`false`).
+    pub depends_on: &'static [DependsOnEntry],
 
     /// Factory function that creates the live [`Plugin`] instance.
     pub create: fn() -> Plugin,
@@ -63,13 +63,5 @@ impl PluginDescriptor {
     #[inline]
     pub fn instantiate(&self) -> Plugin {
         (self.create)()
-    }
-}
-
-impl PluginDescriptor {
-    /// Returns this plugin's static [`PluginMetadata`].
-    #[inline]
-    pub fn metadata(&self) -> PluginMetadata {
-        self.metadata
     }
 }
