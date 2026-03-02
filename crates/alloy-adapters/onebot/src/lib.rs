@@ -4,7 +4,6 @@
 //! to OneBot v11 implementations.
 
 mod adapter;
-mod api_caller;
 pub mod bot;
 pub mod config;
 pub mod model;

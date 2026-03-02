@@ -54,7 +54,7 @@ impl Adapter for OneBotAdapter {
         Arc::new(OneBotBot::new(bot_id, connection))
     }
 
-    async fn parse_event(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent> {
+    async fn on_message(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent> {
         let bot_id = bot.id();
 
         // Parse the message as JSON first
@@ -71,7 +71,7 @@ impl Adapter for OneBotAdapter {
             && value.get("echo").is_some()
         {
             if let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.clone().as_any()) {
-                onebot_bot.api_caller.on_incoming_response(&value);
+                onebot_bot.handle_response(&value);
                 trace!(bot_id = %bot_id, echo = ?value.get("echo"), "Handled API response");
             }
             return None; // API responses are not events

@@ -3,6 +3,16 @@
 //! This module provides `OneBotBot`, a concrete implementation of the `Bot` trait
 //! that provides strongly-typed API methods for all OneBot v11 APIs.
 //!
+//! # Overview
+//!
+//! Transport-specific strategies for OneBot v11 API calls:
+//!
+//! | Transport | Strategy |
+//! |-----------|---------|
+//! | WebSocket (server & client) | Async echo matching — request is tagged with a numeric echo; response arrives on the shared channel and is routed to the waiting future. |
+//! | HTTP client | Synchronous POST — request body is sent as the HTTP body; the HTTP response body is the API response. No echo is needed. |
+//! | HTTP server | Disabled — receive-only connections cannot issue API calls. |
+//!
 //! # Usage
 //!
 //! ```rust,ignore
@@ -22,12 +32,18 @@
 //! ```
 
 use std::any::Any;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::{Value, json};
+use tokio::sync::{mpsc, oneshot};
+use tokio::time::timeout;
+use tracing::{debug, warn};
 
-use crate::api_caller::{ApiCaller, DisabledApiCaller, HttpApiCaller, WsApiCaller};
 use crate::model::api::{
     Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, Status,
     StrangerInfo, VersionInfo,
@@ -35,8 +51,138 @@ use crate::model::api::{
 use crate::model::event::{GroupMessageEvent, PrivateMessageEvent};
 use crate::model::message::OneBotMessage;
 use crate::model::segment::Segment;
-use alloy_core::{ApiError, ApiResult, Bot, ErasedMessage, Event, MessageSegment};
-use alloy_core::{ConnectionHandle, ConnectionKind};
+use alloy_core::{
+    ApiError, ApiResult, Bot, ConnectionHandle, ConnectionKind, ErasedMessage, Event,
+    MessageSegment, PostJsonFn, TransportError,
+};
+
+// =============================================================================
+// ApiCallStrategy
+// =============================================================================
+
+enum ApiCallStrategy {
+    /// WebSocket caller with echo-based async routing
+    Ws {
+        message_tx: mpsc::Sender<Vec<u8>>,
+        pending_calls: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
+        echo_counter: AtomicU64,
+        api_timeout: Duration,
+    },
+    /// HTTP client caller with POST function
+    HttpClient { post_json: PostJsonFn },
+    /// Disabled caller for receive-only connections
+    Disabled,
+}
+
+impl ApiCallStrategy {
+    /// Creates a new strategy from a connection handle.
+    fn new(connection: ConnectionHandle) -> Self {
+        match connection.kind {
+            ConnectionKind::HttpClient { post_json } => Self::HttpClient { post_json },
+            ConnectionKind::Ws { message_tx } => Self::Ws {
+                message_tx,
+                pending_calls: Arc::new(Mutex::new(HashMap::new())),
+                echo_counter: AtomicU64::new(1),
+                api_timeout: Duration::from_secs(30),
+            },
+            ConnectionKind::HttpServer { .. } => Self::Disabled,
+        }
+    }
+
+    /// Makes an API call and returns the response data.
+    async fn call(&self, action: &str, params: Value) -> ApiResult<Value> {
+        match self {
+            Self::Ws {
+                message_tx,
+                pending_calls,
+                echo_counter,
+                api_timeout,
+            } => {
+                let echo = echo_counter.fetch_add(1, Ordering::SeqCst);
+
+                // Register pending response channel before sending so we never miss a
+                // response that arrives before we start awaiting.
+                let (tx, rx) = oneshot::channel();
+                pending_calls.lock().insert(echo, tx);
+
+                // Serialize and send the request.
+                let request = json!({
+                    "action": action,
+                    "params": params,
+                    "echo": echo
+                });
+
+                debug!(action = %action, echo = %echo, "Calling OneBot API via WebSocket");
+
+                let request_bytes = serde_json::to_vec(&request)?;
+                if let Err(e) = message_tx.send(request_bytes).await {
+                    // Remove the pending entry so it doesn't dangle.
+                    pending_calls.lock().remove(&echo);
+                    return Err(TransportError::SendFailed(e.to_string()).into());
+                }
+
+                // Await the response with a timeout.
+                match timeout(*api_timeout, rx).await {
+                    Ok(Ok(response)) => Ok(response),
+                    Ok(Err(_)) => {
+                        // Channel closed — transport was shut down.
+                        Err(ApiError::NotConnected)
+                    }
+                    Err(_) => {
+                        // Timed out — remove the pending entry.
+                        pending_calls.lock().remove(&echo);
+                        Err(ApiError::Timeout)
+                    }
+                }
+            }
+            Self::HttpClient { post_json } => {
+                let body = json!({
+                    "action": action,
+                    "params": params,
+                });
+
+                debug!(action = %action, "Calling OneBot API via HTTP");
+
+                let response_json = (post_json)(body)
+                    .await
+                    .map_err(|e| ApiError::Other(format!("HTTP request failed: {e}")))?;
+
+                Ok(response_json)
+            }
+            Self::Disabled => Err(ApiError::NotSupported),
+        }
+    }
+
+    /// Routes an incoming protocol message that is an API response.
+    fn on_incoming_response(&self, data: &Value) {
+        if let Self::Ws { pending_calls, .. } = self
+            && let Some(echo) = data.get("echo").and_then(Value::as_u64)
+        {
+            let mut pending = pending_calls.lock();
+            if let Some(tx) = pending.remove(&echo) {
+                let _ = tx.send(data.clone());
+            } else {
+                // Echo arrived but no waiter — was probably already timed out.
+                warn!(echo = %echo, "Received WS API response for unknown echo (timed out?)");
+            }
+        }
+    }
+
+    /// Called when the underlying transport connection is closed.
+    fn on_disconnect(&self) {
+        if let Self::Ws { pending_calls, .. } = self {
+            let mut pending = pending_calls.lock();
+            let count = pending.len();
+            if count > 0 {
+                debug!(
+                    count = count,
+                    "Clearing pending WS API calls due to disconnect"
+                );
+                pending.clear();
+            }
+        }
+    }
+}
 
 // =============================================================================
 // OneBotBot
@@ -44,33 +190,26 @@ use alloy_core::{ConnectionHandle, ConnectionKind};
 
 /// A OneBot v11 Bot implementation.
 ///
-/// Wraps an [`ApiCaller`] that handles the transport-specific request/response
+/// Wraps an [`ApiCallStrategy`] that handles the transport-specific request/response
 /// strategy (WebSocket echo-matching or direct HTTP POST).
 pub struct OneBotBot {
     /// Bot ID (self_id from events).
     id: String,
-    /// Transport-specific API call mechanism.
-    pub(crate) api_caller: Arc<dyn ApiCaller>,
+    /// Transport-specific API call mechanism (enum-based, no dyn dispatch).
+    call_strategy: ApiCallStrategy,
 }
 
 impl OneBotBot {
     /// Creates a new `OneBotBot` from a connection handle.
-    ///
-    /// Automatically selects the appropriate [`ApiCaller`] implementation
-    /// based on the connection type.
-    pub fn new(id: impl Into<String>, connection: ConnectionHandle) -> Self {
-        let api_caller: Arc<dyn ApiCaller> = match connection.kind {
-            // HTTP outbound: all data lives directly in the variant
-            ConnectionKind::HttpClient { post_json } => Arc::new(HttpApiCaller::new(post_json)),
-            // WebSocket: echo-based async caller
-            ConnectionKind::Ws { message_tx } => Arc::new(WsApiCaller::new(message_tx)),
-            // HTTP server: receive-only, cannot issue API calls
-            ConnectionKind::HttpServer { .. } => Arc::new(DisabledApiCaller::new()),
-        };
+    pub(crate) fn new(id: &str, connection: ConnectionHandle) -> Self {
         Self {
             id: id.into(),
-            api_caller,
+            call_strategy: ApiCallStrategy::new(connection),
         }
+    }
+
+    pub(crate) fn handle_response(&self, data: &Value) {
+        self.call_strategy.on_incoming_response(data);
     }
 
     /// Internal method to send a message after converting it to OneBotMessage.
@@ -124,7 +263,7 @@ impl Bot for OneBotBot {
     }
 
     async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value> {
-        let response = self.api_caller.call(action, params).await?;
+        let response = self.call_strategy.call(action, params).await?;
         if let Some(retcode) = response.get("retcode").and_then(Value::as_i64)
             && retcode != 0
         {
@@ -158,7 +297,7 @@ impl Bot for OneBotBot {
     }
 
     async fn on_disconnect(&self) {
-        self.api_caller.on_disconnect();
+        self.call_strategy.on_disconnect();
     }
 }
 

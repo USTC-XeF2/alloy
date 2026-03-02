@@ -154,7 +154,7 @@ impl ConnectionHandler for AdapterBridge {
             return;
         };
 
-        let Some(event) = self.adapter.parse_event(&bot, data).await else {
+        let Some(event) = self.adapter.on_message(&bot, data).await else {
             return;
         };
 

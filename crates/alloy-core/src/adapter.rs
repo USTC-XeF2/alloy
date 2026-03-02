@@ -74,7 +74,7 @@ pub trait Adapter: Send + Sync {
     /// Return `None` for non-event messages (e.g., API responses).
     /// The bot is provided for protocol-specific handling
     /// (e.g., forwarding API responses to the bot instance).
-    async fn parse_event(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent>;
+    async fn on_message(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent>;
 
     /// Called when the adapter should start.
     ///
