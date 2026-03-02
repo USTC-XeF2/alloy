@@ -1,45 +1,43 @@
 //! Configuration types for OneBot adapter.
 //!
 //! This module defines the configuration schema that can be loaded from
-//! the global `alloy.yaml` configuration file.
+//! the global `alloy.toml` configuration file.
 //!
 //! # Example Configuration
 //!
-//! ```yaml
-//! adapters:
-//!   onebot:
-//!     connections:
-//!       # WebSocket client - connect to a OneBot implementation
-//!       - name: primary
-//!         enabled: true
-//!         type: ws-client
-//!         url: ws://127.0.0.1:6700/ws
-//!         access_token: ${BOT_TOKEN:-}
+//! ```toml
+//! # WebSocket client - connect to a OneBot implementation
+//! [[adapters.onebot.connections]]
+//! name = "primary"
+//! enabled = true
+//! type = "ws-client"
+//! url = "ws://127.0.0.1:6700/ws"
+//! access_token = "${BOT_TOKEN:-}"
 //!
-//!       # WebSocket server - listen for incoming connections
-//!       - name: listener
-//!         enabled: false
-//!         type: ws-server
-//!         host: 0.0.0.0
-//!         port: 8080
-//!         path: /onebot/v11/ws
+//! # WebSocket server - listen for incoming connections
+//! [[adapters.onebot.connections]]
+//! name = "listener"
+//! enabled = false
+//! type = "ws-server"
+//! host = "0.0.0.0"
+//! port = 8080
+//! path = "/onebot/v11/ws"
 //!
-//!       # HTTP webhook (receive events)
-//!       - name: webhook
-//!         enabled: false
-//!         type: http-server
-//!         host: 0.0.0.0
-//!         port: 9000
-//!         path: /onebot/callback
+//! # HTTP webhook (receive events)
+//! [[adapters.onebot.connections]]
+//! name = "webhook"
+//! enabled = false
+//! type = "http-server"
+//! host = "0.0.0.0"
+//! port = 9000
+//! path = "/onebot/callback"
 //!
-//!       # HTTP client (send API calls)
-//!       - name: api-client
-//!         enabled: false
-//!         type: http-client
-//!         api_url: http://127.0.0.1:5700
-//!
-//!     # Global settings for all connections
-//!     heartbeat_interval_secs: 30
+//! # HTTP client (send API calls)
+//! [[adapters.onebot.connections]]
+//! name = "api-client"
+//! enabled = false
+//! type = "http-client"
+//! api_url = "http://127.0.0.1:5700"
 //! ```
 
 use serde::{Deserialize, Serialize};

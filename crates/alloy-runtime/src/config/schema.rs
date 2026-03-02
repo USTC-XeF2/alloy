@@ -1,43 +1,6 @@
 //! Configuration schema definitions using figment.
 //!
 //! This module defines the configuration structure for the Alloy framework.
-//! The design prioritizes:
-//!
-//! - **Extensibility**: Adapters can define their own configuration sections
-//! - **Decoupling**: Core config is separate from adapter-specific config  
-//! - **Multi-source**: Supports files, env vars, and programmatic config
-//! - **Type safety**: Strong typing with serde and figment extraction
-//! - **Adapter-owned transport configs**: Each adapter defines its own connection
-//!   configuration (see e.g. `alloy_adapter_onebot::config`).  There are no
-//!   generic transport config types at the framework level.
-//!
-//! # Configuration Hierarchy
-//!
-//! ```text
-//! AlloyConfig
-//! ├── logging: LoggingConfig       # Logging settings
-//! └── adapters: Map<String, Value> # Adapter-specific configs (dynamic)
-//! ```
-//!
-//! # Example Configuration (YAML)
-//!
-//! ```yaml
-//! logging:
-//!   level: debug
-//!   format: pretty
-//!   
-//! network:
-//!   timeout_secs: 30
-//!   retry:
-//!     max_retries: 3
-//!     initial_delay_ms: 1000
-//!   
-//! adapters:
-//!   onebot:
-//!     connections:
-//!       - type: ws-client
-//!         url: ws://127.0.0.1:8080
-//! ```
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -62,7 +25,6 @@ pub struct AlloyConfig {
     /// Adapter-specific configurations.
     ///
     /// Each adapter registers its own configuration schema.
-    /// Example: `adapters.onebot` contains OneBot-specific settings.
     #[serde(default)]
     pub adapters: HashMap<String, Value>,
 
@@ -72,12 +34,12 @@ pub struct AlloyConfig {
     /// Each entry is deserialised into the plugin's declared `config_type` at load
     /// time and injected into every [`AlloyContext`] for that plugin run.
     ///
-    /// ```yaml
-    /// plugins:
-    ///   echo:
-    ///     prefix: "[Bot]"
-    ///   alloy.storage:
-    ///     base_dir: "./bot_data"
+    /// ```toml
+    /// [plugins.echo]
+    /// prefix = "[Bot]"
+    ///
+    /// [plugins.'alloy.storage']
+    /// base_dir = "./bot_data"
     /// ```
     ///
     /// [`AlloyContext`]: alloy_framework::context::AlloyContext

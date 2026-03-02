@@ -2,43 +2,6 @@
 //!
 //! This module provides the main adapter that bridges OneBot v11 implementations
 //! with the Alloy event system.
-//!
-//! # Configuration-Based Usage (Recommended)
-//!
-//! The adapter reads its configuration from `alloy.yaml`:
-//!
-//! ```yaml
-//! adapters:
-//!   onebot:
-//!     connections:
-//!       - type: ws-server
-//!         host: 0.0.0.0
-//!         port: 8080
-//!         path: /onebot/v11/ws
-//!       - type: ws-client
-//!         url: ws://127.0.0.1:6700/ws
-//!         access_token: ${BOT_TOKEN:-}
-//! ```
-//!
-//! ```rust,ignore
-//! use alloy_runtime::AlloyRuntime;
-//! use alloy_adapter_onebot::OneBotAdapter;
-//!
-//! let runtime = AlloyRuntime::new();
-//! // Adapter auto-created from config
-//! runtime.run().await?;
-//! ```
-//!
-//! # Programmatic Usage
-//!
-//! ```rust,ignore
-//! let adapter = OneBotAdapter::from_config(config);
-//! // Or build manually
-//! let adapter = OneBotAdapter::builder()
-//!     .ws_server("0.0.0.0:8080", "/ws")
-//!     .ws_client("ws://localhost:6700/ws", Some("token"))
-//!     .build();
-//! ```
 
 use std::sync::Arc;
 

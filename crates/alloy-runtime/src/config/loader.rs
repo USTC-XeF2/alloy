@@ -9,15 +9,14 @@
 //! # Feature Flags
 //!
 //! - `toml-config` *(default)*: enables TOML configuration files (`alloy.toml`, `config.toml`)
-//! - `yaml-config`: enables YAML configuration files (`alloy.yaml`, `alloy.yml`, etc.)
 //!
 //! Both features can be enabled simultaneously; if so, both file formats are searched and loaded.
 //!
 //! # Configuration Priority (lowest to highest)
 //!
 //! 1. Built-in defaults
-//! 2. Profile-specific config file (`alloy.{profile}.toml` / `alloy.{profile}.yaml`)
-//! 3. Main config file (`alloy.toml` / `alloy.yaml`)
+//! 2. Profile-specific config file (`alloy.{profile}.toml`)
+//! 3. Main config file (`alloy.toml`)
 //! 4. Environment variables (`ALLOY_*`)
 //! 5. Programmatic overrides
 //!
@@ -27,7 +26,6 @@
 //!
 //! - `ALLOY_LOGGING__LEVEL=debug` → `logging.level = "debug"`
 //! - `ALLOY_NETWORK__TIMEOUT_SECS=60` → `network.timeout_secs = 60`
-//! - `ALLOY_ADAPTERS__ONEBOT__ACCESS_TOKEN=xxx` → `adapters.onebot.access_token = "xxx"`
 //!
 //! # Example
 //!
@@ -110,7 +108,7 @@ impl std::fmt::Display for Profile {
 ///
 /// ```rust,ignore
 /// let config = ConfigLoader::new()
-///     .file("alloy.yaml")
+///     .file("alloy.toml")
 ///     .with_env()
 ///     .load()?;
 /// ```

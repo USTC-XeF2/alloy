@@ -207,7 +207,7 @@ struct PluginEntry {
 /// # Plugin configuration
 ///
 /// `plugin_configs` is a map from plugin name → `serde_json::Value` extracted
-/// from `alloy.yaml → plugins → <name>`.  The runtime converts the figment
+/// from `alloy.toml → plugins → <name>`.  The runtime converts the figment
 /// config before calling [`new`](Self::new).
 pub struct PluginManager {
     plugins: RwLock<HashMap<String, PluginEntry>>,

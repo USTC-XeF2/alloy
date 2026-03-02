@@ -9,7 +9,7 @@ use crate::extractor::FromContext;
 /// Extractor that provides a handler with its plugin's typed configuration.
 ///
 /// The runtime automatically injects the plugin's raw JSON section from
-/// `alloy.yaml → plugins.<plugin_name>` into every [`AlloyContext`] before
+/// `alloy.toml → plugins.<plugin_name>` into every [`AlloyContext`] before
 /// the handler chain runs.  `PluginConfig<T>` deserialises that JSON into `T`.
 ///
 /// If the config section is absent or empty, `T::default()` is used (requires

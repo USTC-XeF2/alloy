@@ -30,15 +30,6 @@ use crate::handler::{EventPredicate, ServiceBuilderExt};
 pub type FilterServiceBuilder = ServiceBuilder<Stack<FilterLayer<EventPredicate>, Identity>>;
 
 /// Creates a [`ServiceBuilder`] that filters events by [`EventType`].
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy::prelude::*;
-/// use alloy_core::EventType;
-///
-/// runtime.register_service(on_event_type(EventType::Message).handler(handler)).await;
-/// ```
 pub fn on_event_type(event_type: EventType) -> FilterServiceBuilder {
     ServiceBuilder::new()
         .rule_sync(move |ctx: &AlloyContext| ctx.event().event_type() == event_type)
@@ -51,7 +42,7 @@ pub fn on_event_type(event_type: EventType) -> FilterServiceBuilder {
 /// ```rust,ignore
 /// use alloy::prelude::*;
 ///
-/// runtime.register_service(on_message().handler(echo_handler)).await;
+/// runtime.register_service(on_message().handler(my_handler)).await;
 /// ```
 pub fn on_message() -> FilterServiceBuilder {
     on_event_type(EventType::Message)
@@ -61,15 +52,6 @@ pub fn on_message() -> FilterServiceBuilder {
 /// event type `E`.
 ///
 /// Uses strict type equality checking.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy::prelude::*;
-/// use onebot::events::MessageEvent;
-///
-/// runtime.register_service(on::<MessageEvent>().handler(handler)).await;
-/// ```
 pub fn on<E: Event + 'static>() -> FilterServiceBuilder {
     let type_id = TypeId::of::<E>();
     ServiceBuilder::new()

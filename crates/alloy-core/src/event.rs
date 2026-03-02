@@ -132,21 +132,12 @@ pub trait AsText: Send + Sync {
 ///
 /// # Derive Macro
 ///
-/// Use `#[derive(BotEvent)]` to automatically implement common methods:
-///
-/// ```rust,ignore
-/// #[derive(Clone, BotEvent)]
-/// #[event(platform = "onebot")]
-/// pub enum MessageEvent {
-///     Private(PrivateMessage),
-///     Group(GroupMessage),
-/// }
-/// ```
+/// Use `#[derive(BotEvent)]` to automatically implement common methods.
 pub trait Event: AsText + Any + Send + Sync {
     /// Returns the human-readable name of this event type.
     fn event_name(&self) -> &'static str;
 
-    /// Returns the platform/adapter name (e.g., "onebot", "discord").
+    /// Returns the platform/adapter name.
     fn platform(&self) -> &'static str;
 
     /// Returns the high-level event type classification.
@@ -191,9 +182,8 @@ pub trait Event: AsText + Any + Send + Sync {
 
     /// The segment type used by messages in this event's platform.
     ///
-    /// For all events under the same adapter/platform, this should be the same type
-    /// (e.g., all OneBot events use `onebot::Segment`). The root event specifies the
-    /// segment type, and child events inherit it.
+    /// For all events under the same adapter/platform, this should be the same type.
+    /// The root event specifies the segment type, and child events inherit it.
     ///
     /// Messages are represented as `Message<Self::Segment>`.
     ///

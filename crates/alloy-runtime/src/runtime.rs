@@ -12,11 +12,6 @@
 //! // Simplest way - auto-loads config from current directory
 //! let runtime = AlloyRuntime::new();
 //!
-//! // Custom configuration path
-//! let runtime = AlloyRuntime::builder()
-//!     .config_file("config/alloy.yaml")
-//!     .build()?;
-//!
 //! // Use pre-loaded config
 //! let config = load_config()?;
 //! let runtime = AlloyRuntime::from_config(&config);
@@ -45,10 +40,10 @@ use alloy_framework::{manager::PluginManager, plugin::PluginDescriptor};
 /// use alloy_runtime::AlloyRuntime;
 /// use alloy::prelude::*;
 ///
-/// // Auto-loads config from alloy.yaml in current directory
+/// // Auto-loads config from alloy.toml in current directory
 /// let runtime = AlloyRuntime::new();
 ///
-/// // Register an adapter (configured from alloy.yaml)
+/// // Register an adapter (configured from alloy.toml)
 /// runtime.register_adapter::<OneBotAdapter>()?;
 ///
 /// // Register a plugin that contains all your handlers
@@ -85,7 +80,7 @@ impl AlloyRuntime {
     /// Creates a new runtime with automatic configuration loading.
     ///
     /// This will:
-    /// 1. Search for `alloy.yaml` in the current directory
+    /// 1. Search for `alloy.toml` in the current directory
     /// 2. Initialize logging based on the configuration
     /// 3. Create transport context with all available capabilities
     ///
@@ -155,7 +150,7 @@ impl AlloyRuntime {
 
     /// Registers an adapter with the runtime.
     ///
-    /// Configuration is loaded from `alloy.yaml` under the adapter's name key,
+    /// Configuration is loaded from `alloy.toml` under the adapter's name key,
     /// or falls back to `Default::default()` if not found.
     /// An [`AdapterBridge`] is created immediately so there is no separate `init` step.
     ///

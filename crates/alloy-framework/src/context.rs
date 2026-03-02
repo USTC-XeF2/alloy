@@ -153,7 +153,7 @@ impl std::fmt::Debug for BaseContext {
 /// Every plugin gets its own `PluginContext` for each event dispatch.
 /// This context includes:
 /// - The plugin's name
-/// - The plugin's config section from `alloy.yaml`
+/// - The plugin's config section from `alloy.toml`
 /// - Reference to the global service map for dynamic service access
 /// - A per-plugin isolated state storage
 ///
@@ -166,7 +166,7 @@ impl std::fmt::Debug for BaseContext {
 pub struct PluginContext {
     /// The name of the plugin.
     name: String,
-    /// The plugin's config section from `alloy.yaml` (or an empty object).
+    /// The plugin's config section from `alloy.toml` (or an empty object).
     config: Arc<Value>,
     /// Service IDs this plugin declared (via `provides` or `depends_on`).
     /// Used to check if a service lookup should be allowed.

@@ -2,33 +2,6 @@
 //!
 //! This crate provides an adapter for connecting the Alloy bot framework
 //! to OneBot v11 implementations.
-//!
-//! ## Configuration-Based Usage (Recommended)
-//!
-//! Configure in `alloy.yaml`:
-//!
-//! ```yaml
-//! adapters:
-//!   onebot:
-//!     connections:
-//!       - type: ws-server
-//!         host: 0.0.0.0
-//!         port: 8080
-//!         path: /onebot/v11/ws
-//!       - type: ws-client
-//!         url: ws://127.0.0.1:6700/ws
-//!         access_token: ${BOT_TOKEN:-}
-//! ```
-//!
-//! ## Event Hierarchy
-//!
-//! ```text
-//! OneBotEvent (implements Event trait)
-//! ├── Message { Private, Group }
-//! ├── Notice { GroupUpload, GroupAdmin, ... }
-//! ├── Request { Friend, Group }
-//! └── MetaEvent { Lifecycle, Heartbeat }
-//! ```
 
 mod adapter;
 mod api_caller;

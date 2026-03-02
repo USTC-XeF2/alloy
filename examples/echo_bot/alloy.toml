@@ -3,8 +3,7 @@
 #
 # Configuration supports:
 # - Environment variable override: ALLOY_LOGGING__LEVEL=debug
-# - Environment variable interpolation: ${VAR:-default}
-# - Profile-specific files: alloy.production.yaml
+# - Profile-specific files: alloy.prod.toml
 
 # =============================================================================
 # Logging Configuration

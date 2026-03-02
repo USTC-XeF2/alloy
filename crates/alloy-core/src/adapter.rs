@@ -4,33 +4,6 @@
 //! Each adapter implements the [`Adapter`] trait, which combines:
 //! - **Protocol hooks**: Bot ID extraction, bot creation, message parsing
 //! - **Lifecycle**: Start/shutdown management
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! impl Adapter for OneBotAdapter {
-//!     async fn get_bot_id(&self, info: ConnectionInfo) -> TransportResult<String> {
-//!         info.metadata.get("x-self-id").cloned()
-//!             .ok_or(TransportError::BotIdMissing { reason: "missing".into() })
-//!     }
-//!
-//!     fn create_bot(&self, bot_id: &str, conn: ConnectionHandle) -> BoxedBot {
-//!         OneBotBot::new(bot_id, conn)
-//!     }
-//!
-//!     async fn parse_event(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent> {
-//!         parse_onebot_event(data).ok()
-//!     }
-//!
-//!     async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
-//!         if let Some(ws) = ctx.transport().ws_server() {
-//!             let handle = ws.listen("0.0.0.0:8080", "/ws", ctx.as_connection_handler()).await?;
-//!             ctx.add_listener(handle).await;
-//!         }
-//!         Ok(())
-//!     }
-//! }
-//! ```
 
 use std::sync::Arc;
 
@@ -127,12 +100,12 @@ pub trait Adapter: Send + Sync {
 /// A boxed adapter trait object.
 pub type BoxedAdapter = Arc<dyn Adapter>;
 
-/// Trait for adapters that can be created from YAML configuration.
+/// Trait for adapters that can be created from TOML configuration.
 ///
 /// Separates compile-time concerns (`Config` type, `from_config()`)
 /// from the object-safe [`Adapter`] trait.
 pub trait ConfigurableAdapter: Adapter {
-    /// The configuration type, deserialized from `alloy.yaml`.
+    /// The configuration type, deserialized from `alloy.toml`.
     type Config: serde::de::DeserializeOwned + Default;
 
     /// Returns the adapter name used as the config key.

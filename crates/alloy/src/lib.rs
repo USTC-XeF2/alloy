@@ -50,13 +50,6 @@
 //!     Ok(())
 //! }
 //! ```
-//!
-//! ## Features
-//!
-//! - `macros`: Enable BotEvent derive macro (default)
-//! - `adapter-onebot`: Enable OneBot v11 adapter
-//! - `transport-ws`: Enable WebSocket transport
-//! - `transport-http`: Enable HTTP transport
 
 pub use alloy_core as core;
 pub use alloy_framework as framework;
