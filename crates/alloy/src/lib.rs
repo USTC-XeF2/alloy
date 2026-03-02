@@ -88,7 +88,9 @@ pub mod prelude {
 
     // Extractors - for handler parameters
     pub use alloy_framework::context::AlloyContext;
-    pub use alloy_framework::extractor::{Bot, Event, FromContext, PluginConfig, ServiceRef};
+    pub use alloy_framework::extractor::{
+        Bot, Event, FromContext, PluginConfig, PluginState, ServiceRef,
+    };
 
     // Route convenience functions (from framework layer)
     pub use alloy_framework::routing::{on, on_event_type, on_message};

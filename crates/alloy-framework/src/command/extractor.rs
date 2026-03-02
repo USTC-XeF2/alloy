@@ -1,4 +1,5 @@
 use clap::Parser;
+use derive_more::Deref;
 
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
@@ -19,27 +20,13 @@ use crate::extractor::FromContext;
 ///     println!("Got command: {:?}", cmd.0);
 /// }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deref)]
 pub struct CommandArgs<T: Parser>(pub T);
 
 impl<T: Parser> CommandArgs<T> {
     /// Unwraps the command value.
     pub fn into_inner(self) -> T {
         self.0
-    }
-}
-
-impl<T: Parser> std::ops::Deref for CommandArgs<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: Parser> std::ops::DerefMut for CommandArgs<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

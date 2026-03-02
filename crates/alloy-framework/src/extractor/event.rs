@@ -1,9 +1,11 @@
 use std::any::TypeId;
 
+use derive_more::{AsRef, Deref};
+
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
-use alloy_core::Event as EventTrait;
+use alloy_core::{BoxedEvent, Event as EventTrait};
 
 /// Context wrapper that provides access to extracted event data.
 ///
@@ -24,34 +26,9 @@ use alloy_core::Event as EventTrait;
 ///     Outcome::Handled
 /// }
 /// ```
-pub struct Event<T: EventTrait>(pub T);
-
-impl<T: EventTrait> Event<T> {
-    /// Creates a new Event with the given data.
-    pub(crate) fn new(data: T) -> Self {
-        Self(data)
-    }
-}
-
-impl<T: EventTrait> std::ops::Deref for Event<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: EventTrait> AsRef<dyn EventTrait> for Event<T> {
-    fn as_ref(&self) -> &dyn EventTrait {
-        &self.0
-    }
-}
-
-impl<T: EventTrait + std::fmt::Debug> std::fmt::Debug for Event<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Event").field("data", &self.0).finish()
-    }
-}
+#[derive(Debug, Clone, Deref, AsRef)]
+#[as_ref(dyn EventTrait)]
+pub struct Event<T: EventTrait>(T);
 
 /// Implementation for extracting `Event<T>` where `T: EventTrait`.
 ///
@@ -76,10 +53,20 @@ impl<T: EventTrait> FromContext for Event<T> {
         ctx.event()
             .downgrade_any(TypeId::of::<T>())
             .and_then(|boxed| boxed.downcast::<T>().ok())
-            .map(|boxed| Event::new(*boxed))
+            .map(|boxed| Event(*boxed))
             .ok_or_else(|| ExtractError::EventTypeMismatch {
                 expected: std::any::type_name::<T>(),
                 got: ctx.event().event_name(),
             })
+    }
+}
+
+/// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
+///
+/// This is useful when a handler needs to work with any event type
+/// without knowing the concrete type at compile time.
+impl FromContext for BoxedEvent {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        Ok(ctx.event().clone())
     }
 }

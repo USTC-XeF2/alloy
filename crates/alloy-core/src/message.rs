@@ -13,8 +13,8 @@
 
 use std::any::Any;
 use std::fmt::{Debug, Display};
-use std::ops::{Deref, DerefMut};
 
+use derive_more::{AsMut, AsRef, Deref, DerefMut, From};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -152,7 +152,7 @@ impl Display for RichTextSegment {
 /// # Type Parameters
 ///
 /// - `S`: The segment type, must implement [`MessageSegment`]
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Deref, DerefMut, AsRef, AsMut, From)]
 #[serde(transparent)]
 pub struct Message<S: MessageSegment> {
     #[serde(bound(deserialize = "S: Deserialize<'de>"))]
@@ -224,36 +224,12 @@ impl<S: MessageSegment> Message<S> {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Deref implementations
-// ══════════════════════════════════════════════════════════════════════════════
-
-impl<S: MessageSegment> Deref for Message<S> {
-    type Target = [S];
-
-    fn deref(&self) -> &Self::Target {
-        &self.segments
-    }
-}
-
-impl<S: MessageSegment> DerefMut for Message<S> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.segments
-    }
-}
-
 impl<S: MessageSegment> Display for Message<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for segment in &self.segments {
             write!(f, "{segment}")?;
         }
         Ok(())
-    }
-}
-
-impl<S: MessageSegment> From<Vec<S>> for Message<S> {
-    fn from(segments: Vec<S>) -> Self {
-        Self { segments }
     }
 }
 

@@ -1,6 +1,5 @@
 use crate::context::AlloyContext;
 use crate::error::ExtractResult;
-use alloy_core::{BoxedBot, BoxedEvent};
 
 /// A trait for types that can be extracted from an [`AlloyContext`].
 ///
@@ -42,33 +41,5 @@ impl<T: FromContext> FromContext for Option<T> {
 impl<T: FromContext> FromContext for ExtractResult<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(T::from_context(ctx).await)
-    }
-}
-
-/// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
-///
-/// This is useful when a handler needs to work with any event type
-/// without knowing the concrete type at compile time.
-impl FromContext for BoxedEvent {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        Ok(ctx.event().clone())
-    }
-}
-
-/// Implementation for extracting the Bot from context.
-///
-/// This allows handlers to inject the bot and use it to send messages:
-///
-/// ```rust,ignore
-/// use alloy_core::BoxedBot;
-///
-/// async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
-///     // Use the bot to send a message back
-///     bot.send(event.as_ref(), "Hello!").await.ok();
-/// }
-/// ```
-impl FromContext for BoxedBot {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
-        Ok(ctx.bot().clone())
     }
 }

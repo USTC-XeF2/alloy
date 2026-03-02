@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use derive_more::{AsRef, Deref, DerefMut};
+
 use crate::context::AlloyContext;
 use crate::error::ExtractResult;
 use crate::extractor::FromContext;
@@ -13,20 +15,36 @@ use crate::extractor::FromContext;
 /// If the config section is absent or empty, `T::default()` is used (requires
 /// `T: Default`).  If deserialisation fails the handler is skipped with
 /// [`ExtractError::MissingState`].
-pub struct PluginConfig<T>(pub T);
-
-impl<T> std::ops::Deref for PluginConfig<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
+#[derive(Deref, AsRef)]
+pub struct PluginConfig<T>(T);
 
 impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(PluginConfig(
             ctx.plugin().get_config::<T>().unwrap_or_default(),
         ))
+    }
+}
+
+/// Extractor that provides access to the plugin's persistent state.
+///
+/// The plugin context maintains a [`State`](crate::context::State) that persists
+/// across all event dispatches for a given plugin instance. `PluginState<T>` allows
+/// handlers to extract typed values from this persistent storage.
+///
+/// Values in plugin state can be set via `ctx.plugin().state().set(value)` and
+/// retrieved via this extractor. If a value of type `T` has not been set, extraction
+/// fails with [`ExtractError::StateNotFound`] and the handler is silently skipped.
+#[derive(Deref, DerefMut)]
+pub struct PluginState<T>(pub T);
+
+impl<T: Clone + Send + 'static> FromContext for PluginState<T> {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        ctx.plugin()
+            .state()
+            .get::<T>()
+            .map(PluginState)
+            .ok_or_else(|| crate::error::ExtractError::StateNotFound(std::any::type_name::<T>()))
     }
 }
 
@@ -52,15 +70,8 @@ impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConf
 ///     Ok(value)
 /// }
 /// ```
-pub struct ServiceRef<T: ?Sized>(pub Arc<T>);
-
-impl<T: ?Sized> std::ops::Deref for ServiceRef<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
+#[derive(Deref)]
+pub struct ServiceRef<T: ?Sized>(Arc<T>);
 
 impl<T: ?Sized + Send + Sync + 'static> FromContext for ServiceRef<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {

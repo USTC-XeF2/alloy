@@ -1,42 +1,19 @@
 use std::sync::Arc;
 
+use derive_more::{AsRef, Deref};
+
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
-use alloy_core::Bot as BotTrait;
+use alloy_core::{Bot as BotTrait, BoxedBot};
 
 /// Context wrapper that provides access to the bot instance.
 ///
 /// This is the primary way handlers receive and use the bot. Use `Deref` to access
 /// the bot interface directly.
-pub struct Bot<T: BotTrait>(pub Arc<T>);
-
-impl<T: BotTrait> Bot<T> {
-    /// Creates a new Bot wrapper with the given bot instance.
-    pub(crate) fn new(bot: Arc<T>) -> Self {
-        Self(bot)
-    }
-}
-
-impl<T: BotTrait> std::ops::Deref for Bot<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: BotTrait> AsRef<dyn BotTrait> for Bot<T> {
-    fn as_ref(&self) -> &dyn BotTrait {
-        self.0.as_ref()
-    }
-}
-
-impl<T: BotTrait + std::fmt::Debug> std::fmt::Debug for Bot<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Bot").field("bot", &self.0).finish()
-    }
-}
+#[derive(Debug, Clone, Deref, AsRef)]
+#[as_ref(dyn BotTrait)]
+pub struct Bot<T: BotTrait>(Arc<T>);
 
 /// Implementation for extracting `Bot<T>` where `T: Bot`.
 ///
@@ -47,9 +24,27 @@ impl<T: BotTrait> FromContext for Bot<T> {
             .clone()
             .as_any()
             .downcast::<T>()
-            .map(Bot::new)
+            .map(Bot)
             .map_err(|_| ExtractError::BotTypeMismatch {
                 expected: std::any::type_name::<T>(),
             })
+    }
+}
+
+/// Implementation for extracting the Bot from context.
+///
+/// This allows handlers to inject the bot and use it to send messages:
+///
+/// ```rust,ignore
+/// use alloy_core::BoxedBot;
+///
+/// async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
+///     // Use the bot to send a message back
+///     bot.send(event.as_ref(), "Hello!").await.ok();
+/// }
+/// ```
+impl FromContext for BoxedBot {
+    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+        Ok(ctx.bot().clone())
     }
 }

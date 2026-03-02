@@ -97,14 +97,14 @@ macro_rules! impl_handler {
     ) => {
         #[allow(non_snake_case)]
         #[allow(unused_variables)]
-        impl<F, Fut, Res, $($ty,)*> FromCtxFn<Res, ($($ty,)*)> for F
+        impl<F, Fut, R, $($ty,)*> FromCtxFn<R, ($($ty,)*)> for F
         where
             F: FnOnce($($ty,)*) -> Fut + Clone + Send + Sync + 'static,
-            Fut: Future<Output = Res> + Send + 'static,
-            Res: Send + 'static,
-            $( $ty: FromContext + Send + 'static, )*
+            Fut: Future<Output = R> + Send,
+            R: Send,
+            $( $ty: FromContext, )*
         {
-            async fn call(self, ctx: &AlloyContext) -> ExtractResult<Res> {
+            async fn call(self, ctx: &AlloyContext) -> ExtractResult<R> {
                 let ($($ty,)*) = futures::try_join!($($ty::from_context(&ctx),)*)?;
 
                 Ok((self)($($ty,)*).await)

@@ -15,6 +15,7 @@ command = ["dep:clap"]
 [dependencies]
 alloy-core = { workspace = true }
 async-trait = { workspace = true }
+derive_more = { workspace = true, features = ["as_ref", "deref", "display"] }
 futures = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

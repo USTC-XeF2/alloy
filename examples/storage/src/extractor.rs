@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use alloy::framework::{context::AlloyContext, error::ExtractResult, extractor::FromContext};
+use derive_more::{AsRef, Deref};
 
 use crate::service::StorageService;
 
@@ -67,15 +67,8 @@ impl StorageDirSelector for Config {
 ///     Ok(state)
 /// }
 /// ```
-pub struct StorageDir<T: StorageDirSelector>(pub PathBuf, PhantomData<T>);
-
-impl<T: StorageDirSelector> Deref for StorageDir<T> {
-    type Target = PathBuf;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+#[derive(Deref, AsRef)]
+pub struct StorageDir<T: StorageDirSelector>(#[deref] pub PathBuf, PhantomData<T>);
 
 impl<T: StorageDirSelector> FromContext for StorageDir<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
@@ -88,15 +81,8 @@ impl<T: StorageDirSelector> FromContext for StorageDir<T> {
 ///
 /// This automatically appends the plugin name to the selected directory.
 /// For example, `PluginStorageDir<Data>` returns `<base>/data/<plugin_name>/`.
-pub struct PluginStorageDir<T: StorageDirSelector>(pub PathBuf, PhantomData<T>);
-
-impl<T: StorageDirSelector> Deref for PluginStorageDir<T> {
-    type Target = PathBuf;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+#[derive(Deref, AsRef)]
+pub struct PluginStorageDir<T: StorageDirSelector>(#[deref] pub PathBuf, PhantomData<T>);
 
 impl<T: StorageDirSelector + Send> FromContext for PluginStorageDir<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {

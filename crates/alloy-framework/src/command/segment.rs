@@ -1,3 +1,4 @@
+use derive_more::{AsRef, Deref, Display};
 use std::collections::HashMap;
 
 /// Prefix used for image placeholder tokens in command argument strings.
@@ -38,30 +39,10 @@ pub struct HandleRegistry {
 ///     println!("Image: {}", image_ref);
 /// }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deref, AsRef, Display)]
 pub struct ImageSegment {
     /// The original image reference resolved from the registry.
     value: String,
-}
-
-impl std::ops::Deref for ImageSegment {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl AsRef<str> for ImageSegment {
-    fn as_ref(&self) -> &str {
-        &self.value
-    }
-}
-
-impl std::fmt::Display for ImageSegment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
 }
 
 impl std::str::FromStr for ImageSegment {
@@ -101,30 +82,10 @@ impl std::str::FromStr for ImageSegment {
 ///     println!("User: {}", user_id);
 /// }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deref, AsRef, Display)]
 pub struct AtSegment {
     /// The original user identifier resolved from the registry.
     value: String,
-}
-
-impl std::ops::Deref for AtSegment {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl AsRef<str> for AtSegment {
-    fn as_ref(&self) -> &str {
-        &self.value
-    }
-}
-
-impl std::fmt::Display for AtSegment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
 }
 
 impl std::str::FromStr for AtSegment {
