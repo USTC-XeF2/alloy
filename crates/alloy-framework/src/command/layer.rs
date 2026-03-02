@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use clap::Parser;
@@ -181,10 +180,10 @@ pub struct CommandService<T, S> {
     _marker: PhantomData<T>,
 }
 
-impl<T, S> Service<Arc<AlloyContext>> for CommandService<T, S>
+impl<T, S> Service<AlloyContext> for CommandService<T, S>
 where
     T: Parser + Clone + Send + Sync + 'static,
-    S: Service<Arc<AlloyContext>, Response = (), Error = BoxError> + Clone + Send + 'static,
+    S: Service<AlloyContext, Response = (), Error = BoxError> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = ();
@@ -195,7 +194,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
+    fn call(&mut self, ctx: AlloyContext) -> Self::Future {
         let name = self.name.clone();
         let reply_help = self.reply_help;
         let reply_error = self.reply_error;

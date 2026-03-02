@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use alloy::framework::{context::PluginContext, plugin::ServiceInit};
 use alloy::macros::service_meta;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 // ─── StorageService trait ─────────────────────────────────────────────────────
@@ -59,7 +58,6 @@ impl StorageService for StorageServiceImpl {
     }
 }
 
-#[async_trait]
 impl ServiceInit for StorageServiceImpl {
     /// Constructs the service and creates the three conventional subdirectories.
     ///
@@ -70,8 +68,7 @@ impl ServiceInit for StorageServiceImpl {
             base_dir: cfg.base_dir,
         };
 
-        let subdirs = ["cache", "data", "config"];
-        for sub in &subdirs {
+        for sub in ["cache", "data", "config"] {
             let dir = service.base_dir.join(sub);
             if let Err(e) = tokio::fs::create_dir_all(&dir).await {
                 return Err(format!(

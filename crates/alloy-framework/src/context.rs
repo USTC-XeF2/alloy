@@ -253,7 +253,7 @@ impl PluginContext {
 /// # Example
 ///
 /// ```rust,ignore
-/// async fn handle(ctx: Arc<AlloyContext>) {
+/// async fn handle(ctx: &AlloyContext) {
 ///     println!("event: {:?}", ctx.event());
 ///     ctx.set_state("my_data".to_string());  // handler state, isolated to this dispatch
 ///     ctx.plugin().state().set_state(42);    // plugin persistent state
@@ -261,13 +261,13 @@ impl PluginContext {
 ///     ctx.bot().send(...).await.ok();
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AlloyContext {
     base: Arc<BaseContext>,
     plugin: Arc<PluginContext>,
     /// Per-plugin isolated state storage for this event dispatch.
     /// Each plugin gets its own independent state that is not shared.
-    state: State,
+    state: Arc<State>,
 }
 
 impl AlloyContext {
@@ -276,7 +276,7 @@ impl AlloyContext {
         Self {
             base,
             plugin,
-            state: State::new(),
+            state: Arc::new(State::new()),
         }
     }
 

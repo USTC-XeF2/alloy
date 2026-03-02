@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
@@ -43,7 +41,6 @@ impl<T: BotTrait + std::fmt::Debug> std::fmt::Debug for Bot<T> {
 /// Implementation for extracting `Bot<T>` where `T: Bot`.
 ///
 /// This enables handlers to inject a concrete bot type and access protocol-specific APIs:
-#[async_trait]
 impl<T: BotTrait> FromContext for Bot<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.bot()

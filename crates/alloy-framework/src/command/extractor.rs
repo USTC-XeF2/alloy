@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use clap::Parser;
 
 use crate::context::AlloyContext;
@@ -44,7 +43,6 @@ impl<T: Parser> std::ops::DerefMut for CommandArgs<T> {
     }
 }
 
-#[async_trait]
 impl<T: Parser + Clone + Send + 'static> FromContext for CommandArgs<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.state()

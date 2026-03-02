@@ -29,10 +29,6 @@
 //! }
 //! ```
 
-use std::sync::Arc;
-
-use async_trait::async_trait;
-
 use crate::context::AlloyContext;
 use crate::error::ExtractResult;
 use crate::extractor::FromContext;
@@ -83,12 +79,11 @@ use crate::extractor::FromContext;
 ///     // Process message and state...
 /// }
 /// ```
-#[async_trait]
 pub trait FromCtxFn<R, T>: Clone + Send + Sync + 'static {
     /// Call this function with the given context, extracting all parameters.
     ///
     /// Returns an error if any parameter extraction fails (e.g., required context is missing).
-    async fn call(self, ctx: Arc<AlloyContext>) -> ExtractResult<R>;
+    fn call(self, ctx: &AlloyContext) -> impl Future<Output = ExtractResult<R>> + Send;
 }
 
 // ============================================================================
@@ -102,7 +97,6 @@ macro_rules! impl_handler {
     ) => {
         #[allow(non_snake_case)]
         #[allow(unused_variables)]
-        #[async_trait]
         impl<F, Fut, Res, $($ty,)*> FromCtxFn<Res, ($($ty,)*)> for F
         where
             F: FnOnce($($ty,)*) -> Fut + Clone + Send + Sync + 'static,
@@ -110,7 +104,7 @@ macro_rules! impl_handler {
             Res: Send + 'static,
             $( $ty: FromContext + Send + 'static, )*
         {
-            async fn call(self, ctx: Arc<AlloyContext>) -> ExtractResult<Res> {
+            async fn call(self, ctx: &AlloyContext) -> ExtractResult<Res> {
                 let ($($ty,)*) = futures::try_join!($($ty::from_context(&ctx),)*)?;
 
                 Ok((self)($($ty,)*).await)

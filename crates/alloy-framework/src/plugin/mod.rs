@@ -45,7 +45,7 @@
 //! // 2. Implement with a concrete type:
 //! pub struct MyServiceImpl;
 //! impl MyService for MyServiceImpl { fn do_thing(&self) -> String { "done".into() } }
-//! #[async_trait::async_trait]
+//!
 //! impl ServiceInit for MyServiceImpl {
 //!     async fn init(_ctx: Arc<PluginLoadContext>) -> Self { MyServiceImpl }
 //! }

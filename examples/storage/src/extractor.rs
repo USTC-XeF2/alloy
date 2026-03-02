@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use alloy::framework::{context::AlloyContext, error::ExtractResult, extractor::FromContext};
-use async_trait::async_trait;
 
 use crate::service::StorageService;
 
@@ -78,7 +77,6 @@ impl<T: StorageDirSelector> Deref for StorageDir<T> {
     }
 }
 
-#[async_trait]
 impl<T: StorageDirSelector> FromContext for StorageDir<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;
@@ -100,7 +98,6 @@ impl<T: StorageDirSelector> Deref for PluginStorageDir<T> {
     }
 }
 
-#[async_trait]
 impl<T: StorageDirSelector + Send> FromContext for PluginStorageDir<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;

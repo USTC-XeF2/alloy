@@ -1,7 +1,5 @@
 use std::any::TypeId;
 
-use async_trait::async_trait;
-
 use crate::context::AlloyContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
@@ -73,7 +71,6 @@ impl<T: EventTrait + std::fmt::Debug> std::fmt::Debug for Event<T> {
 ///     println!("Notice: {}", event.event_name());
 /// }
 /// ```
-#[async_trait]
 impl<T: EventTrait> FromContext for Event<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.event()

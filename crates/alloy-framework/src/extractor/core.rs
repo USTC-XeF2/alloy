@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use crate::context::AlloyContext;
 use crate::error::ExtractResult;
 use alloy_core::{BoxedBot, BoxedEvent};
@@ -14,7 +12,6 @@ use alloy_core::{BoxedBot, BoxedEvent};
 ///
 /// The extraction can fail (returning `Err`) if the required data is not
 /// available in the context. In this case, the handler will be skipped.
-#[async_trait]
 pub trait FromContext: Sized + Send {
     /// Attempts to extract this type from the given context.
     ///
@@ -25,14 +22,13 @@ pub trait FromContext: Sized + Send {
     /// # Returns
     ///
     /// `Ok(Self)` if extraction succeeds, `Err(ExtractError)` otherwise.
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self>;
+    fn from_context(ctx: &AlloyContext) -> impl Future<Output = ExtractResult<Self>> + Send;
 }
 
 /// Implementation for `Option<T>` where `T: FromContext`.
 ///
 /// This allows handlers to have optional parameters that may or may not
 /// be extractable from the context.
-#[async_trait]
 impl<T: FromContext> FromContext for Option<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(T::from_context(ctx).await.ok())
@@ -43,7 +39,6 @@ impl<T: FromContext> FromContext for Option<T> {
 ///
 /// This allows handlers to have parameters that can return detailed
 /// extraction errors.
-#[async_trait]
 impl<T: FromContext> FromContext for ExtractResult<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(T::from_context(ctx).await)
@@ -54,7 +49,6 @@ impl<T: FromContext> FromContext for ExtractResult<T> {
 ///
 /// This is useful when a handler needs to work with any event type
 /// without knowing the concrete type at compile time.
-#[async_trait]
 impl FromContext for BoxedEvent {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(ctx.event().clone())
@@ -73,7 +67,6 @@ impl FromContext for BoxedEvent {
 ///     bot.send(event.as_ref(), "Hello!").await.ok();
 /// }
 /// ```
-#[async_trait]
 impl FromContext for BoxedBot {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(ctx.bot().clone())

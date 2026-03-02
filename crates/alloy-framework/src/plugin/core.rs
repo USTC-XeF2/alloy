@@ -124,7 +124,7 @@ pub struct ServiceEntry {
     pub factory: fn(Arc<PluginContext>) -> BoxFuture<'static, Result<ServiceArc, String>>,
 }
 
-type BoxedHandlerService = BoxCloneSyncService<Arc<AlloyContext>, (), BoxError>;
+type BoxedHandlerService = BoxCloneSyncService<AlloyContext, (), BoxError>;
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
@@ -219,7 +219,7 @@ impl Plugin {
     ///
     /// The runtime injects the plugin's raw config JSON into the context
     /// **before** calling this method, so handlers can use [`PluginConfig<T>`].
-    pub(crate) async fn dispatch_event(&self, ctx: Arc<AlloyContext>) {
+    pub(crate) async fn dispatch_event(&self, ctx: AlloyContext) {
         for mut svc in self.handlers.iter().cloned() {
             if !ctx.is_propagating() {
                 debug!(plugin = %self.name, "Propagation stopped, halting handler chain");

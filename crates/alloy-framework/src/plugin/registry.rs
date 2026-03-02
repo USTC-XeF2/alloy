@@ -31,7 +31,6 @@
 //!
 //! impl MyService for MyServiceImpl { /* … */ }
 //!
-//! #[async_trait::async_trait]
 //! impl ServiceInit for MyServiceImpl {
 //!     async fn init(ctx: Arc<PluginContext>) -> Self {
 //!         let cfg = ctx.get_config::<MyConfig>().unwrap_or_default();
@@ -64,8 +63,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::PluginContext;
 
 // ─── ServiceMeta ──────────────────────────────────────────────────────────────
@@ -91,7 +88,6 @@ pub trait ServiceMeta {
 /// The [`define_plugin!`] macro calls `ServiceInit::init` once at plugin-load
 /// time, then upcasts the result to the declared service trait object and
 /// stores it in the global service registry.
-#[async_trait]
 pub trait ServiceInit: Send + Sync + Sized + 'static {
     /// Construct this service implementation from the plugin's load context.
     ///
@@ -101,5 +97,5 @@ pub trait ServiceInit: Send + Sync + Sized + 'static {
     ///
     /// Returns `Ok(Self)` on success, or `Err(String)` on failure. If service
     /// initialization fails, the entire plugin load operation is marked as failed.
-    async fn init(ctx: Arc<PluginContext>) -> Result<Self, String>;
+    fn init(ctx: Arc<PluginContext>) -> impl Future<Output = Result<Self, String>>;
 }

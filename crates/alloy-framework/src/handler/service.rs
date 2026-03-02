@@ -1,15 +1,13 @@
 //! Core handler service for the Alloy framework.
 //!
 //! [`HandlerService<F, R, T>`] is the fundamental building block: it wraps a
-//! single handler and implements `tower::Service<Arc<AlloyContext>>`. All
+//! single handler and implements `tower::Service<AlloyContext>`. All
 //! filtering and other cross-cutting concerns are expressed as ordinary tower
 //! [`Layer`]s stacked *on top*.
 
 use std::marker::PhantomData;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use tower::{BoxError, Service};
@@ -24,14 +22,12 @@ use alloy_core::{Message, MessageSegment};
 // ============================================================================
 
 /// A trait for types that can be returned from handlers.
-#[async_trait]
 pub trait HandlerResponse: Send + 'static {
     /// Process the handler response, performing any necessary side effects (e.g. sending messages).
-    async fn process_response(self, ctx: &AlloyContext);
+    fn process_response(self, ctx: &AlloyContext) -> impl Future<Output = ()> + Send;
 }
 
 /// Implementation for `()` - no response needed.
-#[async_trait]
 impl HandlerResponse for () {
     async fn process_response(self, _ctx: &AlloyContext) {
         // No action needed
@@ -39,7 +35,6 @@ impl HandlerResponse for () {
 }
 
 /// Implementation for `String` - send message on Ok, log errors on Err.
-#[async_trait]
 impl HandlerResponse for String {
     async fn process_response(self, ctx: &AlloyContext) {
         let bot = ctx.bot();
@@ -51,7 +46,6 @@ impl HandlerResponse for String {
 }
 
 /// Implementation for `Message<S>` - sends the message using `send_message`.
-#[async_trait]
 impl<S: MessageSegment> HandlerResponse for Message<S> {
     async fn process_response(self, ctx: &AlloyContext) {
         let bot = ctx.bot();
@@ -65,7 +59,6 @@ impl<S: MessageSegment> HandlerResponse for Message<S> {
 /// Implementation for `Option<T>` where T implements HandlerResponse.
 ///
 /// On Some, the inner value's response is handled. On None, no action is taken.
-#[async_trait]
 impl<T: HandlerResponse> HandlerResponse for Option<T> {
     async fn process_response(self, ctx: &AlloyContext) {
         if let Some(t) = self {
@@ -77,7 +70,6 @@ impl<T: HandlerResponse> HandlerResponse for Option<T> {
 /// Implementation for `Result<T, E>` where T implements HandlerResponse.
 ///
 /// On Ok, the inner value's response is handled. On Err, the error is logged.
-#[async_trait]
 impl<T: HandlerResponse, E: std::fmt::Display + Send + 'static> HandlerResponse for Result<T, E> {
     async fn process_response(self, ctx: &AlloyContext) {
         match self {
@@ -136,7 +128,7 @@ impl<F, R, T> From<F> for HandlerService<F, R, T> {
     }
 }
 
-impl<F, R, T> Service<Arc<AlloyContext>> for HandlerService<F, R, T>
+impl<F, R, T> Service<AlloyContext> for HandlerService<F, R, T>
 where
     F: FromCtxFn<R, T>,
     R: HandlerResponse,
@@ -149,10 +141,10 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
+    fn call(&mut self, ctx: AlloyContext) -> Self::Future {
         let handler = self.handler.clone();
         async move {
-            if let Ok(r) = handler.call(ctx.clone()).await {
+            if let Ok(r) = handler.call(&ctx).await {
                 r.process_response(&ctx).await;
             }
             Ok(())

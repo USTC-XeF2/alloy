@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::AlloyContext;
 use crate::error::ExtractResult;
 use crate::extractor::FromContext;
@@ -24,7 +22,6 @@ impl<T> std::ops::Deref for PluginConfig<T> {
     }
 }
 
-#[async_trait]
 impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         Ok(PluginConfig(
@@ -65,7 +62,6 @@ impl<T: ?Sized> std::ops::Deref for ServiceRef<T> {
     }
 }
 
-#[async_trait]
 impl<T: ?Sized + Send + Sync + 'static> FromContext for ServiceRef<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.require_service::<T>().map(ServiceRef)

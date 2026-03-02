@@ -36,9 +36,9 @@ impl<S> Layer<S> for BlockLayer {
 #[derive(Clone)]
 pub struct BlockService<S>(S);
 
-impl<S> Service<Arc<AlloyContext>> for BlockService<S>
+impl<S> Service<AlloyContext> for BlockService<S>
 where
-    S: Service<Arc<AlloyContext>, Response = (), Error = BoxError> + Clone + Send + 'static,
+    S: Service<AlloyContext, Response = (), Error = BoxError> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = ();
@@ -49,7 +49,7 @@ where
         self.0.poll_ready(cx)
     }
 
-    fn call(&mut self, ctx: Arc<AlloyContext>) -> Self::Future {
+    fn call(&mut self, ctx: AlloyContext) -> Self::Future {
         let mut inner = self.0.clone();
         async move {
             match inner.call(ctx.clone()).await {
@@ -84,10 +84,10 @@ impl EventPredicate {
     }
 }
 
-impl Predicate<Arc<AlloyContext>> for EventPredicate {
-    type Request = Arc<AlloyContext>;
+impl Predicate<AlloyContext> for EventPredicate {
+    type Request = AlloyContext;
 
-    fn check(&mut self, request: Arc<AlloyContext>) -> Result<Arc<AlloyContext>, BoxError> {
+    fn check(&mut self, request: AlloyContext) -> Result<AlloyContext, BoxError> {
         if (self.0)(&request) {
             Ok(request)
         } else {
@@ -98,25 +98,23 @@ impl Predicate<Arc<AlloyContext>> for EventPredicate {
 
 /// A type-erased, [`AsyncPredicate`]-implementing wrapper for asynchronous closures.
 #[derive(Clone)]
-pub struct AsyncEventPredicate(
-    Arc<dyn Fn(Arc<AlloyContext>) -> BoxFuture<'static, bool> + Send + Sync>,
-);
+pub struct AsyncEventPredicate(Arc<dyn Fn(AlloyContext) -> BoxFuture<'static, bool> + Send + Sync>);
 
 impl AsyncEventPredicate {
     /// Creates a new `AsyncEventPredicate` from an asynchronous closure.
     pub fn new<F>(f: F) -> Self
     where
-        F: Fn(Arc<AlloyContext>) -> BoxFuture<'static, bool> + Send + Sync + 'static,
+        F: Fn(AlloyContext) -> BoxFuture<'static, bool> + Send + Sync + 'static,
     {
         Self(Arc::new(f))
     }
 }
 
-impl AsyncPredicate<Arc<AlloyContext>> for AsyncEventPredicate {
-    type Future = BoxFuture<'static, Result<Arc<AlloyContext>, BoxError>>;
-    type Request = Arc<AlloyContext>;
+impl AsyncPredicate<AlloyContext> for AsyncEventPredicate {
+    type Future = BoxFuture<'static, Result<AlloyContext, BoxError>>;
+    type Request = AlloyContext;
 
-    fn check(&mut self, request: Arc<AlloyContext>) -> Self::Future {
+    fn check(&mut self, request: AlloyContext) -> Self::Future {
         let f = self.0.clone();
         async move {
             if f(request.clone()).await {
@@ -192,11 +190,8 @@ impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
         F: FromCtxFn<bool, T>,
     {
         self.filter_async(AsyncEventPredicate::new(move |ctx| {
-            predicate
-                .clone()
-                .call(ctx)
-                .map(|f| f.unwrap_or(false))
-                .boxed()
+            let predicate = predicate.clone();
+            async move { predicate.call(&ctx).await.unwrap_or(false) }.boxed()
         }))
     }
 
