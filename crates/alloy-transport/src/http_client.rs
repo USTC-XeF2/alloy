@@ -2,21 +2,19 @@
 
 use std::sync::Arc;
 
-use alloy_macros::register_capability;
 use futures::FutureExt;
 use reqwest::ClientBuilder;
-use tokio_util::sync::CancellationToken;
-use tracing::info;
+use url::Url;
 
 use alloy_core::{
-    ConnectionHandle, ConnectionHandler, HttpClientConfig, PostJsonFn, TransportError,
-    TransportResult,
+    ConnectionHandler, HttpClientConfig, PostJsonFn, Sender, TransportError, TransportResult,
 };
+use alloy_macros::register_capability;
 
 /// Registers an HTTP outbound API-client bot.
 ///
-/// The returned [`ConnectionHandle`] lets the bot send JSON API calls; it does
-/// not receive events through this connection.
+/// Builds a shared `reqwest` client, constructs a type-erased [`PostJsonFn`]
+/// closure, and registers the bot via [`ConnectionHandler::register_connection`].
 ///
 /// This function is registered as the `HttpStartClientFn` capability.
 #[register_capability(http_client)]
@@ -24,19 +22,22 @@ pub async fn http_start_client(
     bot_id: String,
     config: HttpClientConfig,
     handler: Arc<dyn ConnectionHandler>,
-) -> TransportResult<ConnectionHandle> {
-    info!(bot_id = %bot_id, url = %config.api_url, "Registering HTTP API client bot");
-
+) -> TransportResult<()> {
     let client = ClientBuilder::new()
         .timeout(config.timeout)
         .build()
         .map_err(|e| TransportError::Io(e.to_string()))?;
-    let post_json: PostJsonFn = Arc::new(move |body| {
+
+    let base_url = Url::parse(&config.base_url)
+        .map_err(|e| TransportError::Io(format!("Invalid base URL: {}", e)))?;
+
+    let post_json: PostJsonFn = Arc::new(move |endpoint: &str, body| {
         let client = client.clone();
-        let url = config.api_url.clone();
+        let url = base_url.join(endpoint);
         let token = config.access_token.clone();
         async move {
-            let mut req = client.post(&url).json(&body);
+            let url = url.map_err(|e| TransportError::Io(format!("Invalid URL: {}", e)))?;
+            let mut req = client.post(url).json(&body);
             if let Some(t) = &token {
                 req = req.bearer_auth(t);
             }
@@ -60,11 +61,7 @@ pub async fn http_start_client(
         .boxed()
     });
 
-    let shutdown_token = CancellationToken::new();
-    let connection = ConnectionHandle::new_http_client(&bot_id, post_json, shutdown_token.clone());
+    handler.register_connection(&bot_id, Some(Sender::HttpClient { post_json }));
 
-    handler.create_bot(&bot_id, connection.clone());
-
-    info!(bot_id = %bot_id, "HTTP API client bot registered");
-    Ok(connection)
+    Ok(())
 }

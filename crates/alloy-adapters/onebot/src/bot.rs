@@ -11,7 +11,7 @@
 //! |-----------|---------|
 //! | WebSocket (server & client) | Async echo matching — request is tagged with a numeric echo; response arrives on the shared channel and is routed to the waiting future. |
 //! | HTTP client | Synchronous POST — request body is sent as the HTTP body; the HTTP response body is the API response. No echo is needed. |
-//! | HTTP server | Disabled — receive-only connections cannot issue API calls. |
+//! | Receive-only (`kind == None`) | Disabled — connections without a send capability cannot issue API calls. |
 //!
 //! # Usage
 //!
@@ -52,8 +52,8 @@ use crate::model::event::{GroupMessageEvent, PrivateMessageEvent};
 use crate::model::message::OneBotMessage;
 use crate::model::segment::Segment;
 use alloy_core::{
-    ApiError, ApiResult, Bot, ConnectionHandle, ConnectionKind, ErasedMessage, Event,
-    MessageSegment, PostJsonFn, TransportError,
+    ApiError, ApiResult, Bot, ConnectionHandle, ErasedMessage, Event, MessageSegment, PostJsonFn,
+    Sender, TransportError,
 };
 
 // =============================================================================
@@ -77,15 +77,17 @@ enum ApiCallStrategy {
 impl ApiCallStrategy {
     /// Creates a new strategy from a connection handle.
     fn new(connection: ConnectionHandle) -> Self {
-        match connection.kind {
-            ConnectionKind::HttpClient { post_json } => Self::HttpClient { post_json },
-            ConnectionKind::Ws { message_tx } => Self::Ws {
-                message_tx,
+        match connection.sender() {
+            Some(Sender::HttpClient { post_json }) => Self::HttpClient {
+                post_json: post_json.clone(),
+            },
+            Some(Sender::Ws { message_tx }) => Self::Ws {
+                message_tx: message_tx.clone(),
                 pending_calls: Arc::new(Mutex::new(HashMap::new())),
                 echo_counter: AtomicU64::new(1),
                 api_timeout: Duration::from_secs(30),
             },
-            ConnectionKind::HttpServer { .. } => Self::Disabled,
+            None => Self::Disabled,
         }
     }
 
@@ -143,7 +145,7 @@ impl ApiCallStrategy {
 
                 debug!(action = %action, "Calling OneBot API via HTTP");
 
-                let response_json = (post_json)(body)
+                let response_json = (post_json)("", body)
                     .await
                     .map_err(|e| ApiError::Other(format!("HTTP request failed: {e}")))?;
 

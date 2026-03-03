@@ -12,9 +12,7 @@ use async_trait::async_trait;
 use crate::bot::BoxedBot;
 use crate::error::{AdapterResult, TransportResult};
 use crate::event::BoxedEvent;
-use crate::transport::{
-    ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportContext,
-};
+use crate::transport::{ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportContext};
 
 // =============================================================================
 // AdapterContext Trait — called by adapter implementations
@@ -23,23 +21,20 @@ use crate::transport::{
 /// Interface exposed to [`Adapter`] implementations during `on_start`.
 ///
 /// Adapters receive `Arc<dyn AdapterContext>` and use it to access transport
-/// capabilities, register listeners/connections, and query active bots.
+/// capabilities and query active bots.
+///
+/// Handle registration is handled automatically by the transport capabilities
+/// via [`ConnectionHandler::add_listener`] and [`ConnectionHandler::add_connection`].
 #[async_trait]
 pub trait AdapterContext: Send + Sync {
     /// Returns a reference to the transport capability context.
     fn transport(&self) -> &TransportContext;
 
-    /// Registers a listener handle, keeping it alive for the adapter's lifetime.
-    fn add_listener(&self, handle: ListenerHandle);
-
-    /// Registers an outbound connection handle.
-    fn add_connection(&self, handle: ConnectionHandle);
-
     /// Returns a bot by ID, or `None` if not found.
     fn get_bot(&self, id: &str) -> Option<BoxedBot>;
 
     /// Casts this context to a `ConnectionHandler` reference for passing to
-    /// transport capabilities (e.g., `ws_server.listen(..., ctx.as_connection_handler())`).
+    /// transport capabilities (e.g., `ws_server(addr, path, ctx.as_connection_handler())`).
     fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler>;
 }
 
@@ -83,8 +78,7 @@ pub trait Adapter: Send + Sync {
     /// ```rust,ignore
     /// async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
     ///     if let Some(ws_server) = ctx.transport().ws_server() {
-    ///         let handle = ws_server.listen("0.0.0.0:8080", "/ws", ctx.as_connection_handler()).await?;
-    ///         ctx.add_listener(handle).await;
+    ///         ws_server("0.0.0.0:8080".into(), "/ws".into(), ctx.as_connection_handler()).await?;
     ///     }
     ///     Ok(())
     /// }

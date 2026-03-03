@@ -12,6 +12,7 @@
 //! - `ws-server`: WebSocket server capability
 //! - `http-client`: HTTP client capability
 //! - `http-server`: HTTP server capability
+//! - `sse-client`: SSE (Server-Sent Events) client capability
 //! - `full`: All capabilities
 //!
 //! ## Architecture
@@ -27,7 +28,7 @@
 //! │  alloy-transport async fn implementations
 //! │  Registered via #[register_capability] macro
 //! ├─────────────────────────────────────────┤
-//! │  Network Layer (TCP/HTTP/WebSocket)     │
+//! │  Network Layer (TCP/HTTP/WebSocket/SSE) │
 //! └─────────────────────────────────────────┘
 //! ```
 //!
@@ -35,10 +36,11 @@
 //!
 //! | Function | Feature | Request Type | Response Type |
 //! |----------|---------|--------------|---------------|
-//! | `ws_connect()` | `ws-client` | `(url, handler, config)` | `ConnectionHandle` |
+//! | `ws_connect()` | `ws-client` | `(config, handler)` | `ConnectionHandle` |
 //! | `ws_listen()` | `ws-server` | `(addr, path, handler)` | `ListenerHandle` |
-//! | `http_start_client()` | `http-client` | `(bot_id, api_url, token, handler)` | `ConnectionHandle` |
+//! | `http_start_client()` | `http-client` | `(bot_id, config, handler)` | `ConnectionHandle` |
 //! | `http_listen()` | `http-server` | `(addr, path, handler)` | `ListenerHandle` |
+//! | `sse_start_client()` | `sse-client` | `(bot_id, config, handler)` | `ConnectionHandle` |
 //!
 //! All capabilities are automatically discovered via `linkme::distributed_slice` registration
 //! and collected into a [`TransportContext`] at startup.
@@ -56,6 +58,9 @@ mod http_client;
 #[cfg(feature = "ws-client")]
 mod ws_client;
 
+#[cfg(feature = "sse-client")]
+mod sse_client;
+
 // ─── Capability re-exports ───────────────────────────────────────────────────
 // Server capabilities (all from crate::server module)
 #[cfg(feature = "http-server")]
@@ -70,3 +75,6 @@ pub use http_client::http_start_client;
 
 #[cfg(feature = "ws-client")]
 pub use ws_client::ws_connect;
+
+#[cfg(feature = "sse-client")]
+pub use sse_client::sse_start_client;

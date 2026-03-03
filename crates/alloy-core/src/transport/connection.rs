@@ -12,11 +12,13 @@ use crate::error::TransportResult;
 
 /// Type-erased async function that performs an HTTP POST and returns JSON.
 ///
-/// The URL and any authentication (e.g. Bearer token) are captured when the
-/// closure is constructed by the transport layer.  Callers only supply the
-/// request body.
+/// Type-erased async POST function for making JSON API calls.
+///
+/// The base URL and authentication (e.g. Bearer token) are captured when the
+/// closure is constructed by the transport layer. Callers supply the endpoint
+/// (relative path) and request body.
 pub type PostJsonFn = Arc<
-    dyn Fn(Value) -> Pin<Box<dyn std::future::Future<Output = TransportResult<Value>> + Send>>
+    dyn Fn(&str, Value) -> Pin<Box<dyn std::future::Future<Output = TransportResult<Value>> + Send>>
         + Send
         + Sync,
 >;
@@ -92,15 +94,16 @@ impl Drop for ListenerHandle {
 }
 
 // =============================================================================
-// ConnectionKind — transport-specific data
+// Sender — transport-specific data
 // =============================================================================
 
 /// Transport-specific data carried by a [`ConnectionHandle`].
 ///
-/// Each variant holds *only* what that transport actually needs — no optional
-/// fields, no dummy channels, no `HashMap` catch-all.
+/// Each variant represents a transport that has **outbound send capability**.
+/// Receive-only connections (e.g. HTTP server webhook) carry no sender and
+/// store `None` in [`ConnectionHandle::sender`].
 #[derive(Clone)]
-pub enum ConnectionKind {
+pub enum Sender {
     /// WebSocket connection (outbound dial or inbound accept — identical after handshake).
     Ws {
         /// Channel to the WS write loop; send serialised frames here.
@@ -115,22 +118,13 @@ pub enum ConnectionKind {
         /// URL and authentication are captured inside the closure.
         post_json: PostJsonFn,
     },
-    /// HTTP inbound webhook server.
-    ///
-    /// Events arrive via POST.  `message_tx` is an optional hook for future
-    /// SSE / response-channel delivery; it is not used for API calls.
-    HttpServer {
-        /// Outgoing message queue (reserved for future SSE / push mechanisms).
-        message_tx: mpsc::Sender<Vec<u8>>,
-    },
 }
 
-impl std::fmt::Debug for ConnectionKind {
+impl std::fmt::Debug for Sender {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConnectionKind::Ws { .. } => write!(f, "Ws"),
-            ConnectionKind::HttpClient { .. } => write!(f, "HttpClient"),
-            ConnectionKind::HttpServer { .. } => write!(f, "HttpServer"),
+            Sender::Ws { .. } => write!(f, "Ws"),
+            Sender::HttpClient { .. } => write!(f, "HttpClient"),
         }
     }
 }
@@ -141,66 +135,23 @@ impl std::fmt::Debug for ConnectionKind {
 
 /// Handle to an active bot connection.
 ///
-/// The `kind` field carries all transport-specific data; the handle itself
-/// only contains fields common to every connection.
+/// `sender` carries the optional outbound-send capability for this bot.
+/// A bot that only receives events (e.g. HTTP server webhook) will have
+/// `sender == None`; a bot with a send channel (WS / HTTP-client) will have
+/// a [`Some`] variant.
 #[derive(Clone, Debug)]
 pub struct ConnectionHandle {
-    /// Unique identifier for this connection (bot ID).
-    pub id: String,
-    /// Transport-specific data for this connection.
-    pub kind: ConnectionKind,
+    /// Optional outbound send capability.
+    /// `None` ⇒ receive-only; `Some` ⇒ can also send API calls.
+    pub(crate) sender: Option<Sender>,
     /// Cancellation token for graceful shutdown.
-    shutdown_token: CancellationToken,
+    pub(crate) shutdown_token: CancellationToken,
 }
 
 impl ConnectionHandle {
-    // -------------------------------------------------------------------------
-    // Constructors (one per transport kind)
-    // -------------------------------------------------------------------------
-
-    /// Creates a handle for a WebSocket connection.
-    ///
-    /// Works for both outbound (client) and inbound (server) connections;
-    /// after the handshake, their behavior is identical.
-    pub fn new_ws(
-        id: impl Into<String>,
-        message_tx: mpsc::Sender<Vec<u8>>,
-        shutdown_token: CancellationToken,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            kind: ConnectionKind::Ws { message_tx },
-            shutdown_token,
-        }
-    }
-
-    /// Creates a handle for an HTTP outbound API client connection.
-    ///
-    /// The `post_json` closure must already capture the target URL and any
-    /// required authentication; the handle itself stores nothing protocol-specific.
-    pub fn new_http_client(
-        id: impl Into<String>,
-        post_json: PostJsonFn,
-        shutdown_token: CancellationToken,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            kind: ConnectionKind::HttpClient { post_json },
-            shutdown_token,
-        }
-    }
-
-    /// Creates a handle for an HTTP inbound webhook server connection.
-    pub fn new_http_server(
-        id: impl Into<String>,
-        message_tx: mpsc::Sender<Vec<u8>>,
-        shutdown_token: CancellationToken,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            kind: ConnectionKind::HttpServer { message_tx },
-            shutdown_token,
-        }
+    /// Returns the connection sender, if any.
+    pub fn sender(&self) -> Option<&Sender> {
+        self.sender.as_ref()
     }
 
     /// Signals the transport loop to shut down this connection.

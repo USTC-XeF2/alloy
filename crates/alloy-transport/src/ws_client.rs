@@ -9,12 +9,10 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tokio_util::sync::CancellationToken;
 use tracing::{error, info, trace, warn};
 
 use alloy_core::{
-    ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportError, TransportResult,
-    WsClientConfig,
+    ConnectionHandler, ConnectionInfo, Sender, TransportError, TransportResult, WsClientConfig,
 };
 use alloy_macros::register_capability;
 
@@ -154,15 +152,12 @@ impl ClientLoopState {
 pub async fn ws_connect(
     config: WsClientConfig,
     handler: Arc<dyn ConnectionHandler>,
-) -> TransportResult<ConnectionHandle> {
+) -> TransportResult<()> {
     // Create channels
     let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-    let shutdown_token = CancellationToken::new();
 
     // Initial connection
     let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &config.url);
-
-    info!(url = %config.url, "Connecting to WebSocket server");
 
     let (ws_stream, _response) =
         connect_async(&config.url)
@@ -177,10 +172,13 @@ pub async fn ws_connect(
 
     info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 
-    let handle = ConnectionHandle::new_ws(bot_id.clone(), message_tx, shutdown_token.clone());
-
-    // Create and register the bot
-    handler.create_bot(&bot_id, handle.clone());
+    // Register the bot with its send capability; get back the shutdown token.
+    let shutdown_token = handler.register_connection(
+        &bot_id,
+        Some(Sender::Ws {
+            message_tx: message_tx.clone(),
+        }),
+    );
 
     let mut state = ClientLoopState::new(handler, bot_id, config, ws_stream);
 
@@ -214,5 +212,5 @@ pub async fn ws_connect(
         }
     });
 
-    Ok(handle)
+    Ok(())
 }

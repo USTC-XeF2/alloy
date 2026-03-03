@@ -80,8 +80,8 @@ impl WsClientConfig {
 /// Configuration for HTTP client connections.
 #[derive(Debug, Clone)]
 pub struct HttpClientConfig {
-    /// API endpoint URL.
-    pub api_url: String,
+    /// Base URL for API endpoints.
+    pub base_url: String,
     /// Optional access token for authentication (used as Bearer token).
     pub access_token: Option<String>,
     /// Request timeout duration.
@@ -89,10 +89,10 @@ pub struct HttpClientConfig {
 }
 
 impl HttpClientConfig {
-    /// Creates a new HTTP client config with the given API URL.
-    pub fn new(api_url: impl Into<String>) -> Self {
+    /// Creates a new HTTP client config with the given base URL.
+    pub fn new(base_url: impl Into<String>) -> Self {
         Self {
-            api_url: api_url.into(),
+            base_url: base_url.into(),
             access_token: None,
             timeout: Duration::from_secs(30),
         }
@@ -107,6 +107,50 @@ impl HttpClientConfig {
     /// Sets the request timeout duration.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+}
+
+// =============================================================================
+// SSE Client Config
+// =============================================================================
+
+/// Configuration for SSE (Server-Sent Events) client connections.
+#[derive(Debug, Clone)]
+pub struct SseClientConfig {
+    /// Full URL of the SSE endpoint.
+    pub url: String,
+    /// Optional access token for authentication (used as Bearer token).
+    pub access_token: Option<String>,
+    /// Whether to automatically reconnect on disconnect.
+    pub auto_reconnect: bool,
+    /// Initial delay between reconnection attempts.
+    pub initial_delay: Duration,
+    /// Maximum delay between reconnection attempts.
+    pub max_delay: Duration,
+}
+
+impl SseClientConfig {
+    /// Creates a new SSE client config with the given URL.
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            access_token: None,
+            auto_reconnect: true,
+            initial_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(60),
+        }
+    }
+
+    /// Sets the access token (used as Bearer token in Authorization header).
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.access_token = Some(token.into());
+        self
+    }
+
+    /// Disables automatic reconnection.
+    pub fn no_reconnect(mut self) -> Self {
+        self.auto_reconnect = false;
         self
     }
 }

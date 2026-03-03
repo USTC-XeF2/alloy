@@ -38,9 +38,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use alloy_core::{
-    ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, TransportResult,
-};
+use alloy_core::{ConnectionHandler, ConnectionInfo, ListenerHandle, Sender, TransportResult};
 use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
@@ -58,29 +56,6 @@ use {
     futures::{SinkExt, StreamExt},
 };
 
-// ─── Route handlers (concrete types, no trait objects) ────────────────────────
-
-/// Handles all POST events for a single registered HTTP path.
-///
-/// Maintains a table of known bots so that each `bot_id` is only initialised
-/// once over the lifetime of the listener.
-#[cfg(feature = "http-server")]
-struct HttpBotHandler {
-    handler: Arc<dyn ConnectionHandler>,
-    known_bots: Mutex<HashMap<String, ConnectionHandle>>,
-}
-
-/// Handles all WebSocket connections arriving at a single registered path.
-///
-/// Maintains an active-connection table (bot_id → send channel) so that the
-/// adapter's [`ConnectionHandler`] can address individual bots by ID.
-#[cfg(feature = "ws-server")]
-struct WsBotHandler {
-    handler: Arc<dyn ConnectionHandler>,
-    /// Active connections: bot_id → sender half of the outgoing message channel.
-    connections: Mutex<HashMap<String, mpsc::Sender<Vec<u8>>>>,
-}
-
 // ─── Shared runtime state (one per bound address) ───────────────────────────────
 
 /// Runtime state shared between the axum handler and the registration helpers.
@@ -88,13 +63,13 @@ struct WsBotHandler {
 /// Fields are conditionally compiled so that, for example, a build with only
 /// `ws-server` enabled never allocates or references the `http_routes` map.
 struct SharedState {
-    /// HTTP route table: path → handler.
+    /// HTTP route table: path → connection handler.
     #[cfg(feature = "http-server")]
-    http_routes: RwLock<HashMap<String, Arc<HttpBotHandler>>>,
+    http_routes: RwLock<HashMap<String, Arc<dyn ConnectionHandler>>>,
 
-    /// WebSocket route table: path → handler.
+    /// WebSocket route table: path → connection handler.
     #[cfg(feature = "ws-server")]
-    ws_routes: RwLock<HashMap<String, Arc<WsBotHandler>>>,
+    ws_routes: RwLock<HashMap<String, Arc<dyn ConnectionHandler>>>,
 }
 
 impl SharedState {
@@ -246,7 +221,7 @@ async fn http_dispatch(
     let handler = state.http_routes.read().get(&path).cloned();
 
     match handler {
-        Some(h) => h.handle(addr, headers, body).await,
+        Some(h) => handle_http_request(h, addr, headers, body).await,
         None => (
             StatusCode::NOT_FOUND,
             format!("No HTTP handler for path: {path}"),
@@ -288,7 +263,7 @@ async fn ws_dispatch(
 
             debug!(remote_addr = %addr, path = %path, "New WebSocket connection request");
             ws.on_upgrade(move |socket| async move {
-                h.handle(addr, metadata, socket).await;
+                handle_ws_connection(h, addr, metadata, socket).await;
             })
             .into_response()
         }
@@ -311,6 +286,9 @@ async fn ws_dispatch(
 /// share one TCP listener; the shared dispatcher routes each request to the
 /// correct handler.
 ///
+/// The resulting [`ListenerHandle`] is registered directly on `handler` via
+/// [`ConnectionHandler::add_listener`].
+///
 /// This function is registered as the `HttpListenFn` capability.
 #[cfg(feature = "http-server")]
 #[register_capability(http_server)]
@@ -318,7 +296,7 @@ pub async fn http_listen(
     addr: String,
     path: String,
     handler: Arc<dyn ConnectionHandler>,
-) -> TransportResult<ListenerHandle> {
+) -> TransportResult<()> {
     let path = if path.starts_with('/') {
         path
     } else {
@@ -326,21 +304,12 @@ pub async fn http_listen(
     };
 
     let entry = get_or_create_server(&addr).await?;
-    info!(
-        addr = %entry.actual_addr,
-        path = %path,
-        "HTTP server listening",
-    );
 
-    let route_handler = Arc::new(HttpBotHandler {
-        handler,
-        known_bots: Mutex::new(HashMap::new()),
-    });
     entry
         .state
         .http_routes
         .write()
-        .insert(path.clone(), route_handler);
+        .insert(path.clone(), handler.clone());
     info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
 
     let handle_id = format!("http-server-{}{}", entry.actual_addr, path);
@@ -353,69 +322,49 @@ pub async fn http_listen(
         info!(path = %path, "Unregistered HTTP route");
     });
 
-    Ok(ListenerHandle::new(handle_id, shutdown_token))
+    handler.add_listener(ListenerHandle::new(handle_id, shutdown_token));
+    Ok(())
 }
 
+/// Handles a single HTTP POST request from a bot.
+///
+/// Extracts the bot ID, idempotently creates the bot, then forwards the body
+/// to [`ConnectionHandler::on_message`].
 #[cfg(feature = "http-server")]
-impl HttpBotHandler {
-    /// Handles an HTTP POST request from a bot.
-    async fn handle(&self, addr: SocketAddr, headers: HeaderMap, body: Bytes) -> Response {
-        // Build connection info from request headers.
-        let mut conn_info = ConnectionInfo::new("http").with_remote_addr(addr.to_string());
-        for (name, value) in &headers {
-            if let Ok(v) = value.to_str() {
-                conn_info = conn_info.with_metadata(name.as_str().to_lowercase(), v.to_string());
-            }
+async fn handle_http_request(
+    handler: Arc<dyn ConnectionHandler>,
+    addr: SocketAddr,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    // Build connection info from request headers.
+    let mut conn_info = ConnectionInfo::new("http").with_remote_addr(addr.to_string());
+    for (name, value) in &headers {
+        if let Ok(v) = value.to_str() {
+            conn_info = conn_info.with_metadata(name.as_str().to_lowercase(), v.to_string());
         }
-
-        // Ask the adapter to identify which bot this request belongs to.
-        let bot_id = match self.handler.get_bot_id(conn_info) {
-            Ok(id) => id,
-            Err(e) => {
-                error!(
-                    error       = %e,
-                    remote_addr = %addr,
-                    "Failed to extract bot ID from HTTP request",
-                );
-                return (StatusCode::BAD_REQUEST, "Failed to extract bot ID").into_response();
-            }
-        };
-
-        // First request from this bot → create the bot and its outgoing channel.
-        {
-            let mut known = self.known_bots.lock();
-            if !known.contains_key(&bot_id) {
-                let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-                let shutdown_token = CancellationToken::new();
-
-                let connection_handle =
-                    ConnectionHandle::new_http_server(bot_id.clone(), message_tx, shutdown_token);
-
-                // Drain the outgoing queue; adapters can plug in SSE or similar
-                // by overriding this logic in their own transport wrapper.
-                let bot_id_clone = bot_id.clone();
-                tokio::spawn(async move {
-                    while let Some(data) = message_rx.recv().await {
-                        warn!(
-                            bot_id = %bot_id_clone,
-                            len    = data.len(),
-                            "HTTP bot sent message but no push mechanism configured \
-                             (consider SSE)",
-                        );
-                    }
-                });
-
-                self.handler.create_bot(&bot_id, connection_handle.clone());
-                known.insert(bot_id.clone(), connection_handle);
-                info!(bot_id = %bot_id, remote_addr = %addr, "HTTP bot created");
-            }
-        }
-
-        debug!(bot_id = %bot_id, len = body.len(), "Received HTTP POST");
-        self.handler.on_message(&bot_id, &body).await;
-
-        (StatusCode::OK, "ok").into_response()
     }
+
+    // Ask the adapter to identify which bot this request belongs to.
+    let bot_id = match handler.get_bot_id(conn_info) {
+        Ok(id) => id,
+        Err(e) => {
+            error!(
+                error       = %e,
+                remote_addr = %addr,
+                "Failed to extract bot ID from HTTP request",
+            );
+            return (StatusCode::BAD_REQUEST, "Failed to extract bot ID").into_response();
+        }
+    };
+
+    // First request from this bot → register it (idempotent; no send capability for HTTP server).
+    handler.register_connection(&bot_id, None);
+
+    debug!(bot_id = %bot_id, len = body.len(), "Received HTTP POST");
+    handler.on_message(&bot_id, &body).await;
+
+    (StatusCode::OK, "ok").into_response()
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -435,7 +384,7 @@ pub async fn ws_listen(
     addr: String,
     path: String,
     handler: Arc<dyn ConnectionHandler>,
-) -> TransportResult<ListenerHandle> {
+) -> TransportResult<()> {
     let path = if path.starts_with('/') {
         path
     } else {
@@ -443,21 +392,12 @@ pub async fn ws_listen(
     };
 
     let entry = get_or_create_server(&addr).await?;
-    info!(
-        addr = %entry.actual_addr,
-        path = %path,
-        "WebSocket server listening",
-    );
 
-    let route_handler = Arc::new(WsBotHandler {
-        handler,
-        connections: Mutex::new(HashMap::new()),
-    });
     entry
         .state
         .ws_routes
         .write()
-        .insert(path.clone(), route_handler);
+        .insert(path.clone(), handler.clone());
     info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
 
     let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
@@ -470,92 +410,108 @@ pub async fn ws_listen(
         info!(path = %path, "Unregistered WebSocket route");
     });
 
-    Ok(ListenerHandle::new(handle_id, shutdown_token))
+    handler.add_listener(ListenerHandle::new(handle_id, shutdown_token));
+    Ok(())
 }
 
+/// Handles a single WebSocket connection for a bot.
+///
+/// Extracts the bot ID, registers the bot idempotently, then drives the
+/// send/receive loop until the connection closes.
 #[cfg(feature = "ws-server")]
-impl WsBotHandler {
-    /// Handles a WebSocket upgrade and manages the connection lifecycle.
-    async fn handle(&self, addr: SocketAddr, headers: HashMap<String, String>, socket: WebSocket) {
-        let (mut ws_tx, mut ws_rx) = socket.split();
+async fn handle_ws_connection(
+    handler: Arc<dyn ConnectionHandler>,
+    addr: SocketAddr,
+    headers: HashMap<String, String>,
+    socket: WebSocket,
+) {
+    let (mut ws_tx, mut ws_rx) = socket.split();
 
-        // Build connection info from the HTTP upgrade headers.
-        let mut conn_info = ConnectionInfo::new("websocket").with_remote_addr(addr.to_string());
-        for (key, value) in &headers {
-            conn_info = conn_info.with_metadata(key.clone(), value.clone());
-        }
-
-        // Let the adapter identify which bot this connection belongs to.
-        let bot_id = match self.handler.get_bot_id(conn_info) {
-            Ok(id) => id,
-            Err(e) => {
-                error!(
-                    error       = %e,
-                    remote_addr = %addr,
-                    "Failed to establish WebSocket connection",
-                );
-                let _ = ws_tx.close().await;
-                return;
-            }
-        };
-
-        info!(bot_id = %bot_id, remote_addr = %addr, "WebSocket connection established");
-
-        // Per-connection outgoing channel: adapter writes here → forwarded to ws_tx.
-        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
-        let shutdown_token = CancellationToken::new();
-        let connection_handle =
-            ConnectionHandle::new_ws(bot_id.clone(), tx.clone(), shutdown_token);
-
-        self.handler.create_bot(&bot_id, connection_handle);
-        self.connections.lock().insert(bot_id.clone(), tx.clone());
-
-        // ── Send task: forwards outgoing frames to the WebSocket write half ───────
-        let bot_id_send = bot_id.clone();
-        let send_task = tokio::spawn(async move {
-            while let Some(data) = rx.recv().await {
-                let text = String::from_utf8_lossy(&data).to_string();
-                if ws_tx.send(Message::Text(text.into())).await.is_err() {
-                    warn!(bot_id = %bot_id_send, "Failed to send message, connection closed");
-                    break;
-                }
-            }
-        });
-
-        // ── Receive loop: forwards inbound frames to the adapter ─────────────────
-        let handler_ref = self.handler.clone();
-        let bot_id_recv = bot_id.clone();
-        while let Some(result) = ws_rx.next().await {
-            match result {
-                Ok(Message::Text(text)) => {
-                    debug!(bot_id = %bot_id_recv, len = text.len(), "Received text message");
-                    handler_ref.on_message(&bot_id_recv, text.as_bytes()).await;
-                }
-                Ok(Message::Binary(data)) => {
-                    debug!(bot_id = %bot_id_recv, len = data.len(), "Received binary message");
-                    handler_ref.on_message(&bot_id_recv, &data).await;
-                }
-                Ok(Message::Ping(_)) => {
-                    debug!(bot_id = %bot_id_recv, "Received ping");
-                }
-                Ok(Message::Pong(_)) => {
-                    debug!(bot_id = %bot_id_recv, "Received pong");
-                }
-                Ok(Message::Close(_)) => {
-                    info!(bot_id = %bot_id_recv, "WebSocket connection closed by client");
-                    break;
-                }
-                Err(e) => {
-                    warn!(bot_id = %bot_id_recv, error = %e, "WebSocket error");
-                    break;
-                }
-            }
-        }
-
-        // ── Cleanup ───────────────────────────────────────────────────────────────
-        send_task.abort();
-        self.connections.lock().remove(&bot_id);
-        self.handler.on_disconnect(&bot_id).await;
-        info!(bot_id = %bot_id, "WebSocket connection closed");
+    // Build connection info from the HTTP upgrade headers.
+    let mut conn_info = ConnectionInfo::new("websocket").with_remote_addr(addr.to_string());
+    for (key, value) in &headers {
+        conn_info = conn_info.with_metadata(key.clone(), value.clone());
     }
+
+    // Let the adapter identify which bot this connection belongs to.
+    let bot_id = match handler.get_bot_id(conn_info) {
+        Ok(id) => id,
+        Err(e) => {
+            error!(
+                error       = %e,
+                remote_addr = %addr,
+                "Failed to establish WebSocket connection",
+            );
+            let _ = ws_tx.close().await;
+            return;
+        }
+    };
+
+    info!(bot_id = %bot_id, remote_addr = %addr, "WebSocket connection established");
+
+    // Per-connection outgoing channel: adapter writes here → forwarded to ws_tx.
+    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
+
+    // Register the bot (or update its sender to Ws if it was previously receive-only).
+    // The returned token drives graceful shutdown for this connection.
+    let shutdown_token = handler.register_connection(
+        &bot_id,
+        Some(Sender::Ws {
+            message_tx: tx.clone(),
+        }),
+    );
+
+    // ── Send task: forwards outgoing frames to the WebSocket write half ───────
+    let bot_id_send = bot_id.clone();
+    let send_task = tokio::spawn(async move {
+        while let Some(data) = rx.recv().await {
+            let text = String::from_utf8_lossy(&data).to_string();
+            if ws_tx.send(Message::Text(text.into())).await.is_err() {
+                warn!(bot_id = %bot_id_send, "Failed to send message, connection closed");
+                break;
+            }
+        }
+    });
+
+    // ── Receive loop: forwards inbound frames to the adapter ─────────────────
+    let bot_id_recv = bot_id.clone();
+    loop {
+        tokio::select! {
+            // Graceful shutdown: bridge/adapter cancelled this connection's token.
+            () = shutdown_token.cancelled() => {
+                info!(bot_id = %bot_id_recv, "WebSocket connection shutting down");
+                break;
+            }
+            result = ws_rx.next() => {
+                match result {
+                    Some(Ok(Message::Text(text))) => {
+                        debug!(bot_id = %bot_id_recv, len = text.len(), "Received text message");
+                        handler.on_message(&bot_id_recv, text.as_bytes()).await;
+                    }
+                    Some(Ok(Message::Binary(data))) => {
+                        debug!(bot_id = %bot_id_recv, len = data.len(), "Received binary message");
+                        handler.on_message(&bot_id_recv, &data).await;
+                    }
+                    Some(Ok(Message::Ping(_))) => {
+                        debug!(bot_id = %bot_id_recv, "Received ping");
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        debug!(bot_id = %bot_id_recv, "Received pong");
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        info!(bot_id = %bot_id_recv, "WebSocket connection closed by client");
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        warn!(bot_id = %bot_id_recv, error = %e, "WebSocket error");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Cleanup ───────────────────────────────────────────────────────────────
+    send_task.abort();
+    handler.on_disconnect(&bot_id).await;
 }

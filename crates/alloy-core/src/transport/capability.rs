@@ -20,10 +20,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use linkme::distributed_slice;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::config::{HttpClientConfig, WsClientConfig};
-use super::connection::{ConnectionHandle, ConnectionInfo, ListenerHandle};
+use super::config::{HttpClientConfig, SseClientConfig, WsClientConfig};
+use super::connection::{ConnectionInfo, ListenerHandle, Sender};
 use crate::error::TransportResult;
 
 // =============================================================================
@@ -41,14 +42,31 @@ pub trait ConnectionHandler: Send + Sync {
     /// Extract a bot ID from connection metadata when a new connection arrives.
     fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
 
-    /// Create and register a bot for a new connection.
-    fn create_bot(&self, bot_id: &str, connection: ConnectionHandle);
+    /// Idempotently registers a bot and its optional send-capable connection sender.
+    ///
+    /// ## Behaviour
+    /// - **Bot absent**: creates the bot via `adapter.create_bot`, stores a new
+    ///   [`ConnectionHandle`] with `sender`, and returns a fresh [`CancellationToken`]
+    ///   bound to that handle.
+    /// - **Bot present, `sender` is `None`**: returns the existing handle's token
+    ///   unchanged (no-op).
+    /// - **Bot present, existing `sender` is `None`**: upgrades the handle's sender to
+    ///   the supplied `sender` and returns the existing token.
+    /// - **Bot present, existing `sender` is `Some`**: keeps the existing sender
+    ///   and returns the existing token (the bot already has send capability).
+    ///
+    /// The returned token is the one stored in the bot's [`ConnectionHandle`].
+    /// Transport loops should listen on it for graceful shutdown.
+    fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> CancellationToken;
 
     /// Process incoming data from a connection.
     async fn on_message(&self, bot_id: &str, data: &[u8]);
 
     /// Called when a connection is closed.
     async fn on_disconnect(&self, bot_id: &str);
+
+    /// Register a listener handle, keeping it alive for the adapter's lifetime.
+    fn add_listener(&self, handle: ListenerHandle);
 }
 
 // =============================================================================
@@ -58,28 +76,20 @@ pub trait ConnectionHandler: Send + Sync {
 /// Function pointer that starts a WebSocket server listener.
 ///
 /// Parameters: `(addr, path, handler)` — all owned to satisfy `'static` bounds.
-pub type WsListenFn = fn(
-    String,
-    String,
-    Arc<dyn ConnectionHandler>,
-) -> BoxFuture<'static, TransportResult<ListenerHandle>>;
+pub type WsListenFn =
+    fn(String, String, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that opens a WebSocket client connection.
 ///
 /// Parameters: `(config, handler)`.
-pub type WsConnectFn = fn(
-    WsClientConfig,
-    Arc<dyn ConnectionHandler>,
-) -> BoxFuture<'static, TransportResult<ConnectionHandle>>;
+pub type WsConnectFn =
+    fn(WsClientConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that starts an HTTP server listener.
 ///
 /// Parameters: `(addr, path, handler)`.
-pub type HttpListenFn = fn(
-    String,
-    String,
-    Arc<dyn ConnectionHandler>,
-) -> BoxFuture<'static, TransportResult<ListenerHandle>>;
+pub type HttpListenFn =
+    fn(String, String, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that registers an HTTP outbound API-client bot.
 ///
@@ -88,7 +98,16 @@ pub type HttpStartClientFn = fn(
     String,
     HttpClientConfig,
     Arc<dyn ConnectionHandler>,
-) -> BoxFuture<'static, TransportResult<ConnectionHandle>>;
+) -> BoxFuture<'static, TransportResult<()>>;
+
+/// Function pointer that opens a persistent SSE client connection.
+///
+/// Parameters: `(bot_id, config, handler)`.
+pub type SseClientFn = fn(
+    String,
+    SseClientConfig,
+    Arc<dyn ConnectionHandler>,
+) -> BoxFuture<'static, TransportResult<()>>;
 
 // =============================================================================
 // Capability Registries (linkme distributed slices)
@@ -111,6 +130,10 @@ pub static HTTP_LISTEN_REGISTRY: [HttpListenFn];
 #[distributed_slice]
 pub static HTTP_START_CLIENT_REGISTRY: [HttpStartClientFn];
 
+/// Registry of SSE client function pointers.
+#[distributed_slice]
+pub static SSE_CLIENT_REGISTRY: [SseClientFn];
+
 // Will be defined as impl method for TransportContext
 
 // =============================================================================
@@ -126,6 +149,7 @@ pub struct TransportContext {
     ws_client: Option<WsConnectFn>,
     http_server: Option<HttpListenFn>,
     http_client: Option<HttpStartClientFn>,
+    sse_client: Option<SseClientFn>,
 }
 
 impl TransportContext {
@@ -136,6 +160,7 @@ impl TransportContext {
             ws_client: None,
             http_server: None,
             http_client: None,
+            sse_client: None,
         }
     }
 
@@ -165,6 +190,7 @@ impl TransportContext {
             ws_client: load(&WS_CONNECT_REGISTRY, "ws_client"),
             http_server: load(&HTTP_LISTEN_REGISTRY, "http_server"),
             http_client: load(&HTTP_START_CLIENT_REGISTRY, "http_client"),
+            sse_client: load(&SSE_CLIENT_REGISTRY, "sse_client"),
         }
     }
 
@@ -192,6 +218,12 @@ impl TransportContext {
         self
     }
 
+    /// Registers the SSE client capability.
+    pub fn with_sse_client(mut self, f: SseClientFn) -> Self {
+        self.sse_client = Some(f);
+        self
+    }
+
     /// Gets the WebSocket server capability if available.
     pub fn ws_server(&self) -> Option<WsListenFn> {
         self.ws_server
@@ -210,6 +242,11 @@ impl TransportContext {
     /// Gets the HTTP client capability if available.
     pub fn http_client(&self) -> Option<HttpStartClientFn> {
         self.http_client
+    }
+
+    /// Gets the SSE client capability if available.
+    pub fn sse_client(&self) -> Option<SseClientFn> {
+        self.sse_client
     }
 }
 

@@ -10,10 +10,8 @@ pub mod connection;
 // Re-export commonly used types
 pub use capability::{
     ConnectionHandler, HTTP_LISTEN_REGISTRY, HTTP_START_CLIENT_REGISTRY, HttpListenFn,
-    HttpStartClientFn, TransportContext, WS_CONNECT_REGISTRY, WS_LISTEN_REGISTRY, WsConnectFn,
-    WsListenFn,
+    HttpStartClientFn, SSE_CLIENT_REGISTRY, SseClientFn, TransportContext, WS_CONNECT_REGISTRY,
+    WS_LISTEN_REGISTRY, WsConnectFn, WsListenFn,
 };
-pub use config::{HttpClientConfig, WsClientConfig};
-pub use connection::{
-    ConnectionHandle, ConnectionInfo, ConnectionKind, ListenerHandle, PostJsonFn,
-};
+pub use config::{HttpClientConfig, SseClientConfig, WsClientConfig};
+pub use connection::{ConnectionHandle, ConnectionInfo, ListenerHandle, PostJsonFn, Sender};
