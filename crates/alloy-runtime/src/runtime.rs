@@ -163,7 +163,7 @@ impl AlloyRuntime {
     where
         A: ConfigurableAdapter + 'static,
     {
-        let adapter_name = A::name();
+        let adapter_name = A::NAME;
 
         // Try to get config from file, otherwise use default
         let config: A::Config = if let Some(config_value) = self.config.adapters.get(adapter_name) {

@@ -34,11 +34,10 @@ use axum::{
 };
 use parking_lot::{Mutex, RwLock};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use alloy_core::{ConnectionHandler, ConnectionInfo, ListenerHandle, Sender, TransportResult};
+use alloy_core::{ConnectionHandler, ConnectionInfo, ListenerHandle, TransportResult};
 use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
@@ -54,6 +53,7 @@ use {
         routing::get,
     },
     futures::{SinkExt, StreamExt},
+    tokio::sync::mpsc,
 };
 
 // ─── Shared runtime state (one per bound address) ───────────────────────────────
@@ -279,10 +279,9 @@ async fn ws_dispatch(
 // HTTP SERVER CAPABILITY IMPLEMENTATION
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Starts (or re-uses) a TCP server on `addr` and registers a POST handler
-/// for `path`.
+/// Starts (or re-uses) a TCP server and registers a POST handler.
 ///
-/// Multiple calls with the **same `addr` but different `path`** values will
+/// Multiple calls with the **same bind address but different paths** will
 /// share one TCP listener; the shared dispatcher routes each request to the
 /// correct handler.
 ///
@@ -293,16 +292,16 @@ async fn ws_dispatch(
 #[cfg(feature = "http-server")]
 #[register_capability(http_server)]
 pub async fn http_listen(
-    addr: String,
-    path: String,
+    config: alloy_core::HttpServerConfig,
     handler: Arc<dyn ConnectionHandler>,
 ) -> TransportResult<()> {
-    let path = if path.starts_with('/') {
-        path
+    let path = if config.path.starts_with('/') {
+        config.path.clone()
     } else {
-        format!("/{path}")
+        format!("/{}", config.path)
     };
 
+    let addr = format!("{}:{}", config.bind_addr, config.port);
     let entry = get_or_create_server(&addr).await?;
 
     entry
@@ -371,26 +370,25 @@ async fn handle_http_request(
 // WEBSOCKET SERVER CAPABILITY IMPLEMENTATION
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Starts (or re-uses) a TCP server on `addr` and registers a WebSocket
-/// upgrade handler for `path`.
+/// Starts (or re-uses) a TCP server and registers a WebSocket upgrade handler.
 ///
-/// Multiple calls with the **same `addr` but different `path`** values share
+/// Multiple calls with the **same bind address but different paths** share
 /// one TCP listener; the dispatcher routes each request to the correct handler.
 ///
 /// This function is registered as the `WsListenFn` capability.
 #[cfg(feature = "ws-server")]
 #[register_capability(ws_server)]
 pub async fn ws_listen(
-    addr: String,
-    path: String,
+    config: alloy_core::WsServerConfig,
     handler: Arc<dyn ConnectionHandler>,
 ) -> TransportResult<()> {
-    let path = if path.starts_with('/') {
-        path
+    let path = if config.path.starts_with('/') {
+        config.path.clone()
     } else {
-        format!("/{path}")
+        format!("/{}", config.path)
     };
 
+    let addr = format!("{}:{}", config.bind_addr, config.port);
     let entry = get_or_create_server(&addr).await?;
 
     entry
@@ -456,7 +454,7 @@ async fn handle_ws_connection(
     // The returned token drives graceful shutdown for this connection.
     let shutdown_token = handler.register_connection(
         &bot_id,
-        Some(Sender::Ws {
+        Some(alloy_core::Sender::Ws {
             message_tx: tx.clone(),
         }),
     );

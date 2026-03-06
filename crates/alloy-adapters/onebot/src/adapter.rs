@@ -6,15 +6,15 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::parse_onebot_event;
 use alloy_core::{
     Adapter, AdapterContext, AdapterResult, BoxedBot, BoxedEvent, ConfigurableAdapter,
-    ConnectionHandle, ConnectionInfo, HttpClientConfig, TransportError, TransportResult,
-    WsClientConfig,
+    ConnectionHandle, ConnectionInfo, HttpClientConfig, HttpServerConfig, TransportError,
+    TransportResult, WsClientConfig, WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -44,7 +44,7 @@ impl Adapter for OneBotAdapter {
         Ok(bot_id)
     }
 
-    fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) -> BoxedBot {
+    fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> BoxedBot {
         Arc::new(OneBotBot::new(bot_id, connection))
     }
 
@@ -84,29 +84,21 @@ impl Adapter for OneBotAdapter {
     }
 
     async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
-        let enabled_count = self.config.enabled_count();
-        if enabled_count == 0 {
-            warn!("No enabled connections in OneBot adapter configuration");
+        if self.config.connections.is_empty() {
+            warn!("No connections in OneBot adapter configuration");
             return Ok(());
         }
 
-        debug!(
-            enabled = enabled_count,
-            total = self.config.connections.len(),
-            "Starting OneBot adapter connections"
-        );
-
-        for conn_config in self.config.enabled_connections() {
+        for conn_config in &self.config.connections {
             match conn_config {
                 ConnectionConfig::WsServer(ws_config) => {
                     if let Some(ws_server) = ctx.transport().ws_server() {
-                        let addr = ws_config.bind_addr();
-                        ws_server(
-                            addr,
-                            ws_config.path.clone(),
-                            ctx.clone().as_connection_handler(),
-                        )
-                        .await?;
+                        let mut config =
+                            WsServerConfig::new(&ws_config.host, ws_config.port, &ws_config.path);
+                        if let Some(t) = &ws_config.access_token {
+                            config = config.with_token(t);
+                        }
+                        ws_server(config, ctx.as_connection_handler()).await?;
                     } else {
                         warn!(
                             "WebSocket server capability not available, skipping ws-server config"
@@ -116,16 +108,11 @@ impl Adapter for OneBotAdapter {
 
                 ConnectionConfig::WsClient(ws_config) => {
                     if let Some(ws_client) = ctx.transport().ws_client() {
-                        let token = ws_config
-                            .access_token
-                            .as_ref()
-                            .or(self.config.default_access_token.as_ref())
-                            .filter(|t| !t.is_empty());
                         let mut config = WsClientConfig::new(&ws_config.url);
-                        if let Some(t) = token {
+                        if let Some(t) = ws_config.access_token.as_ref().filter(|t| !t.is_empty()) {
                             config = config.with_token(t);
                         }
-                        ws_client(config, ctx.clone().as_connection_handler()).await?;
+                        ws_client(config, ctx.as_connection_handler()).await?;
                     } else {
                         warn!(
                             "WebSocket client capability not available, skipping ws-client config"
@@ -135,13 +122,15 @@ impl Adapter for OneBotAdapter {
 
                 ConnectionConfig::HttpServer(http_config) => {
                     if let Some(http_server) = ctx.transport().http_server() {
-                        let addr = http_config.bind_addr();
-                        http_server(
-                            addr,
-                            http_config.path.clone(),
-                            ctx.clone().as_connection_handler(),
-                        )
-                        .await?;
+                        let mut config = HttpServerConfig::new(
+                            &http_config.host,
+                            http_config.port,
+                            &http_config.path,
+                        );
+                        if let Some(s) = &http_config.secret {
+                            config = config.with_secret(s);
+                        }
+                        http_server(config, ctx.as_connection_handler()).await?;
                     } else {
                         warn!("HTTP server capability not available, skipping http-server config");
                     }
@@ -149,20 +138,13 @@ impl Adapter for OneBotAdapter {
 
                 ConnectionConfig::HttpClient(http_config) => {
                     if let Some(http_client) = ctx.transport().http_client() {
-                        let bot_id = http_config.bot_id.clone();
-                        let access_token = http_config
-                            .access_token
-                            .as_ref()
-                            .or(self.config.default_access_token.as_ref())
-                            .cloned();
-
-                        let mut client_config = HttpClientConfig::new(&http_config.api_url);
-                        if let Some(token) = access_token {
+                        let mut client_config =
+                            HttpClientConfig::new(&http_config.bot_id, &http_config.api_url);
+                        if let Some(token) = http_config.access_token.as_ref() {
                             client_config = client_config.with_token(token);
                         }
 
-                        http_client(bot_id, client_config, ctx.clone().as_connection_handler())
-                            .await?;
+                        http_client(client_config, ctx.as_connection_handler()).await?;
                     } else {
                         warn!("HTTP client capability not available, skipping http-client config");
                     }
@@ -175,11 +157,8 @@ impl Adapter for OneBotAdapter {
 }
 
 impl ConfigurableAdapter for OneBotAdapter {
+    const NAME: &'static str = "onebot";
     type Config = OneBotConfig;
-
-    fn name() -> &'static str {
-        "onebot"
-    }
 
     fn from_config(config: Self::Config) -> Self {
         Self { config }

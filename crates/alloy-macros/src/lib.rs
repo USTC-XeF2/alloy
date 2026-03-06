@@ -90,28 +90,38 @@ pub fn derive_bot_event(input: TokenStream) -> TokenStream {
 ///
 /// # Usage
 ///
-/// Apply this attribute macro to an async function matching one of the four capability types:
+/// Apply this attribute macro to an async function matching one of the five capability types:
 ///
 /// ```rust,ignore
 /// #[alloy_macros::register_capability(ws_client)]
 /// pub async fn ws_connect(
-///     url: String,
+///     config: WsClientConfig,
 ///     handler: Arc<dyn ConnectionHandler>,
-///     config: ClientConfig,
-/// ) -> TransportResult<ConnectionHandle> { ... }
+/// ) -> TransportResult<()> { ... }
 ///
 /// #[alloy_macros::register_capability(ws_server)]
 /// pub async fn ws_listen(
-///     addr: String,
-///     path: String,
+///     config: WsServerConfig,
 ///     handler: Arc<dyn ConnectionHandler>,
-/// ) -> TransportResult<ListenerHandle> { ... }
+/// ) -> TransportResult<()> { ... }
 ///
 /// #[alloy_macros::register_capability(http_client)]
-/// pub async fn http_start_client(...) -> TransportResult<ConnectionHandle> { ... }
+/// pub async fn http_start_client(
+///     config: HttpClientConfig,
+///     handler: Arc<dyn ConnectionHandler>,
+/// ) -> TransportResult<()> { ... }
 ///
 /// #[alloy_macros::register_capability(http_server)]
-/// pub async fn http_listen(...) -> TransportResult<ListenerHandle> { ... }
+/// pub async fn http_listen(
+///     config: HttpServerConfig,
+///     handler: Arc<dyn ConnectionHandler>,
+/// ) -> TransportResult<()> { ... }
+///
+/// #[alloy_macros::register_capability(sse_client)]
+/// pub async fn sse_start_client(
+///     config: SseClientConfig,
+///     handler: Arc<dyn ConnectionHandler>,
+/// ) -> TransportResult<()> { ... }
 /// ```
 ///
 /// The macro leaves the decorated function unchanged and emits a `#[linkme::distributed_slice]`
@@ -120,7 +130,7 @@ pub fn derive_bot_event(input: TokenStream) -> TokenStream {
 /// The runtime calls [`TransportContext::collect_all()`] once at startup to
 /// gather all registered capabilities.
 ///
-/// The attribute argument must be one of: `ws_client`, `ws_server`, `http_client`, `http_server`.
+/// The attribute argument must be one of: `ws_client`, `ws_server`, `http_client`, `http_server`, `sse_client`.
 #[proc_macro_attribute]
 pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream {
     capability::register_capability(attr, item)

@@ -35,41 +35,37 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::WS_LISTEN_REGISTRY),
             quote!(::alloy_core::WsListenFn),
             quote!(
-                addr: ::std::string::String,
-                path: ::std::string::String,
+                config: ::alloy_core::WsServerConfig,
                 handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
             ),
-            quote!(addr, path, handler),
+            quote!(config, handler),
         ),
         "http_client" => (
             quote!(::alloy_core::HTTP_START_CLIENT_REGISTRY),
             quote!(::alloy_core::HttpStartClientFn),
             quote!(
-                bot_id: ::std::string::String,
                 config: ::alloy_core::HttpClientConfig,
                 handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
             ),
-            quote!(bot_id, config, handler),
+            quote!(config, handler),
         ),
         "http_server" => (
             quote!(::alloy_core::HTTP_LISTEN_REGISTRY),
             quote!(::alloy_core::HttpListenFn),
             quote!(
-                addr: ::std::string::String,
-                path: ::std::string::String,
+                config: ::alloy_core::HttpServerConfig,
                 handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
             ),
-            quote!(addr, path, handler),
+            quote!(config, handler),
         ),
         "sse_client" => (
             quote!(::alloy_core::SSE_CLIENT_REGISTRY),
             quote!(::alloy_core::SseClientFn),
             quote!(
-                bot_id: ::std::string::String,
                 config: ::alloy_core::SseClientConfig,
                 handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
             ),
-            quote!(bot_id, config, handler),
+            quote!(config, handler),
         ),
         other => {
             return syn::Error::new(

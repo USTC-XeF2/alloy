@@ -76,7 +76,7 @@ enum ApiCallStrategy {
 
 impl ApiCallStrategy {
     /// Creates a new strategy from a connection handle.
-    fn new(connection: ConnectionHandle) -> Self {
+    fn new(connection: &ConnectionHandle) -> Self {
         match connection.sender() {
             Some(Sender::HttpClient { post_json }) => Self::HttpClient {
                 post_json: post_json.clone(),
@@ -203,7 +203,7 @@ pub struct OneBotBot {
 
 impl OneBotBot {
     /// Creates a new `OneBotBot` from a connection handle.
-    pub(crate) fn new(id: &str, connection: ConnectionHandle) -> Self {
+    pub(crate) fn new(id: &str, connection: &ConnectionHandle) -> Self {
         Self {
             id: id.into(),
             call_strategy: ApiCallStrategy::new(connection),

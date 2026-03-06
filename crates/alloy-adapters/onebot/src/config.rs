@@ -48,33 +48,6 @@ use serde::{Deserialize, Serialize};
 pub struct OneBotConfig {
     /// List of connection configurations.
     pub connections: Vec<ConnectionConfig>,
-
-    /// Default access token (used for connections without explicit token).
-    pub default_access_token: Option<String>,
-
-    /// Whether to auto-reconnect client connections.
-    #[serde(default)]
-    pub auto_reconnect: bool,
-
-    /// Heartbeat interval in seconds (0 to disable).
-    #[serde(default = "default_heartbeat_interval")]
-    pub heartbeat_interval_secs: u64,
-}
-
-fn default_heartbeat_interval() -> u64 {
-    30
-}
-
-impl OneBotConfig {
-    /// Returns only the enabled connections.
-    pub fn enabled_connections(&self) -> impl Iterator<Item = &ConnectionConfig> {
-        self.connections.iter().filter(|c| c.is_enabled())
-    }
-
-    /// Returns the number of enabled connections.
-    pub fn enabled_count(&self) -> usize {
-        self.connections.iter().filter(|c| c.is_enabled()).count()
-    }
 }
 
 /// Connection configuration for a single connection.
@@ -97,26 +70,6 @@ pub enum ConnectionConfig {
 }
 
 impl ConnectionConfig {
-    /// Returns the connection name.
-    pub fn name(&self) -> &str {
-        match self {
-            ConnectionConfig::WsServer(c) => &c.name,
-            ConnectionConfig::WsClient(c) => &c.name,
-            ConnectionConfig::HttpServer(c) => &c.name,
-            ConnectionConfig::HttpClient(c) => &c.name,
-        }
-    }
-
-    /// Returns whether this connection is enabled.
-    pub fn is_enabled(&self) -> bool {
-        match self {
-            ConnectionConfig::WsServer(c) => c.enabled,
-            ConnectionConfig::WsClient(c) => c.enabled,
-            ConnectionConfig::HttpServer(c) => c.enabled,
-            ConnectionConfig::HttpClient(c) => c.enabled,
-        }
-    }
-
     /// Returns the access token if configured.
     pub fn access_token(&self) -> Option<&str> {
         match self {
@@ -132,12 +85,6 @@ impl ConnectionConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WsServerConfig {
-    /// Connection name for identification.
-    pub name: String,
-
-    /// Whether this connection is enabled.
-    pub enabled: bool,
-
     /// Bind address (default: "0.0.0.0").
     pub host: String,
 
@@ -154,8 +101,6 @@ pub struct WsServerConfig {
 impl Default for WsServerConfig {
     fn default() -> Self {
         Self {
-            name: "ws-server".to_string(),
-            enabled: true,
             host: "0.0.0.0".to_string(),
             port: 8080,
             path: "/onebot/v11/ws".to_string(),
@@ -164,23 +109,10 @@ impl Default for WsServerConfig {
     }
 }
 
-impl WsServerConfig {
-    /// Returns the bind address string.
-    pub fn bind_addr(&self) -> String {
-        format!("{}:{}", self.host, self.port)
-    }
-}
-
 /// WebSocket client configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WsClientConfig {
-    /// Connection name for identification.
-    pub name: String,
-
-    /// Whether this connection is enabled.
-    pub enabled: bool,
-
     /// WebSocket URL to connect to.
     pub url: String,
 
@@ -197,8 +129,6 @@ pub struct WsClientConfig {
 impl Default for WsClientConfig {
     fn default() -> Self {
         Self {
-            name: "ws-client".to_string(),
-            enabled: true,
             url: "ws://127.0.0.1:6700/ws".to_string(),
             access_token: None,
             auto_reconnect: true,
@@ -211,12 +141,6 @@ impl Default for WsClientConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HttpServerConfig {
-    /// Connection name for identification.
-    pub name: String,
-
-    /// Whether this connection is enabled.
-    pub enabled: bool,
-
     /// Bind address (default: "0.0.0.0").
     pub host: String,
 
@@ -233,8 +157,6 @@ pub struct HttpServerConfig {
 impl Default for HttpServerConfig {
     fn default() -> Self {
         Self {
-            name: "http-server".to_string(),
-            enabled: true,
             host: "0.0.0.0".to_string(),
             port: 9000,
             path: "/onebot/callback".to_string(),
@@ -243,23 +165,10 @@ impl Default for HttpServerConfig {
     }
 }
 
-impl HttpServerConfig {
-    /// Returns the bind address string.
-    pub fn bind_addr(&self) -> String {
-        format!("{}:{}", self.host, self.port)
-    }
-}
-
 /// HTTP client configuration (for API calls).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HttpClientConfig {
-    /// Connection name for identification.
-    pub name: String,
-
-    /// Whether this connection is enabled.
-    pub enabled: bool,
-
     /// Bot ID for this HTTP client.
     /// Required since HTTP clients don't have incoming connections to extract ID from.
     pub bot_id: String,
@@ -277,8 +186,6 @@ pub struct HttpClientConfig {
 impl Default for HttpClientConfig {
     fn default() -> Self {
         Self {
-            name: "http-client".to_string(),
-            enabled: true,
             bot_id: "12345678".to_string(), // Default bot ID
             api_url: "http://127.0.0.1:5700".to_string(),
             access_token: None,
@@ -296,36 +203,23 @@ mod tests {
         let config = OneBotConfig {
             connections: vec![
                 ConnectionConfig::WsServer(WsServerConfig {
-                    name: "main-server".to_string(),
-                    enabled: true,
                     host: "0.0.0.0".to_string(),
                     port: 8080,
                     path: "/ws".to_string(),
                     access_token: None,
                 }),
                 ConnectionConfig::WsClient(WsClientConfig {
-                    name: "backup-client".to_string(),
-                    enabled: false,
                     url: "ws://localhost:6700/ws".to_string(),
                     access_token: Some("secret".to_string()),
                     ..Default::default()
                 }),
             ],
-            default_access_token: None,
-            auto_reconnect: false,
-            heartbeat_interval_secs: 60,
         };
 
         assert_eq!(config.connections.len(), 2);
-        assert_eq!(config.heartbeat_interval_secs, 60);
-
-        // Only 1 enabled
-        assert_eq!(config.enabled_count(), 1);
 
         match &config.connections[0] {
             ConnectionConfig::WsServer(ws) => {
-                assert_eq!(ws.name, "main-server");
-                assert!(ws.enabled);
                 assert_eq!(ws.port, 8080);
                 assert_eq!(ws.path, "/ws");
             }
@@ -334,37 +228,10 @@ mod tests {
 
         match &config.connections[1] {
             ConnectionConfig::WsClient(ws) => {
-                assert_eq!(ws.name, "backup-client");
-                assert!(!ws.enabled);
                 assert_eq!(ws.url, "ws://localhost:6700/ws");
                 assert_eq!(ws.access_token, Some("secret".to_string()));
             }
             _ => panic!("Expected WsClient"),
         }
-    }
-
-    #[test]
-    fn test_enabled_connections() {
-        let config = OneBotConfig {
-            connections: vec![
-                ConnectionConfig::WsClient(WsClientConfig {
-                    name: "enabled".to_string(),
-                    enabled: true,
-                    ..Default::default()
-                }),
-                ConnectionConfig::WsClient(WsClientConfig {
-                    name: "disabled".to_string(),
-                    enabled: false,
-                    ..Default::default()
-                }),
-            ],
-            default_access_token: None,
-            auto_reconnect: false,
-            heartbeat_interval_secs: 30,
-        };
-
-        let enabled: Vec<_> = config.enabled_connections().collect();
-        assert_eq!(enabled.len(), 1);
-        assert_eq!(enabled[0].name(), "enabled");
     }
 }

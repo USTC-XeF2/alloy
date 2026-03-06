@@ -13,5 +13,7 @@ pub use capability::{
     HttpStartClientFn, SSE_CLIENT_REGISTRY, SseClientFn, TransportContext, WS_CONNECT_REGISTRY,
     WS_LISTEN_REGISTRY, WsConnectFn, WsListenFn,
 };
-pub use config::{HttpClientConfig, SseClientConfig, WsClientConfig};
+pub use config::{
+    HttpClientConfig, HttpServerConfig, SseClientConfig, WsClientConfig, WsServerConfig,
+};
 pub use connection::{ConnectionHandle, ConnectionInfo, ListenerHandle, PostJsonFn, Sender};

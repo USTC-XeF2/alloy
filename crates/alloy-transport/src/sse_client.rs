@@ -29,6 +29,8 @@ async fn run_sse_loop(
 ) {
     info!(bot_id = %bot_id, url = %config.url, "SSE client starting");
 
+    let mut retry_count = 0u32;
+
     // ── Build eventsource client ─────────────────────────────────────────────
     let builder = match ClientBuilder::for_url(&config.url) {
         Ok(b) => b,
@@ -52,12 +54,19 @@ async fn run_sse_loop(
         builder
     };
 
-    let reconnect_opts = ReconnectOptions::reconnect(config.auto_reconnect)
-        .retry_initial(false)
-        .delay(config.initial_delay)
-        .backoff_factor(2)
-        .delay_max(config.max_delay)
-        .build();
+    let mut reconnect_opts =
+        ReconnectOptions::reconnect(config.auto_reconnect).retry_initial(false);
+
+    if let Some(delay) = config.initial_delay {
+        reconnect_opts = reconnect_opts.delay(delay);
+    }
+    if let Some(delay) = config.max_delay {
+        reconnect_opts = reconnect_opts.delay_max(delay);
+    }
+    if let Some(m) = config.backoff_multiplier {
+        reconnect_opts = reconnect_opts.backoff_factor(m as u32);
+    }
+    let reconnect_opts = reconnect_opts.build();
 
     let client = builder.reconnect(reconnect_opts).build();
     let mut stream = client.stream();
@@ -81,24 +90,29 @@ async fn run_sse_loop(
                         if !config.auto_reconnect {
                             break;
                         }
-                        // eventsource-client handles reconnect internally; a
-                        // transient error here means it will retry on its own.
+
+                        // Check max retries
+                        if let Some(max) = config.max_retries {
+                            retry_count += 1;
+                            if retry_count > max {
+                                warn!(bot_id = %bot_id, retries = retry_count, max = max, "Max retries exceeded, shutting down");
+                                break;
+                            }
+                        }
+
                         continue;
                     }
-                    Some(Ok(SSE::Comment(_))) => {
-                        // Ignore SSE comments.
-                    }
-                    Some(Ok(SSE::Connected(_))) => {
-                        info!(bot_id = %bot_id, "SSE connection established");
-                    }
-                    Some(Ok(SSE::Event(ev))) => {
-                        trace!(
-                            bot_id = %bot_id,
-                            event_type = %ev.event_type,
-                            len = ev.data.len(),
-                            "SSE event received"
-                        );
-                        handler.on_message(&bot_id, ev.data.as_bytes()).await;
+                    Some(Ok(sse)) => {
+                        if let SSE::Event(ev) = sse {
+                            trace!(
+                                bot_id = %bot_id,
+                                event_type = %ev.event_type,
+                                len = ev.data.len(),
+                                "SSE event received"
+                            );
+                            handler.on_message(&bot_id, ev.data.as_bytes()).await;
+                        }
+                        retry_count = 0;
                     }
                 }
             }
@@ -126,7 +140,6 @@ async fn run_sse_loop(
 /// This function is registered as the `SseClientFn` capability.
 #[register_capability(sse_client)]
 pub async fn sse_start_client(
-    bot_id: String,
     config: SseClientConfig,
     handler: Arc<dyn ConnectionHandler>,
 ) -> TransportResult<()> {
@@ -136,11 +149,11 @@ pub async fn sse_start_client(
     }
 
     // Register the bot (SSE is receive-only, no Sender needed).
-    let shutdown_token = handler.register_connection(&bot_id, None);
+    let shutdown_token = handler.register_connection(&config.bot_id, None);
 
     // Spawn the persistent SSE loop.
     tokio::spawn(run_sse_loop(
-        bot_id.clone(),
+        config.bot_id.clone(),
         config,
         handler,
         shutdown_token,

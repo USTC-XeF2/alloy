@@ -155,7 +155,7 @@ impl ConnectionHandler for AdapterBridge {
                 sender,
                 shutdown_token: shutdown_token.clone(),
             };
-            let bot = self.adapter.create_bot(bot_id, handle.clone());
+            let bot = self.adapter.create_bot(bot_id, &handle);
             entries.insert(bot_id.to_string(), (bot, handle));
             info!(bot_id = %bot_id, "Bot registered");
             shutdown_token
@@ -214,18 +214,9 @@ struct AdapterContextWrapper {
     bridge: Arc<AdapterBridge>,
 }
 
-#[async_trait]
 impl AdapterContext for AdapterContextWrapper {
     fn transport(&self) -> &TransportContext {
         &self.bridge.transport
-    }
-
-    fn get_bot(&self, id: &str) -> Option<BoxedBot> {
-        self.bridge
-            .entries
-            .read()
-            .get(id)
-            .map(|(bot, _)| bot.clone())
     }
 
     fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler> {

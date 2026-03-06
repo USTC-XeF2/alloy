@@ -39,7 +39,10 @@ impl ClientLoopState {
         config: WsClientConfig,
         ws_stream: WsStream,
     ) -> Self {
-        let initial_delay = config.initial_delay;
+        let mut current_delay = Duration::from_secs(1);
+        if let Some(delay) = config.initial_delay {
+            current_delay = delay;
+        }
         let (ws_tx, ws_rx) = ws_stream.split();
 
         Self {
@@ -47,7 +50,7 @@ impl ClientLoopState {
             bot_id,
             config,
             retry_count: 0,
-            current_delay: initial_delay,
+            current_delay,
             ws_tx,
             ws_rx,
         }
@@ -58,7 +61,10 @@ impl ClientLoopState {
         trace!(bot_id = %self.bot_id, len = data.len(), message_type = message_type, "Received");
         self.handler.on_message(&self.bot_id, data).await;
         self.retry_count = 0;
-        self.current_delay = self.config.initial_delay;
+        self.current_delay = Duration::from_secs(1);
+        if let Some(delay) = self.config.initial_delay {
+            self.current_delay = delay;
+        }
     }
 
     /// Handles reconnection logic when connection is lost or error occurs.
@@ -86,7 +92,10 @@ impl ClientLoopState {
                 let (new_tx, new_rx) = new_stream.split();
                 info!(bot_id = %self.bot_id, "Reconnected successfully");
                 self.retry_count = 0;
-                self.current_delay = self.config.initial_delay;
+                self.current_delay = Duration::from_secs(1);
+                if let Some(delay) = self.config.initial_delay {
+                    self.current_delay = delay;
+                }
                 self.ws_tx = new_tx;
                 self.ws_rx = new_rx;
                 true
@@ -94,11 +103,17 @@ impl ClientLoopState {
             Err(e) => {
                 warn!(bot_id = %self.bot_id, error = %e, "Reconnection failed");
                 self.retry_count += 1;
+                let mut multiplier = 2.0;
+                if let Some(m) = self.config.backoff_multiplier {
+                    multiplier = m;
+                }
+                let mut max_delay = Duration::from_secs(60);
+                if let Some(delay) = self.config.max_delay {
+                    max_delay = delay;
+                }
                 self.current_delay = std::cmp::min(
-                    Duration::from_secs_f64(
-                        self.current_delay.as_secs_f64() * self.config.backoff_multiplier,
-                    ),
-                    self.config.max_delay,
+                    Duration::from_secs_f64(self.current_delay.as_secs_f64() * multiplier),
+                    max_delay,
                 );
                 false
             }
@@ -117,9 +132,8 @@ impl ClientLoopState {
                 self.handle_message_received("binary", &data).await;
                 true
             }
-            Some(Ok(Message::Ping(data))) => {
-                trace!(bot_id = %self.bot_id, "Received ping, sending pong");
-                let _ = self.ws_tx.send(Message::Pong(data)).await;
+            Some(Ok(Message::Ping(_))) => {
+                trace!(bot_id = %self.bot_id, "Received ping");
                 true
             }
             Some(Ok(Message::Pong(_))) => {

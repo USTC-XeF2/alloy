@@ -23,7 +23,9 @@ use linkme::distributed_slice;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::config::{HttpClientConfig, SseClientConfig, WsClientConfig};
+use super::config::{
+    HttpClientConfig, HttpServerConfig, SseClientConfig, WsClientConfig, WsServerConfig,
+};
 use super::connection::{ConnectionInfo, ListenerHandle, Sender};
 use crate::error::TransportResult;
 
@@ -75,9 +77,9 @@ pub trait ConnectionHandler: Send + Sync {
 
 /// Function pointer that starts a WebSocket server listener.
 ///
-/// Parameters: `(addr, path, handler)` — all owned to satisfy `'static` bounds.
+/// Parameters: `(config, handler)` — config contains bind address, port, and path.
 pub type WsListenFn =
-    fn(String, String, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+    fn(WsServerConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that opens a WebSocket client connection.
 ///
@@ -87,27 +89,21 @@ pub type WsConnectFn =
 
 /// Function pointer that starts an HTTP server listener.
 ///
-/// Parameters: `(addr, path, handler)`.
+/// Parameters: `(config, handler)` — config contains bind address, port, and path.
 pub type HttpListenFn =
-    fn(String, String, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+    fn(HttpServerConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that registers an HTTP outbound API-client bot.
 ///
-/// Parameters: `(bot_id, config, handler)`.
-pub type HttpStartClientFn = fn(
-    String,
-    HttpClientConfig,
-    Arc<dyn ConnectionHandler>,
-) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler)` — config contains bot_id and connection settings.
+pub type HttpStartClientFn =
+    fn(HttpClientConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that opens a persistent SSE client connection.
 ///
-/// Parameters: `(bot_id, config, handler)`.
-pub type SseClientFn = fn(
-    String,
-    SseClientConfig,
-    Arc<dyn ConnectionHandler>,
-) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler)` — config contains bot_id and connection settings.
+pub type SseClientFn =
+    fn(SseClientConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
 
 // =============================================================================
 // Capability Registries (linkme distributed slices)

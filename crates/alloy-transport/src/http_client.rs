@@ -19,12 +19,14 @@ use alloy_macros::register_capability;
 /// This function is registered as the `HttpStartClientFn` capability.
 #[register_capability(http_client)]
 pub async fn http_start_client(
-    bot_id: String,
     config: HttpClientConfig,
     handler: Arc<dyn ConnectionHandler>,
 ) -> TransportResult<()> {
-    let client = ClientBuilder::new()
-        .timeout(config.timeout)
+    let mut builder = ClientBuilder::new();
+    if let Some(timeout) = config.timeout {
+        builder = builder.timeout(timeout);
+    }
+    let client = builder
         .build()
         .map_err(|e| TransportError::Io(e.to_string()))?;
 
@@ -61,7 +63,7 @@ pub async fn http_start_client(
         .boxed()
     });
 
-    handler.register_connection(&bot_id, Some(Sender::HttpClient { post_json }));
+    handler.register_connection(&config.bot_id, Some(Sender::HttpClient { post_json }));
 
     Ok(())
 }

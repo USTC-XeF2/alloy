@@ -62,19 +62,15 @@ alloy_core = "info"
 [adapters.onebot]
 # List of connections - all enabled connections run simultaneously
 
-# Primary connection: WebSocket client to connect to OneBot implementation
-[[adapters.onebot.connections]]
-name = "primary"
-enabled = false
-type = "ws-client"
-url = "ws://127.0.0.1:8080/ws"
-access_token = "${BOT_ACCESS_TOKEN:-}"
+# WebSocket client mode: connect to OneBot implementation
+# [[adapters.onebot.connections]]
+# type = "ws-client"
+# url = "ws://127.0.0.1:8080/ws"
+# access_token = "${BOT_ACCESS_TOKEN:-}"
 
 # WebSocket server mode: accept incoming connections
 # Useful when OneBot implementation connects to your bot
 [[adapters.onebot.connections]]
-name = "ws-server"
-enabled = true
 type = "ws-server"
 host = "127.0.0.1"
 port = 8080
@@ -82,19 +78,15 @@ path = "/onebot/v11/ws"
 access_token = ""
 
 # HTTP client mode: push to OneBot implementation
-[[adapters.onebot.connections]]
-name = "http-push"
-enabled = false
-type = "http-client"
-api_url = "http://127.0.0.1:5700"
-access_token = "${BOT_ACCESS_TOKEN:-}"
+# [[adapters.onebot.connections]]
+# type = "http-client"
+# api_url = "http://127.0.0.1:5700"
+# access_token = "${BOT_ACCESS_TOKEN:-}"
 
 # HTTP server mode: receive webhooks from OneBot implementation
-[[adapters.onebot.connections]]
-name = "http-webhook"
-enabled = false
-type = "http-server"
-host = "0.0.0.0"
-port = 9000
-path = "/onebot/callback"
-secret = "${WEBHOOK_SECRET:-}"
+# [[adapters.onebot.connections]]
+# type = "http-server"
+# host = "0.0.0.0"
+# port = 9000
+# path = "/onebot/callback"
+# secret = "${WEBHOOK_SECRET:-}"

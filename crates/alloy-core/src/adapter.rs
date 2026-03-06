@@ -25,16 +25,12 @@ use crate::transport::{ConnectionHandle, ConnectionHandler, ConnectionInfo, Tran
 ///
 /// Handle registration is handled automatically by the transport capabilities
 /// via [`ConnectionHandler::add_listener`] and [`ConnectionHandler::add_connection`].
-#[async_trait]
 pub trait AdapterContext: Send + Sync {
     /// Returns a reference to the transport capability context.
     fn transport(&self) -> &TransportContext;
 
-    /// Returns a bot by ID, or `None` if not found.
-    fn get_bot(&self, id: &str) -> Option<BoxedBot>;
-
     /// Casts this context to a `ConnectionHandler` reference for passing to
-    /// transport capabilities (e.g., `ws_server(addr, path, ctx.as_connection_handler())`).
+    /// transport capabilities (e.g., `ws_server(config, ctx.as_connection_handler())`).
     fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler>;
 }
 
@@ -61,7 +57,7 @@ pub trait Adapter: Send + Sync {
     /// Create a bot instance for a new connection.
     ///
     /// Called after [`get_bot_id`](Self::get_bot_id) succeeds.
-    fn create_bot(&self, bot_id: &str, connection: ConnectionHandle) -> BoxedBot;
+    fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> BoxedBot;
 
     /// Parse an incoming message into an event.
     ///
@@ -78,7 +74,8 @@ pub trait Adapter: Send + Sync {
     /// ```rust,ignore
     /// async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
     ///     if let Some(ws_server) = ctx.transport().ws_server() {
-    ///         ws_server("0.0.0.0:8080".into(), "/ws".into(), ctx.as_connection_handler()).await?;
+    ///         let config = WsServerConfig::new("0.0.0.0", 8080, "/ws");
+    ///         ws_server(config, ctx.as_connection_handler()).await?;
     ///     }
     ///     Ok(())
     /// }
@@ -99,13 +96,11 @@ pub type BoxedAdapter = Arc<dyn Adapter>;
 /// Separates compile-time concerns (`Config` type, `from_config()`)
 /// from the object-safe [`Adapter`] trait.
 pub trait ConfigurableAdapter: Adapter {
+    /// The adapter name used as the config key.
+    const NAME: &'static str;
+
     /// The configuration type, deserialized from `alloy.toml`.
     type Config: serde::de::DeserializeOwned + Default;
-
-    /// Returns the adapter name used as the config key.
-    fn name() -> &'static str
-    where
-        Self: Sized;
 
     /// Creates an adapter instance from its deserialized configuration.
     fn from_config(config: Self::Config) -> Self
