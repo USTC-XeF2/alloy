@@ -64,7 +64,7 @@ enum ApiCallStrategy {
     /// WebSocket caller with echo-based async routing
     Ws {
         message_tx: mpsc::Sender<Vec<u8>>,
-        pending_calls: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
+        pending_calls: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
         echo_counter: AtomicU64,
         api_timeout: Duration,
     },
@@ -83,7 +83,7 @@ impl ApiCallStrategy {
             },
             Some(Sender::Ws { message_tx }) => Self::Ws {
                 message_tx: message_tx.clone(),
-                pending_calls: Arc::new(Mutex::new(HashMap::new())),
+                pending_calls: Mutex::new(HashMap::new()),
                 echo_counter: AtomicU64::new(1),
                 api_timeout: Duration::from_secs(30),
             },

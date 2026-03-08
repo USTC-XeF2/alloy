@@ -67,7 +67,7 @@ pub trait Dispatcher: Send + Sync {
 ///
 /// Each `AdapterBridge` manages bots for exactly one adapter instance.
 pub struct AdapterBridge {
-    adapter: Arc<dyn Adapter>,
+    adapter: Box<dyn Adapter>,
     /// Active bots and their connection handles, keyed by bot ID.
     entries: RwLock<HashMap<String, (BoxedBot, ConnectionHandle)>>,
     /// Event dispatcher — distributes parsed events to handlers.
@@ -81,7 +81,7 @@ pub struct AdapterBridge {
 impl AdapterBridge {
     /// Creates a new adapter bridge.
     pub fn new(
-        adapter: Arc<dyn Adapter>,
+        adapter: Box<dyn Adapter>,
         event_dispatcher: Arc<dyn Dispatcher>,
         transport: TransportContext,
     ) -> Self {
@@ -100,7 +100,7 @@ impl AdapterBridge {
 
     /// Starts the adapter (delegates to [`Adapter::on_start`]).
     pub async fn on_start(self: &Arc<Self>) -> AdapterResult<()> {
-        let ctx: Arc<dyn AdapterContext> = Arc::new(AdapterContextWrapper {
+        let ctx = Box::new(AdapterContextWrapper {
             bridge: self.clone(),
         });
         self.adapter.on_start(ctx).await
@@ -108,7 +108,7 @@ impl AdapterBridge {
 
     /// Shuts down the adapter (delegates to [`Adapter::on_shutdown`]).
     pub async fn on_shutdown(self: &Arc<Self>) -> AdapterResult<()> {
-        let ctx: Arc<dyn AdapterContext> = Arc::new(AdapterContextWrapper {
+        let ctx = Box::new(AdapterContextWrapper {
             bridge: self.clone(),
         });
         self.adapter.on_shutdown(ctx).await

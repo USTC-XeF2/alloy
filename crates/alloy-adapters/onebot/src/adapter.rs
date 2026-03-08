@@ -64,7 +64,7 @@ impl Adapter for OneBotAdapter {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw)
             && value.get("echo").is_some()
         {
-            if let Ok(onebot_bot) = Arc::downcast::<OneBotBot>(bot.clone().as_any()) {
+            if let Ok(onebot_bot) = bot.clone().as_any().downcast::<OneBotBot>() {
                 onebot_bot.handle_response(&value);
                 trace!(bot_id = %bot_id, echo = ?value.get("echo"), "Handled API response");
             }
@@ -83,7 +83,7 @@ impl Adapter for OneBotAdapter {
         Some(boxed_event)
     }
 
-    async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
+    async fn on_start(&self, ctx: Box<dyn AdapterContext>) -> AdapterResult<()> {
         if self.config.connections.is_empty() {
             warn!("No connections in OneBot adapter configuration");
             return Ok(());

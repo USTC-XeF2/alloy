@@ -180,7 +180,7 @@ impl AlloyRuntime {
             Default::default()
         };
 
-        let adapter = Arc::new(A::from_config(config));
+        let adapter = Box::new(A::from_config(config));
         let bridge = Arc::new(AdapterBridge::new(
             adapter,
             self.plugin_manager.clone(),

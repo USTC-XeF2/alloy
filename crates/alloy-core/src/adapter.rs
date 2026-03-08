@@ -72,7 +72,7 @@ pub trait Adapter: Send + Sync {
     /// Use the context to access transport capabilities and register listeners.
     ///
     /// ```rust,ignore
-    /// async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
+    /// async fn on_start(&self, ctx: Box<dyn AdapterContext>) -> AdapterResult<()> {
     ///     if let Some(ws_server) = ctx.transport().ws_server() {
     ///         let config = WsServerConfig::new("0.0.0.0", 8080, "/ws");
     ///         ws_server(config, ctx.as_connection_handler()).await?;
@@ -80,10 +80,10 @@ pub trait Adapter: Send + Sync {
     ///     Ok(())
     /// }
     /// ```
-    async fn on_start(&self, ctx: Arc<dyn AdapterContext>) -> AdapterResult<()>;
+    async fn on_start(&self, ctx: Box<dyn AdapterContext>) -> AdapterResult<()>;
 
     /// Called when the adapter is shutting down.
-    async fn on_shutdown(&self, _ctx: Arc<dyn AdapterContext>) -> AdapterResult<()> {
+    async fn on_shutdown(&self, _ctx: Box<dyn AdapterContext>) -> AdapterResult<()> {
         Ok(())
     }
 }
@@ -103,7 +103,5 @@ pub trait ConfigurableAdapter: Adapter {
     type Config: serde::de::DeserializeOwned + Default;
 
     /// Creates an adapter instance from its deserialized configuration.
-    fn from_config(config: Self::Config) -> Self
-    where
-        Self: Sized;
+    fn from_config(config: Self::Config) -> Self;
 }
