@@ -11,10 +11,10 @@
 //!
 //! Protocol adapters define their own segment types and use `Message<TheirSegment>`.
 
-use std::any::Any;
 use std::fmt::{Debug, Display};
 
 use derive_more::{AsMut, AsRef, Deref, DerefMut, From};
+use downcast_rs::{Downcast, impl_downcast};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -176,8 +176,8 @@ impl<S: MessageSegment> Message<S> {
     ///
     /// This attempts to downcast the `ErasedMessage` to `Message<S>`. If the downcast
     /// fails, it tries to convert from rich text segments using `S::from_rich_text_segment`.
-    pub fn from_erased_message(msg: &dyn ErasedMessage) -> Self {
-        if let Some(msg) = msg.as_any().downcast_ref::<Self>() {
+    pub fn from_erased_message(msg: &dyn Sendable) -> Self {
+        if let Some(msg) = msg.downcast_ref::<Self>() {
             msg.clone()
         } else {
             Self::from_segments(
@@ -295,25 +295,26 @@ impl RichText {
 
 /// Object-safe, type-erased message trait.
 ///
-/// This trait allows [`Bot::send_message`] to accept any `Message<S>` without
-/// making the trait generic (which would break object safety).
+/// This trait allows [`Bot::send`] to accept any `Message<S>` without making
+/// the trait generic (which would break object safety).
 ///
-/// Concrete adapter implementations can downcast via [`ErasedMessage::as_any`]
-/// to recover the original typed message. If the downcast fails they should
-/// fall back to [`ErasedMessage::extract_rich_text`].
-pub trait ErasedMessage: Any + Send + Sync {
-    /// Returns a `&dyn Any` reference for downcasting to the concrete message type.
-    fn as_any(&self) -> &dyn Any;
-
+/// Concrete adapter implementations can downcast using `downcast_rs` methods
+/// (e.g., `downcast_ref::<T>()`) to recover the original typed message.
+/// If the downcast fails they should fall back to [`ErasedMessage::extract_rich_text`].
+pub trait Sendable: Downcast + Send + Sync {
     /// Extracts platform-agnostic rich text segments from the message.
     fn extract_rich_text(&self) -> Vec<RichTextSegment>;
 }
 
-impl<S: MessageSegment> ErasedMessage for Message<S> {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+impl_downcast!(Sendable);
 
+impl Sendable for String {
+    fn extract_rich_text(&self) -> Vec<RichTextSegment> {
+        vec![RichTextSegment::text(self)]
+    }
+}
+
+impl<S: MessageSegment> Sendable for Message<S> {
     fn extract_rich_text(&self) -> Vec<RichTextSegment> {
         Message::extract_rich_text(self)
     }

@@ -30,7 +30,40 @@ use std::convert::Infallible;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use downcast_rs::{Downcast, impl_downcast};
+
 use super::message::{Message, MessageSegment, RichTextSegment};
+
+// ============================================================================
+// Session Scene Identifier
+// ============================================================================
+
+/// Session scene (conversation context) identifier.
+///
+/// Returned by [`Event::get_scene`](Event::get_scene).
+/// Use `scene = "..."` in `#[event(...)]` with field-level markers
+/// (`#[event(scene_user_id)]`, etc.) to let the derive macro generate this automatically.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Scene {
+    Private {
+        /// The user the bot is chatting with.
+        user_id: String,
+    },
+    Group {
+        /// The group / chat room the event came from.
+        group_id: String,
+        /// The sender inside the group, if available.
+        user_id: Option<String>,
+    },
+    Guild {
+        /// The guild or server this event belongs to.
+        guild_id: String,
+    },
+    Other {
+        /// A platform-specific identifier for the scene.
+        id: String,
+    },
+}
 
 // ============================================================================
 // Event Type Classification
@@ -124,7 +157,7 @@ pub trait AsText: Send + Sync {
 /// The base trait for all events in the Alloy framework.
 ///
 /// Events are type-erased using `dyn Event` and can be downcast to concrete
-/// types using `as_any()`. Events can also be downgraded to parent types
+/// types using `downcast_ref()`. Events can also be downgraded to parent types
 /// using the `downgrade_any()` method.
 ///
 /// All events automatically implement [`AsText`], which provides the
@@ -133,7 +166,7 @@ pub trait AsText: Send + Sync {
 /// # Derive Macro
 ///
 /// Use `#[derive(BotEvent)]` to automatically implement common methods.
-pub trait Event: AsText + Any + Send + Sync {
+pub trait Event: AsText + Downcast + Send + Sync {
     /// Returns the human-readable name of this event type.
     fn event_name(&self) -> &'static str;
 
@@ -148,22 +181,25 @@ pub trait Event: AsText + Any + Send + Sync {
         EventType::Other
     }
 
-    /// Returns a reference to self as `Any` for downcasting.
-    fn as_any(&self) -> &dyn Any;
-
-    /// Returns the raw JSON representation of this event, if available.
-    ///
-    /// This is preserved for debugging and logging purposes.
-    fn raw_json(&self) -> Option<&str> {
-        None
-    }
-
     /// Returns the user ID associated with this event, if applicable.
     ///
     /// For events with a field marked with `#[event(user_id)]`, the derive macro
     /// automatically generates an implementation that returns `Some(user_id)`.
     /// Otherwise returns `None`.
     fn get_user_id(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns the session scene for this event, if applicable.
+    ///
+    /// The scene identifies which conversation context this event belongs to:
+    /// private chat, group chat, guild channel, or a generic fallback.
+    ///
+    /// Use `scene = "private" | "group" | "guild" | "other"` in `#[event(...)]`
+    /// together with field-level markers (`#[event(scene_user_id)]`, etc.) to let
+    /// the derive macro generate this automatically. Child events without a
+    /// `scene` key delegate to their parent.
+    fn get_scene(&self) -> Option<Scene> {
         None
     }
 
@@ -201,6 +237,8 @@ pub trait Event: AsText + Any + Send + Sync {
     where
         Self: Sized;
 }
+
+impl_downcast!(Event);
 
 impl std::fmt::Debug for dyn Event {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

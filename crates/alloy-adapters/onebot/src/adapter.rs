@@ -64,7 +64,7 @@ impl Adapter for OneBotAdapter {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw)
             && value.get("echo").is_some()
         {
-            if let Ok(onebot_bot) = bot.clone().as_any().downcast::<OneBotBot>() {
+            if let Ok(onebot_bot) = bot.clone().downcast_arc::<OneBotBot>() {
                 onebot_bot.handle_response(&value);
                 trace!(bot_id = %bot_id, echo = ?value.get("echo"), "Handled API response");
             }

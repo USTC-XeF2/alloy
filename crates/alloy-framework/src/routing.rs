@@ -14,8 +14,6 @@
 //! runtime.register_service(svc).await;
 //! ```
 
-use std::any::TypeId;
-
 use tower::ServiceBuilder;
 use tower::filter::FilterLayer;
 use tower_layer::{Identity, Stack};
@@ -53,7 +51,6 @@ pub fn on_message() -> FilterServiceBuilder {
 ///
 /// Uses strict type equality checking.
 pub fn on<E: Event + 'static>() -> FilterServiceBuilder {
-    let type_id = TypeId::of::<E>();
     ServiceBuilder::new()
-        .rule_sync(move |ctx: &AlloyContext| ctx.event().as_any().type_id() == type_id)
+        .rule_sync(move |ctx: &AlloyContext| ctx.event().downcast_ref::<E>().is_some())
 }

@@ -15,7 +15,7 @@ use tracing::error;
 
 use super::traits::FromCtxFn;
 use crate::context::AlloyContext;
-use alloy_core::{Message, MessageSegment};
+use alloy_core::{Message, MessageSegment, Sendable};
 
 // ============================================================================
 // HandlerResponse
@@ -34,25 +34,30 @@ impl HandlerResponse for () {
     }
 }
 
+/// Helper function to send a message using the bot from the context.
+async fn send_message(ctx: &AlloyContext, message: impl Sendable) {
+    let bot = ctx.bot();
+    let event = ctx.event();
+    if let Some(scene) = event.get_scene() {
+        if let Err(e) = bot.send(&scene, &message).await {
+            error!("Failed to send message: {e}");
+        }
+    } else {
+        error!("Event has no scene, cannot send message");
+    }
+}
+
 /// Implementation for `String` - send message on Ok, log errors on Err.
 impl HandlerResponse for String {
     async fn process_response(self, ctx: &AlloyContext) {
-        let bot = ctx.bot();
-        let event = ctx.event();
-        if let Err(e) = bot.send(event.as_ref(), &self).await {
-            error!("Failed to send message: {e}");
-        }
+        send_message(ctx, self).await;
     }
 }
 
 /// Implementation for `Message<S>` - sends the message using `send_message`.
 impl<S: MessageSegment> HandlerResponse for Message<S> {
     async fn process_response(self, ctx: &AlloyContext) {
-        let bot = ctx.bot();
-        let event = ctx.event();
-        if let Err(e) = bot.send_message(event.as_ref(), &self).await {
-            error!("Failed to send message: {e}");
-        }
+        send_message(ctx, self).await;
     }
 }
 

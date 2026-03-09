@@ -42,6 +42,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "derive_more",
+ "downcast-rs",
  "futures",
  "linkme",
  "parking_lot",
@@ -554,6 +555,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "downcast-rs"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 
 [[package]]
 name = "dunce"

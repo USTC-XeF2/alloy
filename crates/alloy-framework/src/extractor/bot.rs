@@ -22,8 +22,7 @@ impl<T: BotTrait> FromContext for Bot<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.bot()
             .clone()
-            .as_any()
-            .downcast::<T>()
+            .downcast_arc::<T>()
             .map(Bot)
             .map_err(|_| ExtractError::BotTypeMismatch {
                 expected: std::any::type_name::<T>(),

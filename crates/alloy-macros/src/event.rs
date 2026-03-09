@@ -23,19 +23,22 @@
 //! marked with `#[event(parent)]`, so you only need to write it once.
 //!
 //! | Key | Example | Required | Description |
-//! |-----|---------|----------|-------------|
+//! |-----|---------|----------|-------------
 //! | `name` | `"message.private"` | No | Event name suffix (auto-prefixed with `{platform}.`) |
 //! | `type` | `"message"` | No | `EventType` variant (default: inherited from parent or `Other`) |
+//! | `scene` | `"private"` | No | Session scene variant (`private`, `group`, `guild`, `other`); delegates to parent when absent |
 //!
 //! # Field-level attributes `#[event(...)]`
 //!
 //! | Key | Description |
-//! |-----|-------------|
+//! |-----|-------------
 //! | `parent` | Marks this field as the parent (type is auto-detected) |
-//! | `raw_json` | Field that stores `Option<Arc<str>>` of raw JSON |
 //! | `bot_id` | Field that stores `Option<Arc<str>>` of bot ID |
 //! | `message` | Field of type `Message<Segment>`, used for `Event::get_message()` |
-//! | `user_id` | Field whose `to_string()` is returned by `Event::get_user_id()` |
+//! | `user_id` | Drives `get_user_id()` AND the user component of private/group scene |
+//! | `group_id` | Required group-ID field for `Scene::Group` |
+//! | `guild_id` | Required guild-ID field for `Scene::Guild` |
+//! | `scene_id` | Generic ID field for `Scene::Other` |
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -52,10 +55,13 @@ enum EventKind {
         platform: String,
         segment_type: String,
     },
-    /// `#[event(name = "…", type = "…")]`
+    /// `#[event(name = "…", type = "…", scene = "…")]`
     Child {
         name: Option<String>,
         event_type: Option<String>,
+        /// Session scene: `"private"` | `"group"` | `"guild"` | `"other"`.
+        /// When `None`, `get_scene_id()` delegates to the parent.
+        scene: Option<String>,
     },
 }
 
@@ -63,9 +69,11 @@ enum EventKind {
 #[derive(Default)]
 struct FieldAttrs {
     is_parent: bool,
-    is_raw_json: bool,
     is_message: bool,
     is_user_id: bool,
+    is_group_id: bool,
+    is_guild_id: bool,
+    is_scene_id: bool,
 }
 
 // ============================================================================
@@ -128,17 +136,24 @@ fn parse_struct_attrs(attrs: &[Attribute], span: proc_macro2::Span) -> syn::Resu
         if attr.path().is_ident("event") {
             let mut name: Option<String> = None;
             let mut event_type: Option<String> = None;
+            let mut scene: Option<String> = None;
 
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("name") {
                     name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
                 } else if meta.path.is_ident("type") {
                     event_type = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+                } else if meta.path.is_ident("scene") {
+                    scene = Some(meta.value()?.parse::<syn::LitStr>()?.value());
                 }
                 Ok(())
             })?;
 
-            return Ok(EventKind::Child { name, event_type });
+            return Ok(EventKind::Child {
+                name,
+                event_type,
+                scene,
+            });
         }
     }
 
@@ -158,12 +173,16 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("parent") {
                 result.is_parent = true;
-            } else if meta.path.is_ident("raw_json") {
-                result.is_raw_json = true;
             } else if meta.path.is_ident("message") {
                 result.is_message = true;
             } else if meta.path.is_ident("user_id") {
                 result.is_user_id = true;
+            } else if meta.path.is_ident("group_id") {
+                result.is_group_id = true;
+            } else if meta.path.is_ident("guild_id") {
+                result.is_guild_id = true;
+            } else if meta.path.is_ident("scene_id") {
+                result.is_scene_id = true;
             }
             Ok(())
         })?;
@@ -183,9 +202,11 @@ fn generate_struct_impl(
 ) -> syn::Result<TokenStream> {
     // Scan fields for markers
     let mut parent_field: Option<(Ident, Type)> = None;
-    let mut raw_json_field: Option<Ident> = None;
     let mut message_field: Option<(Ident, Type)> = None;
     let mut user_id_field: Option<Ident> = None;
+    let mut group_id_field: Option<Ident> = None;
+    let mut guild_id_field: Option<Ident> = None;
+    let mut scene_id_field: Option<Ident> = None;
 
     if let Fields::Named(named) = fields {
         for f in &named.named {
@@ -194,14 +215,20 @@ fn generate_struct_impl(
             if fa.is_parent {
                 parent_field = Some((ident.clone(), f.ty.clone()));
             }
-            if fa.is_raw_json {
-                raw_json_field = Some(ident.clone());
-            }
             if fa.is_message {
                 message_field = Some((ident.clone(), f.ty.clone()));
             }
             if fa.is_user_id {
                 user_id_field = Some(ident.clone());
+            }
+            if fa.is_group_id {
+                group_id_field = Some(ident.clone());
+            }
+            if fa.is_guild_id {
+                guild_id_field = Some(ident.clone());
+            }
+            if fa.is_scene_id {
+                scene_id_field = Some(ident.clone());
             }
         }
     }
@@ -217,18 +244,12 @@ fn generate_struct_impl(
                     "#[root_event] must not have a #[event(parent)] field",
                 ));
             }
-            generate_root_event(
-                name,
-                platform,
-                segment_type,
-                raw_json_field,
-                message_field,
-                user_id_field,
-            )
+            generate_root_event(name, platform, segment_type, message_field, user_id_field)
         }
         EventKind::Child {
             name: event_name,
             event_type,
+            scene,
         } => {
             let (pf_ident, pf_ty) = parent_field.ok_or_else(|| {
                 syn::Error::new(
@@ -240,10 +261,14 @@ fn generate_struct_impl(
                 name,
                 event_name.as_deref(),
                 event_type.as_deref(),
+                scene.as_deref(),
                 &pf_ident,
                 &pf_ty,
                 message_field,
                 user_id_field,
+                group_id_field,
+                guild_id_field,
+                scene_id_field,
             ))
         }
     }
@@ -257,22 +282,11 @@ fn generate_root_event(
     name: &Ident,
     platform: &str,
     segment_type_str: &str,
-    raw_json_field: Option<Ident>,
     message_field: Option<(Ident, Type)>,
     user_id_field: Option<Ident>,
 ) -> syn::Result<TokenStream> {
     let platform_lit = syn::LitStr::new(platform, name.span());
     let seg_ty: Type = syn::parse_str(segment_type_str)?;
-
-    let raw_json_impl = if let Some(rj) = raw_json_field {
-        quote! {
-            fn raw_json(&self) -> Option<&str> {
-                self.#rj.as_deref()
-            }
-        }
-    } else {
-        quote! {}
-    };
 
     let (segment_type_impl, get_message_impl);
     if let Some((mf, _)) = message_field {
@@ -323,12 +337,7 @@ fn generate_root_event(
                 #platform_lit
             }
 
-            fn as_any(&self) -> &dyn ::std::any::Any {
-                self
-            }
-
             #downgrade_any_impl
-            #raw_json_impl
             #get_user_id_impl
             #segment_type_impl
             #get_message_impl
@@ -344,14 +353,19 @@ fn generate_root_event(
 // Child event generation
 // ============================================================================
 
+#[allow(clippy::too_many_arguments)]
 fn generate_child_event(
     name: &Ident,
     event_name: Option<&str>,
     event_type: Option<&str>,
+    scene: Option<&str>,
     parent_field_ident: &Ident,
     parent_ty: &Type,
     message_field: Option<(Ident, Type)>,
     user_id_field: Option<Ident>,
+    group_id_field: Option<Ident>,
+    guild_id_field: Option<Ident>,
+    scene_id_field: Option<Ident>,
 ) -> TokenStream {
     // ── event_type ──
     let event_type_impl = match event_type {
@@ -404,13 +418,6 @@ fn generate_child_event(
         }
     };
 
-    // ── raw_json — always delegate to parent ──
-    let raw_json_impl = quote! {
-        fn raw_json(&self) -> Option<&str> {
-            <#parent_ty as ::alloy_core::Event>::raw_json(&self.#parent_field_ident)
-        }
-    };
-
     // ── message type / get_message / get_plain_text ──
     let (segment_type_impl, get_message_impl);
     if let Some((mf, _)) = message_field {
@@ -452,7 +459,7 @@ fn generate_child_event(
     };
 
     // ── get_user_id ──
-    let get_user_id_impl = if let Some(uid) = user_id_field {
+    let get_user_id_impl = if let Some(uid) = user_id_field.clone() {
         quote! {
             fn get_user_id(&self) -> Option<String> {
                 Some(self.#uid.to_string())
@@ -465,6 +472,17 @@ fn generate_child_event(
             }
         }
     };
+
+    // ── get_scene ──
+    let get_scene_impl = build_scene_impl(
+        scene,
+        parent_field_ident,
+        parent_ty,
+        user_id_field,
+        group_id_field,
+        guild_id_field,
+        scene_id_field,
+    );
 
     // ── DowngradeAny ──
     let downgrade_any_impl = quote! {
@@ -484,14 +502,9 @@ fn generate_child_event(
             #event_name_impl
             #platform_impl
             #event_type_impl
-
-            fn as_any(&self) -> &dyn ::std::any::Any {
-                self
-            }
-
             #downgrade_any_impl
-            #raw_json_impl
             #get_user_id_impl
+            #get_scene_impl
             #segment_type_impl
             #get_message_impl
         }
@@ -500,5 +513,99 @@ fn generate_child_event(
     quote! {
         #deref_impls
         #event_impl
+    }
+}
+
+// ============================================================================
+// Scene code generation helper
+// ============================================================================
+
+/// Generates the `get_scene()` method body for a child event.
+///
+/// - `None` (no `scene` key): delegates to parent.
+/// - `"private"`: `Scene::Private { user_id }`.
+///   `user_id` comes from a `#[event(user_id)]` field on this struct if present;
+///   otherwise falls through the parent chain via `self.get_user_id()`.
+/// - `"group"`: `Scene::Group { group_id, user_id }`.
+///   `group_id` **must** be marked with `#[event(group_id)]` on this struct.
+///   `user_id` is `Some(local_field)` when `#[event(user_id)]` is set here, else `self.get_user_id()`.
+/// - `"guild"`: `Scene::Guild { guild_id }`.
+///   `guild_id` **must** be marked with `#[event(guild_id)]`.
+/// - `"other"`: `Scene::Other { id }`.
+///   `id` **must** be marked with `#[event(scene_id)]`.
+fn build_scene_impl(
+    scene: Option<&str>,
+    parent_field_ident: &Ident,
+    parent_ty: &Type,
+    user_id_field: Option<Ident>,
+    group_id_field: Option<Ident>,
+    guild_id_field: Option<Ident>,
+    scene_id_field: Option<Ident>,
+) -> TokenStream {
+    match scene {
+        None => quote! {
+            fn get_scene(&self) -> Option<::alloy_core::Scene> {
+                <#parent_ty as ::alloy_core::Event>::get_scene(&self.#parent_field_ident)
+            }
+        },
+        Some("private") => {
+            let user_id_expr = if let Some(uid) = user_id_field {
+                quote! { self.#uid.to_string() }
+            } else {
+                quote! { self.get_user_id()? }
+            };
+            quote! {
+                fn get_scene(&self) -> Option<::alloy_core::Scene> {
+                    Some(::alloy_core::Scene::Private {
+                        user_id: #user_id_expr,
+                    })
+                }
+            }
+        }
+        Some("group") => {
+            let gid = group_id_field
+                .expect("#[event(scene = \"group\")] requires a field marked #[event(group_id)]");
+            let user_id_expr = if let Some(uid) = user_id_field {
+                quote! { Some(self.#uid.to_string()) }
+            } else {
+                quote! { self.get_user_id() }
+            };
+            quote! {
+                fn get_scene(&self) -> Option<::alloy_core::Scene> {
+                    Some(::alloy_core::Scene::Group {
+                        group_id: self.#gid.to_string(),
+                        user_id: #user_id_expr,
+                    })
+                }
+            }
+        }
+        Some("guild") => {
+            let guild_id = guild_id_field
+                .expect("#[event(scene = \"guild\")] requires a field marked #[event(guild_id)]");
+            quote! {
+                fn get_scene(&self) -> Option<::alloy_core::Scene> {
+                    Some(::alloy_core::Scene::Guild {
+                        guild_id: self.#guild_id.to_string(),
+                    })
+                }
+            }
+        }
+        Some("other") => {
+            let sid = scene_id_field
+                .expect("#[event(scene = \"other\")] requires a field marked #[event(scene_id)]");
+            quote! {
+                fn get_scene(&self) -> Option<::alloy_core::Scene> {
+                    Some(::alloy_core::Scene::Other {
+                        id: self.#sid.to_string(),
+                    })
+                }
+            }
+        }
+        Some(unknown) => {
+            let msg = format!(
+                "unknown scene type `{unknown}`; expected one of: private, group, guild, other"
+            );
+            quote! { compile_error!(#msg); }
+        }
     }
 }

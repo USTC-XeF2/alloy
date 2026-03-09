@@ -3,15 +3,15 @@
 //! This module defines the `Bot` trait which represents an active bot instance
 //! that can receive events and send messages.
 
-use std::any::Any;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use downcast_rs::{DowncastSync, impl_downcast};
 use serde_json::Value;
 
 use crate::error::ApiResult;
-use crate::event::Event;
-use crate::message::ErasedMessage;
+use crate::event::Scene;
+use crate::message::Sendable;
 
 /// The core Bot trait.
 ///
@@ -31,7 +31,7 @@ use crate::message::ErasedMessage;
 /// Concrete implementations (e.g., `OneBotBot`) should provide
 /// strongly-typed API methods on top of `call_api`.
 #[async_trait]
-pub trait Bot: Send + Sync + 'static {
+pub trait Bot: DowncastSync + 'static {
     /// Returns the bot's unique identifier.
     fn id(&self) -> &str;
 
@@ -49,46 +49,17 @@ pub trait Bot: Send + Sync + 'static {
     /// The raw JSON response from the API.
     async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value>;
 
-    /// Sends a message in response to an event.
-    ///
-    /// This method extracts the session information (user_id, group_id, etc.)
-    /// from the event and constructs the appropriate API call.
+    /// Sends a message in a given scene.
     ///
     /// # Arguments
     ///
-    /// * `event` - The event to respond to
+    /// * `scene` - The scene to send the message to
     /// * `message` - The message content to send
     ///
     /// # Returns
     ///
     /// The message ID if successful.
-    async fn send(&self, event: &dyn Event, message: &str) -> ApiResult<String>;
-
-    /// Sends a rich (type-erased) message in response to an event.
-    ///
-    /// # Arguments
-    ///
-    /// * `event`   - The event to respond to
-    /// * `message` - A type-erased [`ErasedMessage`]; pass any `Message<S>` reference
-    async fn send_message(
-        &self,
-        event: &dyn Event,
-        message: &dyn ErasedMessage,
-    ) -> ApiResult<String>;
-
-    /// Returns self as an `Arc<dyn Any>` for safe downcasting.
-    ///
-    /// This method takes `Arc<Self>` to enable safe downcasting to concrete types
-    /// using `Arc::downcast`. Implementors should simply return `self`.
-    ///
-    /// # Example Implementation
-    ///
-    /// ```rust,ignore
-    /// fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-    ///     self
-    /// }
-    /// ```
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+    async fn send(&self, scene: &Scene, message: &dyn Sendable) -> ApiResult<String>;
 
     /// Called when the transport connection is lost.
     ///
@@ -103,6 +74,8 @@ pub trait Bot: Send + Sync + 'static {
     /// The default implementation does nothing.
     async fn on_disconnect(&self) {}
 }
+
+impl_downcast!(sync Bot);
 
 /// A boxed Bot trait object.
 pub type BoxedBot = Arc<dyn Bot>;

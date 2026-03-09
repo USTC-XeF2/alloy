@@ -238,9 +238,7 @@ where
                         reply_error
                     };
                     if should_reply {
-                        let bot = ctx.bot();
-                        let event = ctx.event();
-                        let _ = bot.send(event.as_ref(), &err.to_string()).await;
+                        err.to_string().process_response(&ctx).await;
                     }
                     Ok(())
                 }

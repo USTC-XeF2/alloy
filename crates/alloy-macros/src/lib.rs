@@ -19,9 +19,6 @@
 //! pub struct OneBotEvent {
 //!     pub time: i64,
 //!     pub self_id: i64,
-//!     #[serde(skip)]
-//!     #[event(raw_json)]
-//!     raw: Option<Arc<str>>,
 //! }
 //!
 //! // Child event — parent auto-detected from #[event(parent)] field
@@ -56,8 +53,8 @@ use syn::{DeriveInput, parse_macro_input};
 /// Derives event-related implementations for structs.
 ///
 /// Generates:
-/// - `impl Event` — `event_name()`, `platform()`, `event_type()`, `as_any()`,
-///   `downgrade_any()`, and optionally `raw_json()`, `get_message()`.
+/// - `impl Event` — `event_name()`, `platform()`, `event_type()`,
+///   `downgrade_any()`, and optionally `get_message()`.
 /// - `impl Deref<Target = Parent>` + `DerefMut` — when `#[event(parent)]` field exists.
 ///
 /// # Root events: `#[root_event(…)]`
@@ -73,7 +70,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// # Field-level attributes `#[event(…)]`
 ///
 /// - `parent` — Marks the parent field (type auto-detected)
-/// - `raw_json` — `Option<Arc<str>>` field providing raw JSON
 /// - `bot_id` — `Option<Arc<str>>` field providing bot ID
 /// - `message` — Field implementing `Message` trait, used for `get_message()`
 #[proc_macro_derive(BotEvent, attributes(event, root_event))]
