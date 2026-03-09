@@ -35,11 +35,11 @@ impl HandlerResponse for () {
 }
 
 /// Helper function to send a message using the bot from the context.
-async fn send_message(ctx: &AlloyContext, message: impl Sendable) {
+async fn send_message(ctx: &AlloyContext, message: &dyn Sendable) {
     let bot = ctx.bot();
     let event = ctx.event();
     if let Some(scene) = event.get_scene() {
-        if let Err(e) = bot.send(&scene, &message).await {
+        if let Err(e) = bot.send(&scene, message).await {
             error!("Failed to send message: {e}");
         }
     } else {
@@ -50,14 +50,14 @@ async fn send_message(ctx: &AlloyContext, message: impl Sendable) {
 /// Implementation for `String` - send message on Ok, log errors on Err.
 impl HandlerResponse for String {
     async fn process_response(self, ctx: &AlloyContext) {
-        send_message(ctx, self).await;
+        send_message(ctx, &self).await;
     }
 }
 
 /// Implementation for `Message<S>` - sends the message using `send_message`.
 impl<S: MessageSegment> HandlerResponse for Message<S> {
     async fn process_response(self, ctx: &AlloyContext) {
-        send_message(ctx, self).await;
+        send_message(ctx, &self).await;
     }
 }
 

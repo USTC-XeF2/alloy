@@ -261,6 +261,12 @@ impl PluginManager {
         let instance = desc.instantiate();
         let name = instance.name().to_string();
 
+        let config = self
+            .plugin_configs
+            .get(&name)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Value::Object(Map::default())));
+
         // Build the list of enabled service IDs (both provides and depends_on)
         let service_ids: HashSet<String> = instance
             .depends_on()
@@ -272,7 +278,7 @@ impl PluginManager {
 
         let context = Arc::new(PluginContext::new(
             name.clone(),
-            self.get_plugin_config(&name),
+            config,
             service_ids,
             self.services.clone(),
         ));
@@ -335,14 +341,6 @@ impl PluginManager {
         } else {
             false
         }
-    }
-
-    /// Retrieves the raw JSON config for a plugin by name, or an empty object if not found.
-    fn get_plugin_config(&self, name: &str) -> Arc<Value> {
-        self.plugin_configs
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(Value::Object(Map::default())))
     }
 
     /// Loads a single plugin in dependency order.

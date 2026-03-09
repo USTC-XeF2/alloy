@@ -300,7 +300,7 @@ impl AlloyRuntime {
     /// Runs the runtime with a custom shutdown future.
     pub async fn run_until<F>(&self, shutdown: F)
     where
-        F: std::future::Future<Output = ()>,
+        F: Future<Output = ()>,
     {
         self.start().await;
 

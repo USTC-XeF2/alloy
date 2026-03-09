@@ -23,13 +23,6 @@ use crate::extractor::FromContext;
 #[derive(Debug, Clone, Deref)]
 pub struct CommandArgs<T: Parser>(pub T);
 
-impl<T: Parser> CommandArgs<T> {
-    /// Unwraps the command value.
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
 impl<T: Parser + Clone + Send + 'static> FromContext for CommandArgs<T> {
     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
         ctx.state()
@@ -53,19 +46,5 @@ mod tests {
             arg: "test".to_string(),
         });
         assert_eq!(cmd.arg, "test");
-    }
-
-    #[test]
-    fn test_command_args_into_inner() {
-        #[derive(Parser, Clone)]
-        struct TestCmd {
-            arg: String,
-        }
-
-        let cmd = CommandArgs(TestCmd {
-            arg: "value".to_string(),
-        });
-        let inner = cmd.into_inner();
-        assert_eq!(inner.arg, "value");
     }
 }

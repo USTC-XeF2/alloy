@@ -18,7 +18,7 @@ use crate::error::TransportResult;
 /// closure is constructed by the transport layer. Callers supply the endpoint
 /// (relative path) and request body.
 pub type PostJsonFn = Arc<
-    dyn Fn(&str, Value) -> Pin<Box<dyn std::future::Future<Output = TransportResult<Value>> + Send>>
+    dyn Fn(&str, Value) -> Pin<Box<dyn Future<Output = TransportResult<Value>> + Send>>
         + Send
         + Sync,
 >;
