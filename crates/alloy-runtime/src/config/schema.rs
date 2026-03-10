@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use figment::value::Value;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 // =============================================================================
 // Root Configuration
@@ -21,6 +21,10 @@ use serde::{Deserialize, Serialize};
 pub struct AlloyConfig {
     /// Logging configuration.
     pub logging: LoggingConfig,
+
+    /// Command system configuration.
+    #[cfg(feature = "command")]
+    pub command: alloy_framework::command::CommandConfig,
 
     /// Adapter-specific configurations.
     ///

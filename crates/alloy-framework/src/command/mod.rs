@@ -35,18 +35,13 @@
 //!     });
 //! ```
 
-use std::cell::RefCell;
-
+pub mod config;
 pub mod extractor;
 pub mod layer;
 pub mod segment;
 pub mod split;
 
+pub use config::CommandConfig;
 pub use extractor::CommandArgs;
 pub use layer::{CommandLayer, CommandService, on_command};
 pub use segment::{AtSegment, HandleRegistry, ImageSegment};
-
-// Thread-local registry for resolving handles during clap's FromStr parsing.
-thread_local! {
-    pub(crate) static CURRENT_REGISTRY: RefCell<Option<segment::HandleRegistry>> = const { RefCell::new(None) };
-}

@@ -10,6 +10,9 @@ license = { workspace = true }
 [features]
 default = []
 
+# Command system
+command = ["alloy-framework/command"]
+
 # Config format features
 toml-config = ["figment/toml"]
 yaml-config = ["figment/yaml"]

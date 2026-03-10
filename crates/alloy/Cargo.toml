@@ -18,7 +18,7 @@ alloy-transport = { workspace = true }
 default = ["command", "runtime", "toml-config"]
 
 # Structured command support
-command = ["alloy-framework/command"]
+command = ["alloy-framework/command", "alloy-runtime?/command"]
 
 # Runtime support
 runtime = ["dep:alloy-runtime"]

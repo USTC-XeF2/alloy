@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::future;
 use parking_lot::Mutex;
+use serde::Deserialize;
 use tokio::signal;
 use tracing::{error, info, warn};
 
@@ -126,17 +127,15 @@ impl AlloyRuntime {
             "Runtime initialized from configuration"
         );
 
-        // Convert plugin configs from figment::value::Value to serde_json::Value
-        // so that PluginManager (in alloy-framework) stays free of figment.
-        let plugin_configs = config
-            .plugins
-            .iter()
-            .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap_or_default()))
-            .collect();
+        let plugin_manager = PluginManager::new(
+            config.plugins.clone(),
+            #[cfg(feature = "command")]
+            config.command.clone(),
+        );
 
         Self {
             config,
-            plugin_manager: Arc::new(PluginManager::new(plugin_configs)),
+            plugin_manager: Arc::new(plugin_manager),
             transport_context: transport_ctx,
             bridges: Mutex::new(HashMap::new()),
             running: AtomicBool::new(false),
@@ -166,8 +165,8 @@ impl AlloyRuntime {
         let adapter_name = A::NAME;
 
         // Try to get config from file, otherwise use default
-        let config: A::Config = if let Some(config_value) = self.config.adapters.get(adapter_name) {
-            config_value.clone().deserialize().map_err(|e| {
+        let config = if let Some(config_value) = self.config.adapters.get(adapter_name) {
+            A::Config::deserialize(config_value).map_err(|e| {
                 RuntimeError(format!(
                     "Failed to deserialize config for adapter '{adapter_name}': {e}"
                 ))

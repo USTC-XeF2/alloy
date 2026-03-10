@@ -113,15 +113,24 @@ pub struct BaseContext {
     bot: BoxedBot,
     /// Cleared by any handler that calls [`AlloyContext::stop_propagation`].
     is_propagating: AtomicBool,
+    /// Command system configuration, cloned from [`AlloyConfig`] at dispatch time.
+    #[cfg(feature = "command")]
+    command_config: Arc<crate::command::CommandConfig>,
 }
 
 impl BaseContext {
     /// Creates a new shared event context.
-    pub(crate) fn new(event: BoxedEvent, bot: BoxedBot) -> Self {
+    pub(crate) fn new(
+        event: BoxedEvent,
+        bot: BoxedBot,
+        #[cfg(feature = "command")] command_config: Arc<crate::command::CommandConfig>,
+    ) -> Self {
         Self {
             event,
             bot,
             is_propagating: AtomicBool::new(true),
+            #[cfg(feature = "command")]
+            command_config,
         }
     }
 
@@ -319,5 +328,11 @@ impl AlloyContext {
 
     pub fn state(&self) -> &State {
         &self.state
+    }
+
+    /// Returns the command configuration from the shared base context.
+    #[cfg(feature = "command")]
+    pub(crate) fn command_config(&self) -> &crate::command::CommandConfig {
+        &self.base.command_config
     }
 }

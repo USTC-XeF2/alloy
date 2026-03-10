@@ -216,11 +216,18 @@ pub struct PluginManager {
     /// Managed exclusively by [`load_all`] / [`unload_all`].
     /// Wrapped in Arc for sharing with PluginContext instances.
     services: Arc<RwLock<ServiceMap>>,
+    /// Command system configuration, injected from the runtime config when the
+    /// `command` feature is enabled.
+    #[cfg(feature = "command")]
+    command_config: Arc<crate::command::CommandConfig>,
 }
 
 impl PluginManager {
     /// Creates a new manager with the given per-plugin config map.
-    pub fn new(plugin_configs: HashMap<String, Value>) -> Self {
+    pub fn new(
+        plugin_configs: HashMap<String, Value>,
+        #[cfg(feature = "command")] command_config: crate::command::CommandConfig,
+    ) -> Self {
         Self {
             plugins: RwLock::new(HashMap::new()),
             plugin_configs: plugin_configs
@@ -228,6 +235,8 @@ impl PluginManager {
                 .map(|(k, v)| (k, Arc::new(v)))
                 .collect(),
             services: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "command")]
+            command_config: Arc::new(command_config),
         }
     }
 
@@ -594,7 +603,12 @@ impl Dispatcher for PluginManager {
     async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) {
         let event_name = event.event_name();
 
-        let base = Arc::new(BaseContext::new(event, bot));
+        let base = Arc::new(BaseContext::new(
+            event,
+            bot,
+            #[cfg(feature = "command")]
+            self.command_config.clone(),
+        ));
 
         // Snapshot active plugins and their fixed contexts — brief read lock.
         let active_plugins: Vec<(Arc<Plugin>, Arc<PluginContext>)> = {

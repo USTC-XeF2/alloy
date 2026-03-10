@@ -1,5 +1,7 @@
-use derive_more::{AsRef, Deref, Display};
+use std::cell::RefCell;
 use std::collections::HashMap;
+
+use derive_more::{AsRef, Deref, Display};
 
 /// Prefix used for image placeholder tokens in command argument strings.
 pub const IMAGE_PLACEHOLDER_PREFIX: &str = "\x00IMG_";
@@ -15,6 +17,11 @@ pub const AT_PLACEHOLDER_PREFIX: &str = "\x00AT_";
 pub struct HandleRegistry {
     pub images: HashMap<String, String>,
     pub ats: HashMap<String, String>,
+}
+
+// Thread-local registry for resolving handles during clap's FromStr parsing.
+thread_local! {
+    pub(crate) static CURRENT_REGISTRY: RefCell<Option<HandleRegistry>> = const { RefCell::new(None) };
 }
 
 /// A segment containing an image that appeared in a command argument.
@@ -50,7 +57,7 @@ impl std::str::FromStr for ImageSegment {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Resolve from thread-local registry set during parsing.
-        super::CURRENT_REGISTRY.with(|reg| {
+        CURRENT_REGISTRY.with(|reg| {
             reg.borrow()
                 .as_ref()
                 .and_then(|r| r.images.get(s).cloned())
@@ -93,7 +100,7 @@ impl std::str::FromStr for AtSegment {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Resolve from thread-local registry set during parsing.
-        super::CURRENT_REGISTRY.with(|reg| {
+        CURRENT_REGISTRY.with(|reg| {
             reg.borrow()
                 .as_ref()
                 .and_then(|r| r.ats.get(s).cloned())
