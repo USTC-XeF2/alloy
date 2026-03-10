@@ -3,12 +3,10 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use tower::BoxError;
 use tower::util::BoxCloneSyncService;
-use tower::{BoxError, Service};
-use tracing::{debug, error};
 
 use crate::context::{AlloyContext, PluginContext, ServiceArc};
-use crate::error::EventSkipped;
 
 /// Type of the async `on_load` function stored inside a [`Plugin`].
 ///
@@ -187,6 +185,13 @@ impl Plugin {
         &self.depends_on
     }
 
+    /// Returns a slice of this plugin's handlers for the [`PluginManager`] to drive.
+    ///
+    /// [`PluginManager`]: crate::manager::PluginManager
+    pub(crate) fn handlers(&self) -> &[BoxedHandlerService] {
+        &self.handlers
+    }
+
     /// Service factory entries declared by this plugin.
     ///
     /// The [`PluginManager`] iterates these during `load_all` to materialise
@@ -212,28 +217,6 @@ impl Plugin {
             f(ctx).await
         } else {
             Ok(())
-        }
-    }
-
-    /// Called for every incoming event.  Runs the handler chain.
-    ///
-    /// The runtime injects the plugin's raw config JSON into the context
-    /// **before** calling this method, so handlers can use [`PluginConfig<T>`].
-    pub(crate) async fn dispatch_event(&self, ctx: AlloyContext) {
-        for mut svc in self.handlers.iter().cloned() {
-            if !ctx.is_propagating() {
-                debug!(plugin = %self.name, "Propagation stopped, halting handler chain");
-                break;
-            }
-            if let Err(e) = svc.call(ctx.clone()).await
-                && !e.is::<EventSkipped>()
-            {
-                error!(
-                    plugin = %self.name,
-                    error  = %e,
-                    "Handler returned an error"
-                );
-            }
         }
     }
 

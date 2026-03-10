@@ -33,15 +33,18 @@
 //! ```
 
 use std::collections::{HashMap, HashSet};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::future;
+use futures::{FutureExt, future};
 use parking_lot::RwLock;
 use serde_json::{Map, Value};
-use tracing::{error, info, span, warn};
+use tower::ServiceExt;
+use tracing::{error, info, warn};
 
 use crate::context::{AlloyContext, BaseContext, PluginContext, ServiceMap};
+use crate::error::EventSkipped;
 use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor};
 use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
 
@@ -587,22 +590,11 @@ impl PluginManager {
 
 #[async_trait]
 impl Dispatcher for PluginManager {
-    /// Dispatches `event` to all **active** plugins in **isolated async tasks**.
-    ///
-    /// A single [`BaseContext`] is created and shared (via `Arc`) across every
-    /// plugin.  Each plugin runs in its own isolated async task, allowing panics
-    /// in one plugin to be contained without affecting others.
-    ///
-    /// Plugins are executed sequentially in registration order. If any plugin calls
-    /// [`AlloyContext::stop_propagation`], the loop exits immediately and
-    /// subsequent plugins are skipped. Panics within a plugin are caught and logged,
-    /// but do not halt the dispatch process.
-    ///
-    /// Each plugin uses its fixed PluginContext that was created at load time,
-    /// ensuring consistent context across event dispatches.
+    /// Dispatches `event` to all **active** plugins' handlers in a single flat
+    /// list, executed **sequentially**.  Each handler runs in its own spawned
+    /// task for an isolated runtime environment.  If any handler calls
+    /// `stop_propagation`, the remaining handlers are skipped.
     async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) {
-        let event_name = event.event_name();
-
         let base = Arc::new(BaseContext::new(
             event,
             bot,
@@ -610,47 +602,38 @@ impl Dispatcher for PluginManager {
             self.command_config.clone(),
         ));
 
-        // Snapshot active plugins and their fixed contexts — brief read lock.
-        let active_plugins: Vec<(Arc<Plugin>, Arc<PluginContext>)> = {
+        // Collect all handlers from all active plugins into a single flat list.
+        let all_handlers: Vec<_> = {
             let plugins = self.plugins.read();
             plugins
                 .iter()
                 .filter(|(_, e)| e.state == PluginLoadState::Active)
-                .map(|(_, e)| (e.plugin.clone(), e.context.clone()))
+                .flat_map(|(_, e)| {
+                    e.plugin
+                        .handlers()
+                        .iter()
+                        .cloned()
+                        .map(|svc| (svc, e.context.clone()))
+                })
                 .collect()
         };
 
-        // Dispatch sequentially in isolated tasks; stop early if propagation is halted.
-        for (plugin, plugin_ctx) in active_plugins {
+        // Execute handlers sequentially; each runs in its own spawned task.
+        for (svc, plugin_ctx) in all_handlers {
             if !base.is_propagating() {
                 break;
             }
 
             let ctx = AlloyContext::new(base.clone(), plugin_ctx.clone());
 
-            let plugin_clone = plugin.clone();
-
-            // Spawn each plugin in an isolated async task to catch panics and
-            // provide independent execution context.
-            let task_handle = tokio::spawn(async move {
-                let span = span!(
-                    tracing::Level::DEBUG,
-                    "dispatch",
-                    event_name = %event_name,
-                    plugin = %plugin_clone.name()
-                );
-                let _enter = span.enter();
-
-                plugin_clone.dispatch_event(ctx).await;
-            });
-
-            // Wait for the task and handle any panics
-            if let Err(e) = task_handle.await {
-                error!(
-                    plugin = %plugin.name(),
-                    "Plugin task error: {}",
-                    e
-                );
+            match AssertUnwindSafe(svc.oneshot(ctx)).catch_unwind().await {
+                Ok(Err(e)) if !e.is::<EventSkipped>() => {
+                    error!(plugin = plugin_ctx.name(), error = %e, "Handler returned an error");
+                }
+                Err(_) => {
+                    error!(plugin = plugin_ctx.name(), "Handler panicked");
+                }
+                _ => {}
             }
         }
     }
