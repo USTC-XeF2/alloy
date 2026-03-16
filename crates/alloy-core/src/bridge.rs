@@ -7,15 +7,15 @@
 //! | Trait | Caller | Methods |
 //! |---|---|---|
 //! | [`ConnectionHandler`](crate::transport::ConnectionHandler) | transport layer | `get_bot_id`, `register_connection`, `on_message`, `on_disconnect`, `add_listener` |
-//! | [`AdapterContext`](crate::adapter::AdapterContext) | adapter implementation | `transport`, `get_bot`, `as_connection_handler` |
-//! | (direct methods) | runtime | `on_start`, `on_shutdown`, `bot_ids`, `bot_count` |
+//! | [`Adapter`](crate::adapter::Adapter) lifecycle hooks | adapter implementation | `on_start`, `on_shutdown` |
+//! | (direct methods) | runtime | `on_start`, `on_shutdown`, `bots` |
 //!
 //! # Architecture
 //!
 //! ```text
 //! Transport ←→ Arc<dyn ConnectionHandler>
 //!                     ↕ (implemented by AdapterBridge)
-//! Adapter  ←→ Arc<dyn AdapterContext>
+//! Adapter  ←→ (TransportContext, Arc<dyn ConnectionHandler>)
 //!                     ↕
 //! Runtime  ←→ Arc<AdapterBridge>
 //! ```
@@ -28,8 +28,8 @@ use parking_lot::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
-use crate::adapter::{Adapter, AdapterContext};
-use crate::bot::BoxedBot;
+use crate::adapter::Adapter;
+use crate::bot::{Bot, BoxedBot};
 use crate::error::AdapterResult;
 use crate::event::{BoxedEvent, EventType};
 use crate::message::RichText;
@@ -37,19 +37,30 @@ use crate::transport::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, Sender, TransportContext,
 };
 
+#[async_trait]
+pub trait BridgeRuntime: Send + Sync {
+    /// Starts the adapter (delegates to [`Adapter::on_start`]).
+    async fn on_start(self: Arc<Self>) -> AdapterResult<()>;
+
+    /// Shuts down the adapter (delegates to [`Adapter::on_shutdown`]).
+    async fn on_shutdown(self: Arc<Self>) -> AdapterResult<()>;
+
+    /// Returns a list of all active bot instances.
+    fn bots(&self) -> Vec<Arc<dyn Bot>>;
+}
+
 /// Event dispatcher — receives protocol events and distributes them to handlers.
 ///
 /// Implementations must be async to allow spawning handler tasks and awaiting
 /// their creation before returning.
 ///
 /// Use `Arc<dyn Dispatcher>` to pass a dispatcher through the bridge layer.
-#[async_trait]
-pub trait Dispatcher: Send + Sync {
+pub trait Dispatcher: Send + Sync + 'static {
     /// Dispatch `event` (originated from `bot`) to all registered handlers.
     ///
     /// Returns when the dispatch operation is complete (e.g., all handler tasks
     /// have been spawned, but not necessarily finished).
-    async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot);
+    fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) -> impl Future<Output = ()> + Send;
 }
 
 // =============================================================================
@@ -60,31 +71,25 @@ pub trait Dispatcher: Send + Sync {
 ///
 /// - Implements [`ConnectionHandler`] — transport implementations call it when
 ///   connections are established or data arrives.
-/// - Implements [`AdapterContext`] — adapters call it during `on_start` to register
-///   listeners and access transport capabilities.
 /// - Exposes runtime-facing methods (`on_start`, `on_shutdown`, `bot_ids`, `bot_count`)
 ///   directly, since the runtime holds `Arc<AdapterBridge>`.
 ///
 /// Each `AdapterBridge` manages bots for exactly one adapter instance.
-pub struct AdapterBridge {
-    adapter: Box<dyn Adapter>,
+pub struct AdapterBridge<A: Adapter, D: Dispatcher> {
+    adapter: A,
     /// Active bots and their connection handles, keyed by bot ID.
-    entries: RwLock<HashMap<String, (BoxedBot, ConnectionHandle)>>,
+    entries: RwLock<HashMap<String, (Arc<A::Bot>, ConnectionHandle)>>,
     /// Event dispatcher — distributes parsed events to handlers.
-    event_dispatcher: Arc<dyn Dispatcher>,
+    event_dispatcher: Arc<D>,
     /// Available transport capabilities.
     transport: TransportContext,
     /// Active listener handles (to keep them alive).
     listeners: Mutex<Vec<ListenerHandle>>,
 }
 
-impl AdapterBridge {
+impl<A: Adapter, D: Dispatcher> AdapterBridge<A, D> {
     /// Creates a new adapter bridge.
-    pub fn new(
-        adapter: Box<dyn Adapter>,
-        event_dispatcher: Arc<dyn Dispatcher>,
-        transport: TransportContext,
-    ) -> Self {
+    pub fn new(adapter: A, event_dispatcher: Arc<D>, transport: TransportContext) -> Self {
         Self {
             adapter,
             entries: RwLock::new(HashMap::new()),
@@ -93,35 +98,27 @@ impl AdapterBridge {
             listeners: Mutex::new(Vec::new()),
         }
     }
+}
 
-    // =========================================================================
-    // Runtime-facing methods
-    // =========================================================================
-
+#[async_trait]
+impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
     /// Starts the adapter (delegates to [`Adapter::on_start`]).
-    pub async fn on_start(self: &Arc<Self>) -> AdapterResult<()> {
-        let ctx = Box::new(AdapterContextWrapper {
-            bridge: self.clone(),
-        });
-        self.adapter.on_start(ctx).await
+    async fn on_start(self: Arc<Self>) -> AdapterResult<()> {
+        self.adapter.on_start(self.transport, self.clone()).await
     }
 
     /// Shuts down the adapter (delegates to [`Adapter::on_shutdown`]).
-    pub async fn on_shutdown(self: &Arc<Self>) -> AdapterResult<()> {
-        let ctx = Box::new(AdapterContextWrapper {
-            bridge: self.clone(),
-        });
-        self.adapter.on_shutdown(ctx).await
+    async fn on_shutdown(self: Arc<Self>) -> AdapterResult<()> {
+        self.adapter.on_shutdown().await
     }
 
-    /// Returns the IDs of all active bots.
-    pub fn bot_ids(&self) -> Vec<String> {
-        self.entries.read().keys().cloned().collect()
-    }
-
-    /// Returns the count of active bots.
-    pub fn bot_count(&self) -> usize {
-        self.entries.read().len()
+    /// Returns a list of all active bot instances.
+    fn bots(&self) -> Vec<Arc<dyn Bot>> {
+        self.entries
+            .read()
+            .values()
+            .map(|(bot, _)| bot.clone() as Arc<dyn Bot>)
+            .collect()
     }
 }
 
@@ -130,7 +127,7 @@ impl AdapterBridge {
 // =============================================================================
 
 #[async_trait]
-impl ConnectionHandler for AdapterBridge {
+impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
     fn get_bot_id(&self, conn_info: ConnectionInfo) -> crate::error::TransportResult<String> {
         self.adapter.get_bot_id(conn_info)
     }
@@ -156,7 +153,7 @@ impl ConnectionHandler for AdapterBridge {
                 shutdown_token: shutdown_token.clone(),
             };
             let bot = self.adapter.create_bot(bot_id, &handle);
-            entries.insert(bot_id.to_string(), (bot, handle));
+            entries.insert(bot_id.to_string(), (Arc::new(bot), handle));
             info!(bot_id = %bot_id, "Bot registered");
             shutdown_token
         }
@@ -201,25 +198,5 @@ impl ConnectionHandler for AdapterBridge {
 
     fn add_listener(&self, handle: ListenerHandle) {
         self.listeners.lock().push(handle);
-    }
-}
-
-// =============================================================================
-// AdapterContext impl — called by adapter implementations
-// =============================================================================
-
-/// Wrapper type that carries an Arc<AdapterBridge> and implements AdapterContext.
-/// This allows as_connection_handler() to return Arc<dyn ConnectionHandler>.
-struct AdapterContextWrapper {
-    bridge: Arc<AdapterBridge>,
-}
-
-impl AdapterContext for AdapterContextWrapper {
-    fn transport(&self) -> &TransportContext {
-        &self.bridge.transport
-    }
-
-    fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler> {
-        self.bridge.clone() as Arc<dyn ConnectionHandler>
     }
 }

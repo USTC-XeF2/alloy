@@ -59,7 +59,6 @@ name = "alloy-framework"
 version = "0.1.0"
 dependencies = [
  "alloy-core",
- "async-trait",
  "clap",
  "derive_more",
  "futures",

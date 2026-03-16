@@ -7,32 +7,10 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
-use crate::bot::BoxedBot;
+use crate::bot::Bot;
 use crate::error::{AdapterResult, TransportResult};
 use crate::event::BoxedEvent;
 use crate::transport::{ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportContext};
-
-// =============================================================================
-// AdapterContext Trait — called by adapter implementations
-// =============================================================================
-
-/// Interface exposed to [`Adapter`] implementations during `on_start`.
-///
-/// Adapters receive `Arc<dyn AdapterContext>` and use it to access transport
-/// capabilities and query active bots.
-///
-/// Handle registration is handled automatically by the transport capabilities
-/// via [`ConnectionHandler::add_listener`] and [`ConnectionHandler::add_connection`].
-pub trait AdapterContext: Send + Sync {
-    /// Returns a reference to the transport capability context.
-    fn transport(&self) -> &TransportContext;
-
-    /// Casts this context to a `ConnectionHandler` reference for passing to
-    /// transport capabilities (e.g., `ws_server(config, ctx.as_connection_handler())`).
-    fn as_connection_handler(&self) -> Arc<dyn ConnectionHandler>;
-}
 
 // =============================================================================
 // Adapter Trait
@@ -44,9 +22,21 @@ pub trait AdapterContext: Send + Sync {
 /// - **Protocol hooks**: Bot ID extraction, bot creation, message parsing
 ///   — these are called internally by [`AdapterBridge`] via [`TransportCallback`].
 /// - **Lifecycle**: `on_start` / `on_shutdown`
-///   — receives [`AdapterContext`] for transport access.
-#[async_trait]
-pub trait Adapter: Send + Sync {
+///   — `on_start` receives transport capabilities and connection handler,
+///   and `on_shutdown` runs as a parameterless hook.
+pub trait Adapter: Send + Sync + 'static {
+    /// The adapter name.
+    const NAME: &'static str;
+
+    /// The configuration type, deserialized from `alloy.toml`.
+    type Config: serde::de::DeserializeOwned + Default;
+
+    /// The bot type associated with this adapter.
+    type Bot: Bot;
+
+    /// Creates an adapter instance from its deserialized configuration.
+    fn from_config(config: Self::Config) -> Self;
+
     /// Extract a bot ID from connection metadata.
     ///
     /// Called when a new transport connection is established.
@@ -57,7 +47,7 @@ pub trait Adapter: Send + Sync {
     /// Create a bot instance for a new connection.
     ///
     /// Called after [`get_bot_id`](Self::get_bot_id) succeeds.
-    fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> BoxedBot;
+    fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> Self::Bot;
 
     /// Parse an incoming message into an event.
     ///
@@ -65,43 +55,38 @@ pub trait Adapter: Send + Sync {
     /// Return `None` for non-event messages (e.g., API responses).
     /// The bot is provided for protocol-specific handling
     /// (e.g., forwarding API responses to the bot instance).
-    async fn on_message(&self, bot: &BoxedBot, data: &[u8]) -> Option<BoxedEvent>;
+    fn on_message(
+        &self,
+        bot: &Self::Bot,
+        data: &[u8],
+    ) -> impl Future<Output = Option<BoxedEvent>> + Send;
 
     /// Called when the adapter should start.
     ///
-    /// Use the context to access transport capabilities and register listeners.
+    /// Use `transport` to access capabilities and `connection_handler` to
+    /// register listeners.
     ///
     /// ```rust,ignore
-    /// async fn on_start(&self, ctx: Box<dyn AdapterContext>) -> AdapterResult<()> {
-    ///     if let Some(ws_server) = ctx.transport().ws_server() {
+    /// async fn on_start(
+    ///     &self,
+    ///     transport: TransportContext,
+    ///     connection_handler: Arc<dyn ConnectionHandler>,
+    /// ) -> AdapterResult<()> {
+    ///     if let Some(ws_server) = transport.ws_server() {
     ///         let config = WsServerConfig::new("0.0.0.0", 8080, "/ws");
-    ///         ws_server(config, ctx.as_connection_handler()).await?;
+    ///         ws_server(config, connection_handler).await?;
     ///     }
     ///     Ok(())
     /// }
     /// ```
-    async fn on_start(&self, ctx: Box<dyn AdapterContext>) -> AdapterResult<()>;
+    fn on_start(
+        &self,
+        transport: TransportContext,
+        connection_handler: Arc<dyn ConnectionHandler>,
+    ) -> impl Future<Output = AdapterResult<()>> + Send;
 
     /// Called when the adapter is shutting down.
-    async fn on_shutdown(&self, _ctx: Box<dyn AdapterContext>) -> AdapterResult<()> {
-        Ok(())
+    fn on_shutdown(&self) -> impl Future<Output = AdapterResult<()>> + Send {
+        async { Ok(()) }
     }
-}
-
-/// A boxed adapter trait object.
-pub type BoxedAdapter = Arc<dyn Adapter>;
-
-/// Trait for adapters that can be created from TOML configuration.
-///
-/// Separates compile-time concerns (`Config` type, `from_config()`)
-/// from the object-safe [`Adapter`] trait.
-pub trait ConfigurableAdapter: Adapter {
-    /// The adapter name used as the config key.
-    const NAME: &'static str;
-
-    /// The configuration type, deserialized from `alloy.toml`.
-    type Config: serde::de::DeserializeOwned + Default;
-
-    /// Creates an adapter instance from its deserialized configuration.
-    fn from_config(config: Self::Config) -> Self;
 }

@@ -42,9 +42,9 @@ pub mod transport;
 pub use linkme;
 
 // Re-export core types for public API
-pub use adapter::{Adapter, AdapterContext, BoxedAdapter, ConfigurableAdapter};
+pub use adapter::Adapter;
 pub use bot::{Bot, BoxedBot};
-pub use bridge::{AdapterBridge, Dispatcher};
+pub use bridge::{AdapterBridge, BridgeRuntime, Dispatcher};
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };

@@ -36,7 +36,6 @@ use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use futures::{FutureExt, future};
 use parking_lot::RwLock;
 use serde_json::{Map, Value};
@@ -588,7 +587,6 @@ impl PluginManager {
 // Dispatcher impl
 // =============================================================================
 
-#[async_trait]
 impl Dispatcher for PluginManager {
     /// Dispatches `event` to all **active** plugins' handlers in a single flat
     /// list, executed **sequentially**.  Each handler runs in its own spawned

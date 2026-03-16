@@ -30,7 +30,7 @@ use tracing::{error, info, warn};
 use crate::config::{AlloyConfig, ConfigLoader};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::logging;
-use alloy_core::{AdapterBridge, ConfigurableAdapter, TransportContext};
+use alloy_core::{Adapter, AdapterBridge, BridgeRuntime, TransportContext};
 use alloy_framework::{manager::PluginManager, plugin::PluginDescriptor};
 
 /// The main Alloy runtime that orchestrates adapters, transports, and plugins.
@@ -72,7 +72,7 @@ pub struct AlloyRuntime {
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges, created eagerly on registration.
-    bridges: Mutex<HashMap<String, Arc<AdapterBridge>>>,
+    bridges: Mutex<HashMap<String, Arc<dyn BridgeRuntime>>>,
     /// Whether the runtime is running.
     running: AtomicBool,
 }
@@ -160,7 +160,7 @@ impl AlloyRuntime {
     /// ```
     pub fn register_adapter<A>(&self) -> RuntimeResult<()>
     where
-        A: ConfigurableAdapter + 'static,
+        A: Adapter,
     {
         let adapter_name = A::NAME;
 
@@ -179,7 +179,7 @@ impl AlloyRuntime {
             Default::default()
         };
 
-        let adapter = Box::new(A::from_config(config));
+        let adapter = A::from_config(config);
         let bridge = Arc::new(AdapterBridge::new(
             adapter,
             self.plugin_manager.clone(),
