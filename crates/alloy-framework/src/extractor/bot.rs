@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use derive_more::{AsRef, Deref};
 
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
 use alloy_core::{Bot as BotTrait, BoxedBot};
@@ -19,7 +19,7 @@ pub struct Bot<T: BotTrait>(Arc<T>);
 ///
 /// This enables handlers to inject a concrete bot type and access protocol-specific APIs:
 impl<T: BotTrait> FromContext for Bot<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.bot()
             .clone()
             .downcast_arc::<T>()
@@ -43,7 +43,7 @@ impl<T: BotTrait> FromContext for Bot<T> {
 /// }
 /// ```
 impl FromContext for BoxedBot {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         Ok(ctx.bot().clone())
     }
 }

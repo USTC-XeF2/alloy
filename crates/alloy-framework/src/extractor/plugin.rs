@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use derive_more::{AsRef, Deref, DerefMut};
 
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::ExtractResult;
 use crate::extractor::FromContext;
 
 /// Extractor that provides a handler with its plugin's typed configuration.
 ///
 /// The runtime automatically injects the plugin's raw JSON section from
-/// `alloy.toml → plugins.<plugin_name>` into every [`AlloyContext`] before
+/// `alloy.toml → plugins.<plugin_name>` into every [`HandlerContext`] before
 /// the handler chain runs.  `PluginConfig<T>` deserialises that JSON into `T`.
 ///
 /// If the config section is absent or empty, `T::default()` is used (requires
@@ -19,7 +19,7 @@ use crate::extractor::FromContext;
 pub struct PluginConfig<T>(T);
 
 impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         Ok(PluginConfig(
             ctx.plugin().get_config::<T>().unwrap_or_default(),
         ))
@@ -39,7 +39,7 @@ impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConf
 pub struct PluginState<T>(pub T);
 
 impl<T: Clone + Send + 'static> FromContext for PluginState<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.plugin()
             .state()
             .get::<T>()
@@ -74,7 +74,7 @@ impl<T: Clone + Send + 'static> FromContext for PluginState<T> {
 pub struct ServiceRef<T: ?Sized>(Arc<T>);
 
 impl<T: ?Sized + Send + Sync + 'static> FromContext for ServiceRef<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.require_service::<T>().map(ServiceRef)
     }
 }

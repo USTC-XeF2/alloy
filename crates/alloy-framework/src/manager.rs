@@ -17,7 +17,7 @@
 //!   of its own [`PluginContext`](crate::context::PluginContext).
 //! - Implements [`Dispatcher`]: on each incoming event it invokes all **active**
 //!   plugins **sequentially** in registration order, sharing a single
-//!   [`BaseContext`](crate::context::BaseContext).  Any plugin may call
+//!   [`EventContext`](crate::context::EventContext).  Any plugin may call
 //!   `stop_propagation` to short-circuit the remaining plugins.
 //!
 //! # Example
@@ -42,7 +42,7 @@ use serde_json::{Map, Value};
 use tower::ServiceExt;
 use tracing::{error, info, warn};
 
-use crate::context::{AlloyContext, BaseContext, PluginContext, ServiceMap};
+use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
 use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor};
 use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
@@ -398,7 +398,7 @@ impl PluginManager {
         }
 
         // ── 2. Initialise services in parallel ───────────────────────────
-        let all_services = future::join_all(plugin.service_entrys().iter().map(|entry| {
+        let all_services = future::join_all(plugin.service_entries().iter().map(|entry| {
             let id = entry.id.to_string();
             let ctx = ctx.clone();
             async move {
@@ -486,7 +486,7 @@ impl PluginManager {
         // Remove services.
         {
             let mut svc_map = self.services.write();
-            for entry in plugin.service_entrys() {
+            for entry in plugin.service_entries() {
                 svc_map.remove(&entry.type_id);
             }
         }
@@ -595,7 +595,7 @@ impl Dispatcher for PluginManager {
     /// task for an isolated runtime environment.  If any handler calls
     /// `stop_propagation`, the remaining handlers are skipped.
     async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) {
-        let base = Arc::new(BaseContext::new(
+        let base = Arc::new(EventContext::new(
             event,
             bot,
             #[cfg(feature = "command")]
@@ -624,9 +624,12 @@ impl Dispatcher for PluginManager {
                 break;
             }
 
-            let ctx = AlloyContext::new(base.clone(), plugin_ctx.clone());
+            let handler_ctx = HandlerContext::new(base.clone(), plugin_ctx.clone());
 
-            match AssertUnwindSafe(svc.oneshot(ctx)).catch_unwind().await {
+            match AssertUnwindSafe(svc.oneshot(handler_ctx))
+                .catch_unwind()
+                .await
+            {
                 Ok(Err(e)) if !e.is::<EventSkipped>() => {
                     error!(plugin = plugin_ctx.name(), error = %e, "Handler returned an error");
                 }

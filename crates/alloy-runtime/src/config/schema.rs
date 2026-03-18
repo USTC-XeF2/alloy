@@ -36,7 +36,7 @@ pub struct AlloyConfig {
     ///
     /// Keyed by plugin name (must match the `name` field in the plugin descriptor).
     /// Each entry is deserialised into the plugin's declared `config_type` at load
-    /// time and injected into every [`AlloyContext`] for that plugin run.
+    /// time and injected into every [`HandlerContext`] for that plugin run.
     ///
     /// ```toml
     /// [plugins.echo]
@@ -46,7 +46,7 @@ pub struct AlloyConfig {
     /// base_dir = "./bot_data"
     /// ```
     ///
-    /// [`AlloyContext`]: alloy_framework::context::AlloyContext
+    /// [`HandlerContext`]: alloy_framework::context::HandlerContext
     #[serde(default)]
     pub plugins: HashMap<String, Value>,
 }

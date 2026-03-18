@@ -11,7 +11,7 @@ pub const AT_PLACEHOLDER_PREFIX: &str = "\x00AT_";
 
 /// A shared registry mapping placeholder tokens to their original values.
 ///
-/// Stored in [`AlloyContext`] so that `ImageSegment` and `AtSegment` can
+/// Stored in [`HandlerContext`] so that `ImageSegment` and `AtSegment` can
 /// look up their real data after clap parsing.
 #[derive(Clone, Debug, Default)]
 pub struct HandleRegistry {

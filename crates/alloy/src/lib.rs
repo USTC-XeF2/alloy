@@ -80,7 +80,7 @@ pub mod prelude {
     pub use alloy_framework::handler::{HandlerService, Layer, ServiceBuilderExt};
 
     // Extractors - for handler parameters
-    pub use alloy_framework::context::AlloyContext;
+    pub use alloy_framework::context::HandlerContext;
     pub use alloy_framework::extractor::{
         Bot, Event, FromContext, PluginConfig, PluginState, ServiceRef,
     };

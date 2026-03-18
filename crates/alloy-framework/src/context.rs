@@ -3,18 +3,18 @@
 //! This module provides three context types that together model how an event
 //! is processed across multiple plugins:
 //!
-//! - [`BaseContext`] — the **shared** base for one dispatch cycle.  A single
-//!   `Arc<BaseContext>` is created per incoming event and passed to every
+//! - [`EventContext`] — the **shared** base for one dispatch cycle.  A single
+//!   `Arc<EventContext>` is created per incoming event and passed to every
 //!   plugin.  It holds the event, the bot, and the propagation flag.
 //!
 //! - [`PluginContext`] — **plugin-specific** data attached per-plugin.
 //!   Each plugin gets its own isolated state storage, config section, and
 //!   access to declared services. State is not shared between plugins.
 //!
-//! - [`AlloyContext`] — the full context handed to handlers, combining an
-//!   `Arc<BaseContext>` with a `PluginContext`.  Calling
-//!   [`stop_propagation`](AlloyContext::stop_propagation) on any plugin's
-//!   `AlloyContext` writes through to the shared base, stopping the chain
+//! - [`HandlerContext`] — the full context handed to handlers, combining an
+//!   `Arc<EventContext>` with a `PluginContext`.  Calling
+//!   [`stop_propagation`](HandlerContext::stop_propagation) on any plugin's
+//!   `HandlerContext` writes through to the shared base, stopping the chain
 //!   for all subsequent plugins. Each plugin's state is completely isolated.
 
 use std::any::{Any, TypeId};
@@ -96,29 +96,29 @@ impl State {
 }
 
 // =============================================================================
-// BaseContext — shared base, one per dispatch cycle
+// EventContext — shared base, one per dispatch cycle
 // =============================================================================
 
 /// The shared base context for a single event dispatch cycle.
 ///
-/// One `BaseContext` is created per incoming event and wrapped in an `Arc`
-/// that is cloned into every [`AlloyContext`] for that event.  This means:
+/// One `EventContext` is created per incoming event and wrapped in an `Arc`
+/// that is cloned into every [`HandlerContext`] for that event.  This means:
 ///
 /// - Stopping propagation in one plugin is immediately visible to the dispatch
 ///   loop and to all subsequent plugins.
 /// - The event and bot are accessed without copying.
 /// - Each plugin has its own isolated state through [`PluginContext`].
-pub struct BaseContext {
+pub struct EventContext {
     event: BoxedEvent,
     bot: BoxedBot,
-    /// Cleared by any handler that calls [`AlloyContext::stop_propagation`].
+    /// Cleared by any handler that calls [`HandlerContext::stop_propagation`].
     is_propagating: AtomicBool,
     /// Command system configuration, cloned from [`AlloyConfig`] at dispatch time.
     #[cfg(feature = "command")]
     command_config: Arc<crate::command::CommandConfig>,
 }
 
-impl BaseContext {
+impl EventContext {
     /// Creates a new shared event context.
     pub(crate) fn new(
         event: BoxedEvent,
@@ -144,9 +144,9 @@ impl BaseContext {
     }
 }
 
-impl std::fmt::Debug for BaseContext {
+impl std::fmt::Debug for EventContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BaseContext")
+        f.debug_struct("EventContext")
             .field("event", &self.event)
             .field("is_propagating", &self.is_propagating())
             .finish_non_exhaustive()
@@ -157,7 +157,7 @@ impl std::fmt::Debug for BaseContext {
 // PluginContext — per-plugin data, one per plugin per dispatch
 // =============================================================================
 
-/// Plugin-specific data carried alongside the shared [`BaseContext`].
+/// Plugin-specific data carried alongside the shared [`EventContext`].
 ///
 /// Every plugin gets its own `PluginContext` for each event dispatch.
 /// This context includes:
@@ -244,12 +244,12 @@ impl PluginContext {
 }
 
 // =============================================================================
-// AlloyContext — full context, handed to handlers
+// HandlerContext — full context, handed to handlers
 // =============================================================================
 
 /// The full context object passed to handlers during event processing.
 ///
-/// `AlloyContext` composes the **shared** [`BaseContext`] (base) with
+/// `HandlerContext` composes the **shared** [`EventContext`] (base) with
 /// **plugin-specific** [`PluginContext`] data.  Each plugin gets:
 ///
 /// - **Handler state**: Via `set_state`, `get_state`, etc. — per-dispatch
@@ -262,7 +262,7 @@ impl PluginContext {
 /// # Example
 ///
 /// ```rust,ignore
-/// async fn handle(ctx: &AlloyContext) {
+/// async fn handle(ctx: &HandlerContext) {
 ///     println!("event: {:?}", ctx.event());
 ///     ctx.set_state("my_data".to_string());  // handler state, isolated to this dispatch
 ///     ctx.plugin().state().set_state(42);    // plugin persistent state
@@ -271,17 +271,17 @@ impl PluginContext {
 /// }
 /// ```
 #[derive(Debug, Clone)]
-pub struct AlloyContext {
-    base: Arc<BaseContext>,
+pub struct HandlerContext {
+    base: Arc<EventContext>,
     plugin: Arc<PluginContext>,
     /// Per-plugin isolated state storage for this event dispatch.
     /// Each plugin gets its own independent state that is not shared.
     state: Arc<State>,
 }
 
-impl AlloyContext {
-    /// Creates a new `AlloyContext` from a shared base and plugin-specific data.
-    pub(crate) fn new(base: Arc<BaseContext>, plugin: Arc<PluginContext>) -> Self {
+impl HandlerContext {
+    /// Creates a new `HandlerContext` from a shared base and plugin-specific data.
+    pub(crate) fn new(base: Arc<EventContext>, plugin: Arc<PluginContext>) -> Self {
         Self {
             base,
             plugin,

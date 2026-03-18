@@ -6,7 +6,7 @@ use futures::future::BoxFuture;
 use tower::BoxError;
 use tower::util::BoxCloneSyncService;
 
-use crate::context::{AlloyContext, PluginContext, ServiceArc};
+use crate::context::{HandlerContext, PluginContext, ServiceArc};
 
 /// Type of the async `on_load` function stored inside a [`Plugin`].
 ///
@@ -122,7 +122,7 @@ pub struct ServiceEntry {
     pub factory: fn(Arc<PluginContext>) -> BoxFuture<'static, Result<ServiceArc, String>>,
 }
 
-type BoxedHandlerService = BoxCloneSyncService<AlloyContext, (), BoxError>;
+type BoxedHandlerService = BoxCloneSyncService<HandlerContext, (), BoxError>;
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
@@ -152,7 +152,7 @@ pub struct Plugin {
     /// factory, then inserts the result into the global service map.
     ///
     /// [`PluginManager`]: crate::manager::PluginManager
-    service_entrys: Vec<ServiceEntry>,
+    service_entries: Vec<ServiceEntry>,
 
     on_load_fn: Option<OnLoadFn>,
     on_unload_fn: Option<OnUnloadFn>,
@@ -174,10 +174,10 @@ impl Plugin {
 
     /// Service IDs this plugin registers into the global registry.
     ///
-    /// Derived on-demand from [`service_entrys`](Self::service_entrys)
+    /// Derived on-demand from [`service_entries`](Self::service_entries)
     /// so the two can never get out of sync.
     pub fn provides(&self) -> Vec<&'static str> {
-        self.service_entrys.iter().map(|e| e.id).collect()
+        self.service_entries.iter().map(|e| e.id).collect()
     }
 
     /// All dependencies declared in this plugin's `depends_on: [...]` list.
@@ -199,8 +199,8 @@ impl Plugin {
     /// call to [`on_load`](Self::on_load).
     ///
     /// [`PluginManager`]: crate::manager::PluginManager
-    pub(crate) fn service_entrys(&self) -> &[ServiceEntry] {
-        &self.service_entrys
+    pub(crate) fn service_entries(&self) -> &[ServiceEntry] {
+        &self.service_entries
     }
 
     /// Called once at startup, **before** services declared in `provides` are
@@ -237,7 +237,7 @@ impl Plugin {
         name: &'static str,
         depends_on: Vec<DependsOnEntry>,
         handlers: Vec<BoxedHandlerService>,
-        service_entrys: Vec<ServiceEntry>,
+        service_entries: Vec<ServiceEntry>,
         on_load_fn: Option<OnLoadFn>,
         on_unload_fn: Option<OnUnloadFn>,
         metadata: PluginMetadata,
@@ -246,7 +246,7 @@ impl Plugin {
             name: Cow::Borrowed(name),
             depends_on,
             handlers,
-            service_entrys,
+            service_entries,
             on_load_fn,
             on_unload_fn,
             metadata,

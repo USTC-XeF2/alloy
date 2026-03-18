@@ -14,7 +14,7 @@ use tower_layer::Stack;
 
 use super::service::{HandlerResponse, HandlerService};
 use super::traits::FromCtxFn;
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::EventSkipped;
 
 /// A wrapper that blocks event propagation if the inner service succeeds.
@@ -36,9 +36,9 @@ impl<S> Layer<S> for BlockLayer {
 #[derive(Clone)]
 pub struct BlockService<S>(S);
 
-impl<S> Service<AlloyContext> for BlockService<S>
+impl<S> Service<HandlerContext> for BlockService<S>
 where
-    S: Service<AlloyContext, Response = (), Error = BoxError> + Clone + Send + 'static,
+    S: Service<HandlerContext, Response = (), Error = BoxError> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = ();
@@ -49,7 +49,7 @@ where
         self.0.poll_ready(cx)
     }
 
-    fn call(&mut self, ctx: AlloyContext) -> Self::Future {
+    fn call(&mut self, ctx: HandlerContext) -> Self::Future {
         let mut inner = self.0.clone();
         async move {
             match inner.call(ctx.clone()).await {
@@ -72,22 +72,22 @@ where
 ///
 /// When the inner predicate returns `false` the request is rejected with [`EventSkipped`].
 #[derive(Clone)]
-pub struct EventPredicate(Arc<dyn Fn(&AlloyContext) -> bool + Send + Sync>);
+pub struct EventPredicate(Arc<dyn Fn(&HandlerContext) -> bool + Send + Sync>);
 
 impl EventPredicate {
     /// Creates a new `EventPredicate` from a synchronous closure.
     pub fn new<F>(f: F) -> Self
     where
-        F: Fn(&AlloyContext) -> bool + Send + Sync + 'static,
+        F: Fn(&HandlerContext) -> bool + Send + Sync + 'static,
     {
         Self(Arc::new(f))
     }
 }
 
-impl Predicate<AlloyContext> for EventPredicate {
-    type Request = AlloyContext;
+impl Predicate<HandlerContext> for EventPredicate {
+    type Request = HandlerContext;
 
-    fn check(&mut self, request: AlloyContext) -> Result<AlloyContext, BoxError> {
+    fn check(&mut self, request: HandlerContext) -> Result<HandlerContext, BoxError> {
         if (self.0)(&request) {
             Ok(request)
         } else {
@@ -98,23 +98,25 @@ impl Predicate<AlloyContext> for EventPredicate {
 
 /// A type-erased, [`AsyncPredicate`]-implementing wrapper for asynchronous closures.
 #[derive(Clone)]
-pub struct AsyncEventPredicate(Arc<dyn Fn(AlloyContext) -> BoxFuture<'static, bool> + Send + Sync>);
+pub struct AsyncEventPredicate(
+    Arc<dyn Fn(HandlerContext) -> BoxFuture<'static, bool> + Send + Sync>,
+);
 
 impl AsyncEventPredicate {
     /// Creates a new `AsyncEventPredicate` from an asynchronous closure.
     pub fn new<F>(f: F) -> Self
     where
-        F: Fn(AlloyContext) -> BoxFuture<'static, bool> + Send + Sync + 'static,
+        F: Fn(HandlerContext) -> BoxFuture<'static, bool> + Send + Sync + 'static,
     {
         Self(Arc::new(f))
     }
 }
 
-impl AsyncPredicate<AlloyContext> for AsyncEventPredicate {
-    type Future = BoxFuture<'static, Result<AlloyContext, BoxError>>;
-    type Request = AlloyContext;
+impl AsyncPredicate<HandlerContext> for AsyncEventPredicate {
+    type Future = BoxFuture<'static, Result<HandlerContext, BoxError>>;
+    type Request = HandlerContext;
 
-    fn check(&mut self, request: AlloyContext) -> Self::Future {
+    fn check(&mut self, request: HandlerContext) -> Self::Future {
         let f = self.0.clone();
         async move {
             if f(request.clone()).await {
@@ -147,7 +149,7 @@ pub trait ServiceBuilderExt<L> {
     /// Equivalent to `.filter(EventPredicate::new(predicate))` but more concise.
     fn rule_sync<F>(self, predicate: F) -> ServiceBuilder<Stack<FilterLayer<EventPredicate>, L>>
     where
-        F: Fn(&AlloyContext) -> bool + Send + Sync + 'static;
+        F: Fn(&HandlerContext) -> bool + Send + Sync + 'static;
 
     /// Attaches an asynchronous filter predicate directly to the service builder.
     fn rule<F, T>(
@@ -177,7 +179,7 @@ impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
 
     fn rule_sync<F>(self, predicate: F) -> ServiceBuilder<Stack<FilterLayer<EventPredicate>, L>>
     where
-        F: Fn(&AlloyContext) -> bool + Send + Sync + 'static,
+        F: Fn(&HandlerContext) -> bool + Send + Sync + 'static,
     {
         self.filter(EventPredicate::new(predicate))
     }

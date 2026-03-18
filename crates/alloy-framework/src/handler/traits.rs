@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use alloy_core::{AlloyContext, FromContext, EventContext};
+//! use alloy_core::{HandlerContext, FromContext, EventContext};
 //!
 //! // Simple handler with no parameters
 //! async fn simple_handler() {
@@ -29,7 +29,7 @@
 //! }
 //! ```
 
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::ExtractResult;
 use crate::extractor::FromContext;
 
@@ -59,7 +59,7 @@ use crate::extractor::FromContext;
 /// # Example
 ///
 /// ```rust,ignore
-/// use alloy_core::{AlloyContext, FromContext, EventContext};
+/// use alloy_core::{HandlerContext, FromContext, EventContext};
 ///
 /// // Simple handler with no context extraction
 /// async fn simple_handler() {
@@ -83,7 +83,7 @@ pub trait FromCtxFn<R, T>: Clone + Send + Sync + 'static {
     /// Call this function with the given context, extracting all parameters.
     ///
     /// Returns an error if any parameter extraction fails (e.g., required context is missing).
-    fn call(self, ctx: &AlloyContext) -> impl Future<Output = ExtractResult<R>> + Send;
+    fn call(self, ctx: &HandlerContext) -> impl Future<Output = ExtractResult<R>> + Send;
 }
 
 // ============================================================================
@@ -104,7 +104,7 @@ macro_rules! impl_handler {
             R: Send,
             $( $ty: FromContext, )*
         {
-            async fn call(self, ctx: &AlloyContext) -> ExtractResult<R> {
+            async fn call(self, ctx: &HandlerContext) -> ExtractResult<R> {
                 let ($($ty,)*) = futures::try_join!($($ty::from_context(&ctx),)*)?;
 
                 Ok((self)($($ty,)*).await)

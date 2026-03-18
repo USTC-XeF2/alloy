@@ -11,7 +11,7 @@ use tower_layer::{Identity, Stack};
 use super::extractor::CommandArgs;
 use super::segment::CURRENT_REGISTRY;
 use super::split::rich_text_shell_split;
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::EventSkipped;
 use crate::handler::{FromCtxFn, HandlerResponse, HandlerService, ServiceBuilderExt};
 use alloy_core::EventType;
@@ -190,10 +190,10 @@ pub struct CommandService<T, S> {
     _marker: PhantomData<T>,
 }
 
-impl<T, S> Service<AlloyContext> for CommandService<T, S>
+impl<T, S> Service<HandlerContext> for CommandService<T, S>
 where
     T: Parser + Clone + Send + Sync + 'static,
-    S: Service<AlloyContext, Response = (), Error = BoxError> + Clone + Send + 'static,
+    S: Service<HandlerContext, Response = (), Error = BoxError> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = ();
@@ -204,7 +204,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, ctx: AlloyContext) -> Self::Future {
+    fn call(&mut self, ctx: HandlerContext) -> Self::Future {
         let name = self.name.clone();
         let start_tag = self
             .start_tag

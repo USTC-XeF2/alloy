@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for the command system.
 ///
-/// Stored in [`BaseContext`](crate::context::BaseContext) and used by
+/// Stored in [`EventContext`](crate::context::EventContext) and used by
 /// [`CommandService`](super::layer::CommandService) to determine the default
 /// command prefix when the service does not specify one explicitly.
 #[derive(Debug, Clone, Serialize, Deserialize)]

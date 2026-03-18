@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 
 use alloy_core::{Bot, BoxedBot, BridgeRuntime};
 use alloy_framework::{
-    context::AlloyContext,
+    context::HandlerContext,
     error::{ExtractError, ExtractResult},
     extractor::FromContext,
 };
@@ -36,7 +36,7 @@ impl BotHandle {
 }
 
 impl FromContext for BotHandle {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.plugin()
             .state()
             .get::<Self>()

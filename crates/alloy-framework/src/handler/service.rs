@@ -1,7 +1,7 @@
 //! Core handler service for the Alloy framework.
 //!
 //! [`HandlerService<F, R, T>`] is the fundamental building block: it wraps a
-//! single handler and implements `tower::Service<AlloyContext>`. All
+//! single handler and implements `tower::Service<HandlerContext>`. All
 //! filtering and other cross-cutting concerns are expressed as ordinary tower
 //! [`Layer`]s stacked *on top*.
 
@@ -14,7 +14,7 @@ use tower::{BoxError, Service};
 use tracing::error;
 
 use super::traits::FromCtxFn;
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use alloy_core::{Message, MessageSegment, Sendable};
 
 // ============================================================================
@@ -24,18 +24,18 @@ use alloy_core::{Message, MessageSegment, Sendable};
 /// A trait for types that can be returned from handlers.
 pub trait HandlerResponse: Send + 'static {
     /// Process the handler response, performing any necessary side effects (e.g. sending messages).
-    fn process_response(self, ctx: &AlloyContext) -> impl Future<Output = ()> + Send;
+    fn process_response(self, ctx: &HandlerContext) -> impl Future<Output = ()> + Send;
 }
 
 /// Implementation for `()` - no response needed.
 impl HandlerResponse for () {
-    async fn process_response(self, _ctx: &AlloyContext) {
+    async fn process_response(self, _ctx: &HandlerContext) {
         // No action needed
     }
 }
 
 /// Helper function to send a message using the bot from the context.
-async fn send_message(ctx: &AlloyContext, message: &dyn Sendable) {
+async fn send_message(ctx: &HandlerContext, message: &dyn Sendable) {
     let bot = ctx.bot();
     let event = ctx.event();
     if let Some(scene) = event.get_scene() {
@@ -49,14 +49,14 @@ async fn send_message(ctx: &AlloyContext, message: &dyn Sendable) {
 
 /// Implementation for `String` - send message on Ok, log errors on Err.
 impl HandlerResponse for String {
-    async fn process_response(self, ctx: &AlloyContext) {
+    async fn process_response(self, ctx: &HandlerContext) {
         send_message(ctx, &self).await;
     }
 }
 
 /// Implementation for `Message<S>` - sends the message using `send_message`.
 impl<S: MessageSegment> HandlerResponse for Message<S> {
-    async fn process_response(self, ctx: &AlloyContext) {
+    async fn process_response(self, ctx: &HandlerContext) {
         send_message(ctx, &self).await;
     }
 }
@@ -65,7 +65,7 @@ impl<S: MessageSegment> HandlerResponse for Message<S> {
 ///
 /// On Some, the inner value's response is handled. On None, no action is taken.
 impl<T: HandlerResponse> HandlerResponse for Option<T> {
-    async fn process_response(self, ctx: &AlloyContext) {
+    async fn process_response(self, ctx: &HandlerContext) {
         if let Some(t) = self {
             t.process_response(ctx).await;
         }
@@ -76,7 +76,7 @@ impl<T: HandlerResponse> HandlerResponse for Option<T> {
 ///
 /// On Ok, the inner value's response is handled. On Err, the error is logged.
 impl<T: HandlerResponse, E: std::fmt::Display + Send + 'static> HandlerResponse for Result<T, E> {
-    async fn process_response(self, ctx: &AlloyContext) {
+    async fn process_response(self, ctx: &HandlerContext) {
         match self {
             Ok(t) => t.process_response(ctx).await,
             Err(e) => {
@@ -133,7 +133,7 @@ impl<F, R, T> From<F> for HandlerService<F, R, T> {
     }
 }
 
-impl<F, R, T> Service<AlloyContext> for HandlerService<F, R, T>
+impl<F, R, T> Service<HandlerContext> for HandlerService<F, R, T>
 where
     F: FromCtxFn<R, T>,
     R: HandlerResponse,
@@ -146,7 +146,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, ctx: AlloyContext) -> Self::Future {
+    fn call(&mut self, ctx: HandlerContext) -> Self::Future {
         let handler = self.handler.clone();
         async move {
             if let Ok(r) = handler.call(&ctx).await {

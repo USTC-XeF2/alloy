@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use derive_more::{AsRef, Deref};
 
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
 use alloy_core::{BoxedEvent, Event as EventTrait};
@@ -49,7 +49,7 @@ pub struct Event<T: EventTrait>(T);
 /// }
 /// ```
 impl<T: EventTrait> FromContext for Event<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.event()
             .downgrade_any(TypeId::of::<T>())
             .and_then(|boxed| boxed.downcast::<T>().ok())
@@ -66,7 +66,7 @@ impl<T: EventTrait> FromContext for Event<T> {
 /// This is useful when a handler needs to work with any event type
 /// without knowing the concrete type at compile time.
 impl FromContext for BoxedEvent {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         Ok(ctx.event().clone())
     }
 }

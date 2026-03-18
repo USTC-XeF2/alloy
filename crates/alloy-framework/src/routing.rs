@@ -20,7 +20,7 @@ use tower_layer::{Identity, Stack};
 
 use alloy_core::{Event, EventType};
 
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::handler::{EventPredicate, ServiceBuilderExt};
 
 /// Convenience type alias for the `ServiceBuilder` returned by `on_message()`,
@@ -30,7 +30,7 @@ pub type FilterServiceBuilder = ServiceBuilder<Stack<FilterLayer<EventPredicate>
 /// Creates a [`ServiceBuilder`] that filters events by [`EventType`].
 pub fn on_event_type(event_type: EventType) -> FilterServiceBuilder {
     ServiceBuilder::new()
-        .rule_sync(move |ctx: &AlloyContext| ctx.event().event_type() == event_type)
+        .rule_sync(move |ctx: &HandlerContext| ctx.event().event_type() == event_type)
 }
 
 /// Creates a [`ServiceBuilder`] that only passes through **message** events.
@@ -52,5 +52,5 @@ pub fn on_message() -> FilterServiceBuilder {
 /// Uses strict type equality checking.
 pub fn on<E: Event + 'static>() -> FilterServiceBuilder {
     ServiceBuilder::new()
-        .rule_sync(move |ctx: &AlloyContext| ctx.event().downcast_ref::<E>().is_some())
+        .rule_sync(move |ctx: &HandlerContext| ctx.event().downcast_ref::<E>().is_some())
 }

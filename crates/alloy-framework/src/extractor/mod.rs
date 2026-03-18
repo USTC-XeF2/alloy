@@ -9,7 +9,7 @@
 //! The extractor system is built around the [`FromContext`] trait:
 //! ```rust,ignore
 //! pub trait FromContext: Sized + Send {
-//!     async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self>;
+//!     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self>;
 //! }
 //! ```
 //!

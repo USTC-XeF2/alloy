@@ -1,7 +1,7 @@
 use clap::Parser;
 use derive_more::Deref;
 
-use crate::context::AlloyContext;
+use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
 
@@ -24,7 +24,7 @@ use crate::extractor::FromContext;
 pub struct CommandArgs<T: Parser>(pub T);
 
 impl<T: Parser + Clone + Send + 'static> FromContext for CommandArgs<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.state()
             .get::<Self>()
             .ok_or_else(|| ExtractError::StateNotFound(std::any::type_name::<Self>()))

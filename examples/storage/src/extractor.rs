@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use alloy::framework::{context::AlloyContext, error::ExtractResult, extractor::FromContext};
+use alloy::framework::{context::HandlerContext, error::ExtractResult, extractor::FromContext};
 use derive_more::{AsRef, Deref};
 
 use crate::service::StorageService;
@@ -71,7 +71,7 @@ impl StorageDirSelector for Config {
 pub struct StorageDir<T: StorageDirSelector>(#[deref] pub PathBuf, PhantomData<T>);
 
 impl<T: StorageDirSelector> FromContext for StorageDir<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;
         Ok(StorageDir(T::select(storage), PhantomData))
     }
@@ -85,7 +85,7 @@ impl<T: StorageDirSelector> FromContext for StorageDir<T> {
 pub struct PluginStorageDir<T: StorageDirSelector>(#[deref] pub PathBuf, PhantomData<T>);
 
 impl<T: StorageDirSelector + Send> FromContext for PluginStorageDir<T> {
-    async fn from_context(ctx: &AlloyContext) -> ExtractResult<Self> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;
         let plugin_path = T::select(storage).join(ctx.plugin().name());
         Ok(PluginStorageDir(plugin_path, PhantomData))
