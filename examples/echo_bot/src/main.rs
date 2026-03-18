@@ -63,6 +63,10 @@ async fn info_handler(
     cmd: CommandArgs<InfoCommand>,
 ) -> Result<String> {
     if let Some(user_id) = &cmd.user {
+        let Some(user_id) = user_id.as_ref() else {
+            return Ok("Invalid User ID: @all is not supported.".to_string());
+        };
+
         // Parse user ID - user input error, return as message
         let Ok(parsed_id) = user_id.parse::<i64>() else {
             return Ok(format!("Invalid User ID: {user_id}"));

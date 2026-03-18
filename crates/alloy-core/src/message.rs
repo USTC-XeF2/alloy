@@ -42,6 +42,8 @@ pub enum RichTextSegment {
     /// A user mention. The string is the user identifier
     /// (e.g., QQ number, Discord user ID).
     At(String),
+    /// A segment representing an @all mention.
+    AtAll,
 }
 
 // ============================================================================
@@ -108,6 +110,7 @@ impl MessageSegment for RichTextSegment {
             RichTextSegment::Text(_) => "text",
             RichTextSegment::Image(_) => "image",
             RichTextSegment::At(_) => "at",
+            RichTextSegment::AtAll => "at_all",
         }
     }
 
@@ -135,6 +138,7 @@ impl Display for RichTextSegment {
             RichTextSegment::Text(s) => write!(f, "{s}"),
             RichTextSegment::Image(r) => write!(f, "[Image: {r}]"),
             RichTextSegment::At(id) => write!(f, "@{id}"),
+            RichTextSegment::AtAll => write!(f, "@all"),
         }
     }
 }

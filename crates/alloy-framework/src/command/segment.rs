@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use derive_more::{AsRef, Deref, Display};
+use derive_more::{AsRef, Deref};
 
 /// Prefix used for image placeholder tokens in command argument strings.
 pub const IMAGE_PLACEHOLDER_PREFIX: &str = "\x00IMG_";
@@ -16,7 +16,7 @@ pub const AT_PLACEHOLDER_PREFIX: &str = "\x00AT_";
 #[derive(Clone, Debug, Default)]
 pub struct HandleRegistry {
     pub images: HashMap<String, String>,
-    pub ats: HashMap<String, String>,
+    pub ats: HashMap<String, Option<String>>,
 }
 
 // Thread-local registry for resolving handles during clap's FromStr parsing.
@@ -46,7 +46,7 @@ thread_local! {
 ///     println!("Image: {}", image_ref);
 /// }
 /// ```
-#[derive(Debug, Clone, Deref, AsRef, Display)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct ImageSegment {
     /// The original image reference resolved from the registry.
     value: String,
@@ -89,10 +89,18 @@ impl std::str::FromStr for ImageSegment {
 ///     println!("User: {}", user_id);
 /// }
 /// ```
-#[derive(Debug, Clone, Deref, AsRef, Display)]
+#[derive(Debug, Clone, Deref, AsRef)]
 pub struct AtSegment {
-    /// The original user identifier resolved from the registry.
-    value: String,
+    /// The original user identifier resolved from the registry, or `None`
+    /// for @all.
+    id: Option<String>,
+}
+
+impl AtSegment {
+    /// Returns true if this segment represents an @all mention.
+    pub fn is_at_all(&self) -> bool {
+        self.id.is_none()
+    }
 }
 
 impl std::str::FromStr for AtSegment {
@@ -104,7 +112,7 @@ impl std::str::FromStr for AtSegment {
             reg.borrow()
                 .as_ref()
                 .and_then(|r| r.ats.get(s).cloned())
-                .map(|value| AtSegment { value })
+                .map(|id| AtSegment { id })
                 .ok_or_else(|| format!("not a valid at segment: {s}"))
         })
     }

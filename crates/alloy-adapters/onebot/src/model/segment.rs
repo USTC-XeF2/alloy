@@ -24,9 +24,8 @@
 
 use std::fmt::Write;
 
-use serde::{Deserialize, Serialize};
-
 use alloy_core::{MessageSegment as MessageSegmentTrait, RichTextSegment};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Segment Enum - The main message segment type
@@ -157,7 +156,11 @@ impl MessageSegmentTrait for Segment {
         match self {
             Segment::Text(data) => Some(RichTextSegment::Text(data.text.clone())),
             Segment::Image(data) => Some(RichTextSegment::Image(data.file.clone())),
-            Segment::At(data) => Some(RichTextSegment::At(data.qq.clone())),
+            Segment::At(data) => Some(if data.qq == "all" {
+                RichTextSegment::AtAll
+            } else {
+                RichTextSegment::At(data.qq.clone())
+            }),
             _ => None,
         }
     }
@@ -167,6 +170,7 @@ impl MessageSegmentTrait for Segment {
             RichTextSegment::Text(s) => Some(Segment::text(s)),
             RichTextSegment::Image(r) => Some(Segment::image(r)),
             RichTextSegment::At(id) => Some(Segment::At(AtData { qq: id.clone() })),
+            RichTextSegment::AtAll => Some(Segment::at_all()),
         }
     }
 }

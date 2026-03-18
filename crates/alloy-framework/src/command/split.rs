@@ -85,10 +85,15 @@ pub fn rich_text_shell_split(segments: &[RichTextSegment]) -> (Vec<String>, Hand
                     .insert(placeholder.clone(), reference.clone());
                 args.push(placeholder);
             }
-            RichTextSegment::At(user_id) => {
+            RichTextSegment::At(_) | RichTextSegment::AtAll => {
                 let placeholder = format!("{AT_PLACEHOLDER_PREFIX}{at_counter}");
                 at_counter += 1;
-                registry.ats.insert(placeholder.clone(), user_id.clone());
+                let id = if let RichTextSegment::At(id) = seg {
+                    Some(id.clone())
+                } else {
+                    None
+                };
+                registry.ats.insert(placeholder.clone(), id);
                 args.push(placeholder);
             }
         }
@@ -171,7 +176,7 @@ mod tests {
         assert_eq!(args[0], "/kick");
         assert!(args[1].starts_with(AT_PLACEHOLDER_PREFIX));
         assert_eq!(args[2], "reason");
-        assert_eq!(registry.ats.get(&args[1]).unwrap(), "12345");
+        assert_eq!(registry.ats.get(&args[1]).unwrap(), &Some("12345".into()));
     }
 
     #[test]
