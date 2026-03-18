@@ -252,7 +252,7 @@ impl PluginManager {
     ///
     /// Logs a warning when the API version does not match, but continues —
     /// hard rejection can be enforced by callers if needed.
-    pub fn register_plugin(&self, desc: &PluginDescriptor) {
+    pub fn register_plugin(&self, desc: &PluginDescriptor) -> Arc<PluginContext> {
         if !desc.is_compatible() {
             warn!(
                 plugin = %desc.name,
@@ -299,10 +299,12 @@ impl PluginManager {
             PluginEntry {
                 plugin: Arc::new(instance),
                 state: PluginLoadState::Registered,
-                context,
+                context: context.clone(),
             },
         );
         info!(plugin = %name, "Plugin registered");
+
+        context
     }
 
     /// Removes the first plugin whose name matches `name`.

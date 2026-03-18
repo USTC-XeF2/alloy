@@ -61,10 +61,12 @@
 
 pub mod config;
 pub mod error;
+pub mod handle;
 pub mod logging;
 pub mod runtime;
 
 pub use config::{AlloyConfig, ConfigLoader, LogFormat, LogLevel, LogOutput, LoggingConfig};
 pub use error::{ConfigError, ConfigResult, RuntimeError, RuntimeResult};
+pub use handle::BotHandle;
 pub use logging::{LoggingBuilder, SpanEvents};
 pub use runtime::AlloyRuntime;

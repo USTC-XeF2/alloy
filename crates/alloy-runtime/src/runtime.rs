@@ -29,9 +29,10 @@ use tracing::{error, info, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader};
 use crate::error::{RuntimeError, RuntimeResult};
+use crate::handle::BotHandle;
 use crate::logging;
 use alloy_core::{Adapter, AdapterBridge, BridgeRuntime, TransportContext};
-use alloy_framework::{manager::PluginManager, plugin::PluginDescriptor};
+use alloy_framework::{context::PluginContext, manager::PluginManager, plugin::PluginDescriptor};
 
 /// The main Alloy runtime that orchestrates adapters, transports, and plugins.
 ///
@@ -72,7 +73,7 @@ pub struct AlloyRuntime {
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges, created eagerly on registration.
-    bridges: Mutex<HashMap<String, Arc<dyn BridgeRuntime>>>,
+    bridges: Arc<Mutex<HashMap<String, Arc<dyn BridgeRuntime>>>>,
     /// Whether the runtime is running.
     running: AtomicBool,
 }
@@ -137,7 +138,7 @@ impl AlloyRuntime {
             config,
             plugin_manager: Arc::new(plugin_manager),
             transport_context: transport_ctx,
-            bridges: Mutex::new(HashMap::new()),
+            bridges: Arc::new(Mutex::new(HashMap::new())),
             running: AtomicBool::new(false),
         }
     }
@@ -192,13 +193,18 @@ impl AlloyRuntime {
     }
 
     /// Registers a plugin from a [`PluginDescriptor`].
-    pub fn register_plugin(&self, desc: &PluginDescriptor) {
-        self.plugin_manager.register_plugin(desc);
+    pub fn register_plugin(&self, desc: &PluginDescriptor) -> Arc<PluginContext> {
+        self.plugin_manager.register_plugin(desc)
     }
 
     /// Returns the number of registered plugins.
     pub fn plugin_count(&self) -> usize {
         self.plugin_manager.plugin_count()
+    }
+
+    /// Returns a handle that can query bots across all registered adapters.
+    pub fn bot_handle(&self) -> BotHandle {
+        BotHandle(self.bridges.clone())
     }
 
     /// Returns whether the runtime is currently running.
