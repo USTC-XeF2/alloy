@@ -145,10 +145,10 @@ where
     ///     .reply_error(false)
     ///     .handler(my_handler)
     /// ```
-    pub fn handler<F, R, U>(self, handler: F) -> CommandService<T, HandlerService<F, R, U>>
+    pub fn handler<F, U>(self, handler: F) -> CommandService<T, HandlerService<F, U>>
     where
-        F: FromCtxFn<R, U>,
-        R: HandlerResponse,
+        F: FromCtxFn<U>,
+        F::Response: HandlerResponse,
     {
         self.build().handler(handler)
     }

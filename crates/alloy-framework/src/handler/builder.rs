@@ -138,11 +138,11 @@ pub trait ServiceBuilderExt<L> {
     /// returning the final composed service.
     ///
     /// Equivalent to `.service(HandlerService::new(handler))`.
-    fn handler<F, R, T>(self, handler: F) -> L::Service
+    fn handler<F, T>(self, handler: F) -> L::Service
     where
-        F: FromCtxFn<R, T>,
-        R: HandlerResponse,
-        L: Layer<HandlerService<F, R, T>>;
+        F: FromCtxFn<T>,
+        F::Response: HandlerResponse,
+        L: Layer<HandlerService<F, T>>;
 
     /// Attaches a synchronous filter predicate directly to the service builder.
     ///
@@ -157,7 +157,7 @@ pub trait ServiceBuilderExt<L> {
         predicate: F,
     ) -> ServiceBuilder<Stack<AsyncFilterLayer<AsyncEventPredicate>, L>>
     where
-        F: FromCtxFn<bool, T>;
+        F: FromCtxFn<T, Response = bool>;
 
     /// Adds a blocking layer that prevents event propagation if the inner service succeeds.
     ///
@@ -168,11 +168,11 @@ pub trait ServiceBuilderExt<L> {
 }
 
 impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
-    fn handler<F, R, T>(self, handler: F) -> L::Service
+    fn handler<F, T>(self, handler: F) -> L::Service
     where
-        F: FromCtxFn<R, T>,
-        R: HandlerResponse,
-        L: Layer<HandlerService<F, R, T>>,
+        F: FromCtxFn<T>,
+        F::Response: HandlerResponse,
+        L: Layer<HandlerService<F, T>>,
     {
         self.service(HandlerService::new(handler))
     }
@@ -189,7 +189,7 @@ impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
         predicate: F,
     ) -> ServiceBuilder<Stack<AsyncFilterLayer<AsyncEventPredicate>, L>>
     where
-        F: FromCtxFn<bool, T>,
+        F: FromCtxFn<T, Response = bool>,
     {
         self.filter_async(AsyncEventPredicate::new(move |ctx| {
             let predicate = predicate.clone();

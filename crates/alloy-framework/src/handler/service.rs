@@ -102,12 +102,12 @@ impl<T: HandlerResponse, E: std::fmt::Display + Send + 'static> HandlerResponse 
 /// // Apply a filter layer on top:
 /// let filtered = on_message().layer(svc);
 /// ```
-pub struct HandlerService<F, R, T> {
+pub struct HandlerService<F, T> {
     handler: F,
-    _marker: PhantomData<(R, T)>,
+    _marker: PhantomData<T>,
 }
 
-impl<F, R, T> HandlerService<F, R, T> {
+impl<F, T> HandlerService<F, T> {
     pub fn new(handler: F) -> Self {
         Self {
             handler,
@@ -116,7 +116,7 @@ impl<F, R, T> HandlerService<F, R, T> {
     }
 }
 
-impl<F: Clone, R, T> Clone for HandlerService<F, R, T> {
+impl<F: Clone, T> Clone for HandlerService<F, T> {
     fn clone(&self) -> Self {
         HandlerService {
             handler: self.handler.clone(),
@@ -127,16 +127,16 @@ impl<F: Clone, R, T> Clone for HandlerService<F, R, T> {
 
 /// Allows `HandlerService::new(f)` to be omitted in favour of `f.into()` when
 /// the target type can be inferred from context.
-impl<F, R, T> From<F> for HandlerService<F, R, T> {
+impl<F, T> From<F> for HandlerService<F, T> {
     fn from(handler: F) -> Self {
         HandlerService::new(handler)
     }
 }
 
-impl<F, R, T> Service<HandlerContext> for HandlerService<F, R, T>
+impl<F, T> Service<HandlerContext> for HandlerService<F, T>
 where
-    F: FromCtxFn<R, T>,
-    R: HandlerResponse,
+    F: FromCtxFn<T>,
+    F::Response: HandlerResponse,
 {
     type Response = ();
     type Error = BoxError;
