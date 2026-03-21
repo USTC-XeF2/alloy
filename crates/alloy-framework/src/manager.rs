@@ -44,7 +44,7 @@ use tracing::{error, info, warn};
 
 use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
-use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor};
+use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
 use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
 
 // =============================================================================
@@ -218,10 +218,9 @@ pub struct PluginManager {
     /// Managed exclusively by [`load_all`] / [`unload_all`].
     /// Wrapped in Arc for sharing with PluginContext instances.
     services: Arc<RwLock<ServiceMap>>,
-    /// Command system configuration, injected from the runtime config when the
-    /// `command` feature is enabled.
+    /// Runtime-scoped command context.
     #[cfg(feature = "command")]
-    command_config: Arc<crate::command::CommandConfig>,
+    command_context: Arc<crate::context::CommandContext>,
 }
 
 impl PluginManager {
@@ -238,7 +237,10 @@ impl PluginManager {
                 .collect(),
             services: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "command")]
-            command_config: Arc::new(command_config),
+            command_context: Arc::new(crate::context::CommandContext {
+                config: command_config,
+                help_provider: RwLock::new(HashMap::new()),
+            }),
         }
     }
 
@@ -434,7 +436,13 @@ impl PluginManager {
         }
 
         // ── 3. on_load ───────────────────────────────────────────────────
-        match tokio::spawn(async move { plugin.on_load(ctx).await }).await {
+        let load_ctx = PluginLoadContext::new(
+            ctx.clone(),
+            #[cfg(feature = "command")]
+            self.command_context.clone(),
+        );
+
+        match tokio::spawn(async move { plugin.on_load(load_ctx).await }).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 error!(
@@ -490,6 +498,9 @@ impl PluginManager {
                 svc_map.remove(&entry.type_id);
             }
         }
+
+        #[cfg(feature = "command")]
+        self.command_context.help_provider.write().remove(name);
 
         // Mark as Registered.
         if self.set_plugin_state(name, PluginLoadState::Registered) {
@@ -599,7 +610,7 @@ impl Dispatcher for PluginManager {
             event,
             bot,
             #[cfg(feature = "command")]
-            self.command_config.clone(),
+            self.command_context.clone(),
         ));
 
         // Collect all handlers from all active plugins into a single flat list.

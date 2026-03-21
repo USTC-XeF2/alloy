@@ -95,6 +95,13 @@ impl State {
     }
 }
 
+/// Runtime-scoped command context shared across plugin and event contexts.
+#[cfg(feature = "command")]
+pub(crate) struct CommandContext {
+    pub config: crate::command::CommandConfig,
+    pub help_provider: RwLock<HashMap<String, Arc<dyn crate::command::HelpProvider>>>,
+}
+
 // =============================================================================
 // EventContext — shared base, one per dispatch cycle
 // =============================================================================
@@ -113,9 +120,9 @@ pub struct EventContext {
     bot: BoxedBot,
     /// Cleared by any handler that calls [`HandlerContext::stop_propagation`].
     is_propagating: AtomicBool,
-    /// Command system configuration, cloned from [`AlloyConfig`] at dispatch time.
+    /// Runtime-scoped command context.
     #[cfg(feature = "command")]
-    command_config: Arc<crate::command::CommandConfig>,
+    command: Arc<crate::context::CommandContext>,
 }
 
 impl EventContext {
@@ -123,14 +130,14 @@ impl EventContext {
     pub(crate) fn new(
         event: BoxedEvent,
         bot: BoxedBot,
-        #[cfg(feature = "command")] command_config: Arc<crate::command::CommandConfig>,
+        #[cfg(feature = "command")] command: Arc<crate::context::CommandContext>,
     ) -> Self {
         Self {
             event,
             bot,
             is_propagating: AtomicBool::new(true),
             #[cfg(feature = "command")]
-            command_config,
+            command,
         }
     }
 
@@ -330,9 +337,8 @@ impl HandlerContext {
         &self.state
     }
 
-    /// Returns the command configuration from the shared base context.
     #[cfg(feature = "command")]
-    pub(crate) fn command_config(&self) -> &crate::command::CommandConfig {
-        &self.base.command_config
+    pub(crate) fn command(&self) -> &crate::context::CommandContext {
+        &self.base.command
     }
 }

@@ -43,3 +43,14 @@ impl<T: FromContext> FromContext for ExtractResult<T> {
         Ok(T::from_context(ctx).await)
     }
 }
+
+/// Implementation for `HandlerContext` itself, allowing it to be directly injected
+/// into handler functions.
+///
+/// This is a fundamental implementation that allows handlers to access the full
+/// context when needed.
+impl FromContext for HandlerContext {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
+        Ok(ctx.clone())
+    }
+}

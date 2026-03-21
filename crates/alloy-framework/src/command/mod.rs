@@ -35,13 +35,17 @@
 //!     });
 //! ```
 
-pub mod config;
-pub mod extractor;
-pub mod layer;
-pub mod segment;
-pub mod split;
+mod config;
+mod extractor;
+mod help;
+mod layer;
+mod segment;
+mod split;
+
+pub(crate) use help::HelpProvider;
 
 pub use config::CommandConfig;
 pub use extractor::CommandArgs;
+pub use help::{CommandMap, HelpCommand, HelpCommandHandler, help_command};
 pub use layer::{CommandLayer, CommandService, on_command};
 pub use segment::{AtSegment, HandleRegistry, ImageSegment};

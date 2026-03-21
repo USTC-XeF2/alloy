@@ -1,5 +1,6 @@
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -8,10 +9,54 @@ use tower::util::BoxCloneSyncService;
 
 use crate::context::{HandlerContext, PluginContext, ServiceArc};
 
+/// Load-time plugin context that extends [`PluginContext`] with command registration.
+///
+/// This context is only used by plugin lifecycle hooks such as `on_load`.
+#[derive(Clone)]
+pub struct PluginLoadContext {
+    plugin: Arc<PluginContext>,
+    #[cfg(feature = "command")]
+    command: Arc<crate::context::CommandContext>,
+}
+
+impl PluginLoadContext {
+    pub(crate) fn new(
+        plugin: Arc<PluginContext>,
+        #[cfg(feature = "command")] command: Arc<crate::context::CommandContext>,
+    ) -> Self {
+        Self {
+            plugin,
+            #[cfg(feature = "command")]
+            command,
+        }
+    }
+
+    /// Registers this plugin's help provider into the runtime-scoped command context.
+    #[cfg(feature = "command")]
+    pub fn register_commands<F, T>(&self, provider: F)
+    where
+        F: crate::handler::FromCtxFn<T, Response = crate::command::CommandMap>,
+        T: Send + Sync + 'static,
+    {
+        self.command.help_provider.write().insert(
+            self.plugin.name().to_string(),
+            Arc::new((provider, PhantomData)),
+        );
+    }
+}
+
+impl std::ops::Deref for PluginLoadContext {
+    type Target = PluginContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.plugin
+    }
+}
+
 /// Type of the async `on_load` function stored inside a [`Plugin`].
 ///
 /// Must return `Ok(())` on success or `Err(BoxError)` on failure.
-pub type OnLoadFn = fn(Arc<PluginContext>) -> BoxFuture<'static, Result<(), BoxError>>;
+pub type OnLoadFn = fn(PluginLoadContext) -> BoxFuture<'static, Result<(), BoxError>>;
 
 /// Type of the async `on_unload` function stored inside a [`Plugin`].
 pub type OnUnloadFn = fn() -> BoxFuture<'static, ()>;
@@ -212,7 +257,7 @@ impl Plugin {
     ///
     /// [`PluginManager`]: crate::manager::PluginManager
     /// [`PluginLoadState::Failed`]: crate::manager::PluginLoadState::Failed
-    pub(crate) async fn on_load(&self, ctx: Arc<PluginContext>) -> Result<(), BoxError> {
+    pub(crate) async fn on_load(&self, ctx: PluginLoadContext) -> Result<(), BoxError> {
         if let Some(f) = &self.on_load_fn {
             f(ctx).await
         } else {

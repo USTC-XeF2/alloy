@@ -157,7 +157,7 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 ///         on_command::<MyCmd>("cmd").handler(cmd_handler),
 ///     ],
 ///
-///     on_load:   my_on_load_fn,    // async fn(Arc<PluginLoadContext>) -> Result<()>
+///     on_load:   my_on_load_fn,    // async fn(PluginLoadContext) -> Result<()>
 ///     on_unload: my_on_unload_fn,  // async fn()
 ///
 ///     metadata: {
@@ -177,7 +177,7 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 /// | `provides` | — | `{ Trait: ImplType, … }` — services injected into the registry |
 /// | `depends_on` | — | `[Trait, …]` — traits that must exist before loading |
 /// | `handlers` | — | `[expr, …]` — Tower handler services |
-/// | `on_load` | — | `async fn(Arc<PluginLoadContext>) -> Result<()>` |
+/// | `on_load` | — | `async fn(PluginLoadContext) -> Result<()>` |
 /// | `on_unload` | — | `async fn()` |
 /// | `metadata` | — | `{ version, desc, full_desc, plugin_type }` |
 ///

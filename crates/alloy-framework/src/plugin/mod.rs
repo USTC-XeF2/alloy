@@ -47,7 +47,7 @@
 //! impl MyService for MyServiceImpl { fn do_thing(&self) -> String { "done".into() } }
 //!
 //! impl ServiceInit for MyServiceImpl {
-//!     async fn init(_ctx: Arc<PluginLoadContext>) -> Self { MyServiceImpl }
+//!     async fn init(_ctx: PluginLoadContext) -> Self { MyServiceImpl }
 //! }
 //!
 //! // 3. Register the service:
@@ -78,7 +78,8 @@ pub mod registry;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
 pub use core::{
-    DependsOnEntry, OnLoadFn, OnUnloadFn, Plugin, PluginMetadata, PluginType, ServiceEntry,
+    DependsOnEntry, OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType,
+    ServiceEntry,
 };
 pub use descriptor::{ALLOY_PLUGIN_API_VERSION, PluginDescriptor};
 pub use registry::{ServiceInit, ServiceMeta};

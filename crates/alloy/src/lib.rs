@@ -72,7 +72,7 @@ pub mod prelude {
     pub use alloy_runtime::AlloyRuntime;
 
     // Plugin system - primary unit of event handling
-    pub use alloy_framework::plugin::{ServiceInit, ServiceMeta};
+    pub use alloy_framework::plugin::PluginLoadContext;
     pub use alloy_macros::define_plugin;
 
     // Event system - for building handlers
@@ -90,7 +90,9 @@ pub mod prelude {
 
     // Structured command support (requires "command" feature)
     #[cfg(feature = "command")]
-    pub use alloy_framework::command::{AtSegment, CommandArgs, ImageSegment, on_command};
+    pub use alloy_framework::command::{
+        AtSegment, CommandArgs, CommandMap, ImageSegment, help_command, on_command,
+    };
 
     // Bot types - for interacting with bots in handlers
     pub use alloy_core::{Bot as __Bot, BoxedBot};

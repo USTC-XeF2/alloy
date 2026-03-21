@@ -209,7 +209,7 @@ where
         let start_tag = self
             .start_tag
             .clone()
-            .unwrap_or_else(|| ctx.command_config().default_start_tag.clone());
+            .unwrap_or_else(|| ctx.command().config.default_start_tag.clone());
         let reply_help = self.reply_help;
         let reply_error = self.reply_error;
         let block = self.block;

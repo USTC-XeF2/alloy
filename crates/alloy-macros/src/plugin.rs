@@ -361,9 +361,13 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     // ── on_load / on_unload closures ──────────────────────────────────────────
     let on_load_tokens = if let Some(f) = &on_load {
         quote! {
-            ::std::option::Option::Some(|ctx: ::std::sync::Arc<#fw::context::PluginContext>| {
+            ::std::option::Option::Some(|ctx: #fw::plugin::PluginLoadContext| {
                 ::std::boxed::Box::pin(async move {
-                    #f(ctx).await.map_err(|e| -> ::tower::BoxError { e.into() })
+                    #f(ctx)
+                        .await
+                        .map_err(|e| -> ::std::boxed::Box<dyn ::std::error::Error + Send + Sync> {
+                            ::std::boxed::Box::new(e)
+                        })
                 })
             })
         }
