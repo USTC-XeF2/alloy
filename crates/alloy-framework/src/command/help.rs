@@ -43,7 +43,7 @@ pub struct HelpCommand {
 }
 
 /// A map of command names to their corresponding clap `Command` definitions.
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CommandMap(HashMap<String, Command>);
 
 impl CommandMap {
@@ -59,7 +59,19 @@ impl CommandMap {
     }
 }
 
-#[derive(Clone)]
+impl FromIterator<(String, Command)> for CommandMap {
+    fn from_iter<I: IntoIterator<Item = (String, Command)>>(iter: I) -> Self {
+        CommandMap(iter.into_iter().collect())
+    }
+}
+
+impl Extend<(String, Command)> for CommandMap {
+    fn extend<I: IntoIterator<Item = (String, Command)>>(&mut self, iter: I) {
+        self.0.extend(iter);
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct HelpCommandHandler;
 
 impl FromCtxFn<()> for HelpCommandHandler {

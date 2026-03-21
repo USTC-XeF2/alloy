@@ -217,11 +217,11 @@ impl PluginContext {
         &self.name
     }
 
-    /// Deserialise the plugin config section into `T`.
+    /// Deserialize the plugin config section into `T`.
     ///
     /// Returns `Err` if the config is missing required fields or has the wrong
     /// shape; use `#[serde(default)]` on the struct to make all fields optional.
-    pub fn get_config<T>(&self) -> serde_json::Result<T>
+    pub fn config<T>(&self) -> serde_json::Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -234,7 +234,7 @@ impl PluginContext {
     /// plugin (via `provides` or `depends_on`) or if its provider plugin
     /// failed to load.  For ergonomic handler injection prefer
     /// [`ServiceRef<dyn YourTrait>`](crate::plugin::ServiceRef).
-    pub fn get_service<T: ?Sized + 'static>(&self) -> Option<Arc<T>> {
+    pub fn service<T: ?Sized + 'static>(&self) -> Option<Arc<T>> {
         let services = self.all_services.read();
         if let Some((id, arc)) = services.get(&TypeId::of::<T>())
             && self.service_ids.contains(id)
@@ -316,7 +316,7 @@ impl HandlerContext {
     /// Looks up a service by its trait-object type, returning an error if not found.
     pub fn require_service<T: ?Sized + 'static>(&self) -> ExtractResult<Arc<T>> {
         self.plugin
-            .get_service::<T>()
+            .service::<T>()
             .ok_or(ExtractError::ServiceNotFound(std::any::type_name::<T>()))
     }
 

@@ -157,6 +157,7 @@ pub struct DependsOnEntry {
 /// **after** the plugin's `on_load` hook succeeds.
 ///
 /// [`PluginManager`]: crate::manager::PluginManager
+#[derive(Debug)]
 pub struct ServiceEntry {
     /// Registry ID — value of `<dyn ServiceTrait as ServiceMeta>::ID`.
     pub id: &'static str,
@@ -179,6 +180,7 @@ type BoxedHandlerService = BoxCloneSyncService<HandlerContext, (), BoxError>;
 ///
 /// `Plugin` is `Send + Sync`.  Use interior mutability (e.g. `Arc<Mutex<T>>`)
 /// for state that changes across events.
+#[derive(Debug)]
 pub struct Plugin {
     name: Cow<'static, str>,
     /// All dependencies declared in `depends_on: [...]`, with `required` flag indicating

@@ -93,7 +93,7 @@ pub trait ServiceInit: Send + Sync + Sized + 'static {
     ///
     /// Called once at plugin load time.  May perform async I/O (e.g. creating
     /// directories, connecting to databases).  Use `ctx.get_config::<T>()` to
-    /// deserialise a typed configuration struct.
+    /// deserialize a typed configuration struct.
     ///
     /// Returns `Ok(Self)` on success, or `Err(String)` on failure. If service
     /// initialization fails, the entire plugin load operation is marked as failed.

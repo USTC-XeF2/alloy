@@ -35,7 +35,7 @@ pub struct AlloyConfig {
     /// Plugin-specific configurations.
     ///
     /// Keyed by plugin name (must match the `name` field in the plugin descriptor).
-    /// Each entry is deserialised into the plugin's declared `config_type` at load
+    /// Each entry is deserialized into the plugin's declared `config_type` at load
     /// time and injected into every [`HandlerContext`] for that plugin run.
     ///
     /// ```toml

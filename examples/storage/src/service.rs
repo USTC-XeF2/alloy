@@ -63,7 +63,7 @@ impl ServiceInit for StorageServiceImpl {
     ///
     /// Reads `base_dir` from config; falls back to `"."` when absent.
     async fn init(ctx: Arc<PluginContext>) -> Result<Self, String> {
-        let cfg: StorageConfig = ctx.get_config().unwrap_or_default();
+        let cfg: StorageConfig = ctx.config().unwrap_or_default();
         let service = StorageServiceImpl {
             base_dir: cfg.base_dir,
         };

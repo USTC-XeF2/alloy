@@ -10,19 +10,17 @@ use crate::extractor::FromContext;
 ///
 /// The runtime automatically injects the plugin's raw JSON section from
 /// `alloy.toml → plugins.<plugin_name>` into every [`HandlerContext`] before
-/// the handler chain runs.  `PluginConfig<T>` deserialises that JSON into `T`.
+/// the handler chain runs.  `PluginConfig<T>` deserializes that JSON into `T`.
 ///
 /// If the config section is absent or empty, `T::default()` is used (requires
-/// `T: Default`).  If deserialisation fails the handler is skipped with
+/// `T: Default`).  If deserialization fails the handler is skipped with
 /// [`ExtractError::MissingState`].
 #[derive(Deref, AsRef)]
 pub struct PluginConfig<T>(T);
 
 impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
-        Ok(PluginConfig(
-            ctx.plugin().get_config::<T>().unwrap_or_default(),
-        ))
+        Ok(PluginConfig(ctx.plugin().config().unwrap_or_default()))
     }
 }
 

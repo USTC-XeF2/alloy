@@ -139,7 +139,7 @@ pub static SSE_CLIENT_REGISTRY: [SseClientFn];
 /// Context for adapter initialization.
 ///
 /// Provides access to available transport capabilities.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct TransportContext {
     ws_server: Option<WsListenFn>,
     ws_client: Option<WsConnectFn>,
@@ -243,11 +243,5 @@ impl TransportContext {
     /// Gets the SSE client capability if available.
     pub fn sse_client(&self) -> Option<SseClientFn> {
         self.sse_client
-    }
-}
-
-impl Default for TransportContext {
-    fn default() -> Self {
-        Self::new()
     }
 }

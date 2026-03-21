@@ -75,6 +75,7 @@ pub trait Dispatcher: Send + Sync + 'static {
 ///   directly, since the runtime holds `Arc<AdapterBridge>`.
 ///
 /// Each `AdapterBridge` manages bots for exactly one adapter instance.
+#[derive(Debug)]
 pub struct AdapterBridge<A: Adapter, D: Dispatcher> {
     adapter: A,
     /// Active bots and their connection handles, keyed by bot ID.

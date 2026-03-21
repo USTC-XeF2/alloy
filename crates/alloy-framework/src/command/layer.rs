@@ -65,7 +65,7 @@ where
 ///
 /// Produced by [`on_command`]. Builder methods adjust error-reply behaviour;
 /// finalise by calling `.layer(HandlerService::new(my_handler))`.
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct CommandLayer<T>
 where
     T: Parser + Clone + Send + Sync + 'static,
@@ -179,7 +179,7 @@ where
 /// parsed value is stored in context (via [`CommandArgs`]) and the inner
 /// service is called; otherwise the event is dropped (or an error/help reply
 /// is sent if the corresponding option is enabled).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CommandService<T, S> {
     name: String,
     start_tag: Option<String>,

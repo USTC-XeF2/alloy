@@ -20,7 +20,7 @@ pub struct BotHandle(pub(crate) Arc<Mutex<HashMap<String, Arc<dyn BridgeRuntime>
 
 impl BotHandle {
     /// Gets a boxed bot instance by its ID across all adapters.
-    pub fn get_boxed_bot(&self, bot_id: &str) -> Option<BoxedBot> {
+    pub fn boxed_bot(&self, bot_id: &str) -> Option<BoxedBot> {
         for bridge in self.0.lock().values() {
             if let Some(bot) = bridge.bots().into_iter().find(|b| b.id() == bot_id) {
                 return Some(bot);
@@ -30,8 +30,8 @@ impl BotHandle {
     }
 
     /// Gets a bot instance by its ID and downcasts it to the specified type.
-    pub fn get_bot<T: Bot>(&self, bot_id: &str) -> Option<Arc<T>> {
-        self.get_boxed_bot(bot_id)?.downcast_arc::<T>().ok()
+    pub fn bot<T: Bot>(&self, bot_id: &str) -> Option<Arc<T>> {
+        self.boxed_bot(bot_id)?.downcast_arc::<T>().ok()
     }
 }
 

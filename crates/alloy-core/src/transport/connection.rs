@@ -139,7 +139,7 @@ impl std::fmt::Debug for Sender {
 /// A bot that only receives events (e.g. HTTP server webhook) will have
 /// `sender == None`; a bot with a send channel (WS / HTTP-client) will have
 /// a [`Some`] variant.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct ConnectionHandle {
     /// Optional outbound send capability.
     /// `None` ⇒ receive-only; `Some` ⇒ can also send API calls.
