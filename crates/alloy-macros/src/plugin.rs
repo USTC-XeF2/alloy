@@ -365,7 +365,7 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
                 ::std::boxed::Box::pin(async move {
                     #f(ctx)
                         .await
-                        .map_err(|e| -> ::std::boxed::Box<dyn ::std::error::Error + Send + Sync> {
+                        .map_err(|e| -> ::std::boxed::Box<dyn ::std::fmt::Display + Send> {
                             ::std::boxed::Box::new(e)
                         })
                 })

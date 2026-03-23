@@ -1,9 +1,9 @@
 //! Connection handling and lifecycle types.
 
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -17,11 +17,8 @@ use crate::error::TransportResult;
 /// The base URL and authentication (e.g. Bearer token) are captured when the
 /// closure is constructed by the transport layer. Callers supply the endpoint
 /// (relative path) and request body.
-pub type PostJsonFn = Arc<
-    dyn Fn(&str, Value) -> Pin<Box<dyn Future<Output = TransportResult<Value>> + Send>>
-        + Send
-        + Sync,
->;
+pub type PostJsonFn =
+    Arc<dyn Fn(&str, Value) -> BoxFuture<'static, TransportResult<Value>> + Send + Sync>;
 
 /// Information about a connection.
 #[derive(Debug, Clone)]

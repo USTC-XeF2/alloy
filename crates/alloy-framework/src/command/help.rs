@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::marker::PhantomData;
-use std::pin::Pin;
 
 use clap::{Command, Parser};
-use futures::future;
+use futures::future::BoxFuture;
+use futures::{FutureExt, future};
 
 use super::extractor::CommandArgs;
 use super::layer::{CommandService, on_command};
@@ -13,10 +13,7 @@ use crate::error::ExtractResult;
 use crate::handler::{FromCtxFn, HandlerService};
 
 pub(crate) trait HelpProvider: Send + Sync {
-    fn call<'a>(
-        &'a self,
-        ctx: &'a HandlerContext,
-    ) -> Pin<Box<dyn Future<Output = ExtractResult<CommandMap>> + Send + 'a>>;
+    fn call<'a>(&'a self, ctx: &'a HandlerContext) -> BoxFuture<'a, ExtractResult<CommandMap>>;
 }
 
 impl<F, T> HelpProvider for (F, PhantomData<T>)
@@ -24,11 +21,8 @@ where
     F: FromCtxFn<T, Response = CommandMap>,
     T: Send + Sync,
 {
-    fn call<'a>(
-        &'a self,
-        ctx: &'a HandlerContext,
-    ) -> Pin<Box<dyn Future<Output = ExtractResult<CommandMap>> + Send + 'a>> {
-        Box::pin(self.0.clone().call(ctx))
+    fn call<'a>(&'a self, ctx: &'a HandlerContext) -> BoxFuture<'a, ExtractResult<CommandMap>> {
+        self.0.clone().call(ctx).boxed()
     }
 }
 
