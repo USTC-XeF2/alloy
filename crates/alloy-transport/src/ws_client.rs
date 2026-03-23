@@ -17,8 +17,6 @@ use alloy_core::{
 use alloy_macros::register_capability;
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
-type WsSink = SplitSink<WsStream, Message>;
-type WsSource = SplitStream<WsStream>;
 
 /// State for managing WebSocket client loop interactions.
 struct ClientLoopState {
@@ -27,8 +25,8 @@ struct ClientLoopState {
     config: WsClientConfig,
     retry_count: u32,
     current_delay: Duration,
-    ws_tx: WsSink,
-    ws_rx: WsSource,
+    ws_tx: SplitSink<WsStream, Message>,
+    ws_rx: SplitStream<WsStream>,
 }
 
 impl ClientLoopState {

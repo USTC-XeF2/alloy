@@ -5,7 +5,7 @@ use derive_more::{AsRef, Deref};
 use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
-use alloy_core::{BoxedEvent, Event as EventTrait};
+use alloy_core::{BoxedEvent, Event as EventTrait, Scene};
 
 /// Context wrapper that provides access to extracted event data.
 ///
@@ -68,5 +68,17 @@ impl<T: EventTrait> FromContext for Event<T> {
 impl FromContext for BoxedEvent {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         Ok(ctx.event().clone())
+    }
+}
+
+/// Blanket implementation for extracting the event's scene as a `Scene` enum.
+///
+/// This allows handlers to easily access the context of the event without
+/// needing to know the specific event type.
+impl FromContext for Scene {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
+        ctx.event()
+            .get_scene()
+            .ok_or_else(|| ExtractError::Custom("Scene not found".into()))
     }
 }

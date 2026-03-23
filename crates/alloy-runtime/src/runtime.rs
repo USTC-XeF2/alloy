@@ -122,11 +122,7 @@ impl AlloyRuntime {
         // `#[register_capability(...)]` across linked crates.
         let transport_ctx = alloy_core::TransportContext::collect_all();
 
-        info!(
-            log_level = %config.logging.level,
-            log_format = ?config.logging.format,
-            "Runtime initialized from configuration"
-        );
+        info!("Runtime initialized from configuration");
 
         let plugin_manager = PluginManager::new(
             config.plugins.clone(),

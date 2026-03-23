@@ -98,5 +98,5 @@ pub mod prelude {
     pub use alloy_core::{Bot as __Bot, BoxedBot};
 
     // Core traits for custom implementations
-    pub use alloy_core::{Event as __Event, Message, RichText, RichTextSegment};
+    pub use alloy_core::{BoxedEvent, Event as __Event, Message, RichText, RichTextSegment, Scene};
 }

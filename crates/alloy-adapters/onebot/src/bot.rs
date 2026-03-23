@@ -257,7 +257,7 @@ impl Bot for OneBotBot {
             _ => None,
         }
         .map(|id| id.to_string())
-        .ok_or(ApiError::MissingSession)
+        .ok_or_else(|| ApiError::Other("unsupported scene for OneBotBot".into()))
     }
 
     async fn on_disconnect(&self) {
