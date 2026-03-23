@@ -62,19 +62,19 @@ async fn info_handler(
     bot: Bot<OneBotBot>,
     cmd: CommandArgs<InfoCommand>,
 ) -> Result<String> {
-    if let Some(user_id) = &cmd.user {
-        let Some(user_id) = user_id.as_ref() else {
+    if let Some(user) = &cmd.user {
+        let Some(user_id) = user.as_ref() else {
             return Ok("Invalid User ID: @all is not supported.".to_string());
         };
 
         // Parse user ID - user input error, return as message
-        let Ok(parsed_id) = user_id.parse::<i64>() else {
+        let Ok(user_id) = user_id.parse::<i64>() else {
             return Ok(format!("Invalid User ID: {user_id}"));
         };
 
         // Query member information - API error, let framework handle it
         let member = bot
-            .get_group_member_info(event.group_id, parsed_id, false)
+            .get_group_member_info(event.group_id, user_id, false)
             .await?;
 
         Ok(format!(
@@ -107,7 +107,7 @@ async fn signin_handler(
 ) -> Result<RichText> {
     let path = data_dir.join("signin.json");
 
-    // Load existing records (user_id → last-signin-date).
+    // Load existing records.
     let mut records: HashMap<String, String> = if path.exists() {
         let text = tokio::fs::read_to_string(&path).await?;
         serde_json::from_str(&text).unwrap_or_default()
@@ -123,31 +123,44 @@ async fn signin_handler(
         .and_then(|dt| dt.format(format).ok())
     else {
         return Ok(RichText::msg(
-            "获取当前日期失败，请稍后再试！",
+            "Failed to get current date.",
             event.get_user_id(),
         ));
     };
 
     if records.get(&user_id).is_some_and(|d| d == &today) {
-        return Ok(RichText::msg("你今天已经签到过了！", event.get_user_id()));
+        return Ok(RichText::msg("You have already signed in today!", event.get_user_id()));
     }
 
     records.insert(user_id, today);
     let json = serde_json::to_string_pretty(&records)?;
     tokio::fs::write(&path, json).await?;
 
-    Ok(RichText::msg("签到成功！", event.get_user_id()))
+    Ok(RichText::msg("Sign-in successful!", event.get_user_id()))
+}
+
+async fn on_load(ctx: PluginLoadContext) -> Result<()> {
+    // Register commands with the framework, associating them with their respective handlers.
+    ctx.register_commands(async || {
+        CommandMap::new()
+            .insert::<EchoCommand>("echo")
+            .insert::<InfoCommand>("info")
+            .insert::<SigninCommand>("signin")
+    });
+    Ok(())
 }
 
 define_plugin! {
     /// The echo bot plugin with command handlers for echo, info, and signin.
     name: "echo_bot",
     depends_on: [StorageService],
+    on_load: on_load,
     handlers: [
         on_message().handler(logging_handler),
         on_command::<EchoCommand>("echo").handler(echo_handler),
         on_command::<InfoCommand>("info").handler(info_handler),
         on_command::<SigninCommand>("signin").handler(signin_handler),
+        help_command(),
     ],
 }
 
