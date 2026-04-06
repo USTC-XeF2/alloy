@@ -1,611 +1,809 @@
-//! Event derive macro implementation — **parent-in-child** design.
-//!
-//! # Overview
-//!
-//! `#[derive(BotEvent)]` generates:
-//!
-//! 1. `impl Event` — event metadata + downgrade_any method for parent chain traversal
-//! 2. `impl Deref[Mut]` — auto-generated when a parent field exists
-//!
-//! # Root events: `#[root_event(...)]`
-//!
-//! Used for the top-level event of a platform. It has no parent and defines
-//! the platform name and segment type that all child events will inherit.
-//!
-//! | Key | Example | Required | Description |
-//! |-----|---------|----------|-------------|
-//! | `platform` | `"onebot"` | **Yes** | Platform name; also used as event name |
-//! | `segment_type` | `"crate::segment::Segment"` | **Yes** | Segment type for the whole platform |
-//!
-//! # Child events: `#[event(...)]`
-//!
-//! Used for all non-root events. The parent is detected from the field
-//! marked with `#[event(parent)]`, so you only need to write it once.
-//!
-//! | Key | Example | Required | Description |
-//! |-----|---------|----------|-------------
-//! | `name` | `"message.private"` | No | Event name suffix (auto-prefixed with `{platform}.`) |
-//! | `type` | `"message"` | No | `EventType` variant (default: inherited from parent or `Other`) |
-//! | `scene` | `"private"` | No | Session scene variant (`private`, `group`, `guild`, `other`); delegates to parent when absent |
-//!
-//! # Field-level attributes `#[event(...)]`
-//!
-//! | Key | Description |
-//! |-----|-------------
-//! | `parent` | Marks this field as the parent (type is auto-detected) |
-//! | `bot_id` | Field that stores `Option<Arc<str>>` of bot ID |
-//! | `message` | Field of type `Message<Segment>`, used for `Event::get_message()` |
-//! | `user_id` | Drives `get_user_id()` AND the user component of private/group scene |
-//! | `group_id` | Required group-ID field for `Scene::Group` |
-//! | `guild_id` | Required guild-ID field for `Scene::Guild` |
-//! | `scene_id` | Generic ID field for `Scene::Other` |
-
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, Type, spanned::Spanned};
+use syn::parse::Parser;
+use syn::spanned::Spanned;
+use syn::{Attribute, Fields, Ident, ItemEnum, ItemStruct, Meta, Path, Type, Variant};
 
-// ============================================================================
-// Attribute structures
-// ============================================================================
+pub fn expand_event_root(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let root_attr = parse_event_root_attr(attr)?;
+    let mut root_struct: ItemStruct = syn::parse2(item)?;
 
-/// Which kind of struct-level attribute was found.
-enum EventKind {
-    /// `#[root_event(platform = "…", segment_type = "…")]`
-    Root {
-        platform: String,
-        segment_type: String,
-    },
-    /// `#[event(name = "…", type = "…", scene = "…")]`
-    Child {
-        name: Option<String>,
-        event_type: Option<String>,
-        /// Session scene: `"private"` | `"group"` | `"guild"` | `"other"`.
-        /// When `None`, `get_scene_id()` delegates to the parent.
-        scene: Option<String>,
-    },
-}
+    let (data_field_ident, data_field_ty) = find_root_data_field(&root_struct)?;
 
-/// Per-field `#[event(…)]` markers.
-#[derive(Default)]
-struct FieldAttrs {
-    is_parent: bool,
-    is_message: bool,
-    is_user_id: bool,
-    is_group_id: bool,
-    is_guild_id: bool,
-    is_scene_id: bool,
-}
-
-// ============================================================================
-// Entry point
-// ============================================================================
-
-pub fn derive_bot_event(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let kind = parse_struct_attrs(&input.attrs, input.ident.span())?;
-    let name = &input.ident;
-
-    match &input.data {
-        Data::Struct(data) => generate_struct_impl(name, &kind, &data.fields),
-        Data::Enum(_) => Err(syn::Error::new(
-            input.span(),
-            "BotEvent does not support enums. Use structs with a parent field instead.",
-        )),
-        Data::Union(_) => Err(syn::Error::new(
-            input.span(),
-            "BotEvent cannot be derived for unions",
-        )),
-    }
-}
-
-// ============================================================================
-// Attribute parsing
-// ============================================================================
-
-fn parse_struct_attrs(attrs: &[Attribute], span: proc_macro2::Span) -> syn::Result<EventKind> {
-    // Check for #[root_event(...)]
-    for attr in attrs {
-        if attr.path().is_ident("root_event") {
-            let mut platform: Option<String> = None;
-            let mut segment_type: Option<String> = None;
-
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("platform") {
-                    platform = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-                } else if meta.path.is_ident("segment_type") {
-                    segment_type = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-                }
-                Ok(())
-            })?;
-
-            let platform = platform.ok_or_else(|| {
-                syn::Error::new(span, "#[root_event] requires `platform = \"…\"`")
-            })?;
-            let segment_type = segment_type.ok_or_else(|| {
-                syn::Error::new(span, "#[root_event] requires `segment_type = \"…\"`")
-            })?;
-
-            return Ok(EventKind::Root {
-                platform,
-                segment_type,
-            });
+    strip_custom_attrs(&mut root_struct.attrs);
+    if let Fields::Named(fields) = &mut root_struct.fields {
+        for field in &mut fields.named {
+            strip_custom_attrs(&mut field.attrs);
         }
     }
 
-    // Check for #[event(...)]
-    for attr in attrs {
-        if attr.path().is_ident("event") {
-            let mut name: Option<String> = None;
-            let mut event_type: Option<String> = None;
-            let mut scene: Option<String> = None;
+    let root_name = &root_struct.ident;
+    let platform = root_attr.platform;
 
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("name") {
-                    name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-                } else if meta.path.is_ident("type") {
-                    event_type = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-                } else if meta.path.is_ident("scene") {
-                    scene = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-                }
-                Ok(())
-            })?;
+    Ok(quote! {
+        #root_struct
 
-            return Ok(EventKind::Child {
-                name,
-                event_type,
-                scene,
-            });
+        impl ::alloy_core::EventRoot for #root_name {
+            fn platform(&self) -> &'static str {
+                #platform
+            }
+
+            fn event_id(&self) -> String {
+                let mut s = String::new();
+                self.#data_field_ident.write_id(&mut s);
+                s
+            }
+
+            fn event_type(&self) -> ::alloy_core::EventType {
+                self.#data_field_ident.event_type()
+            }
+
+            fn user_id(&self) -> Option<String> {
+                self.#data_field_ident.user_id()
+            }
+
+            fn scene(&self) -> Option<::alloy_core::Scene> {
+                self.#data_field_ident.scene()
+            }
+
+            fn plain_text(&self) -> String {
+                self.#data_field_ident.plain_text()
+            }
+
+            fn rich_text(&self) -> Vec<::alloy_core::RichTextSegment> {
+                self.#data_field_ident.rich_text()
+            }
         }
-    }
 
-    Err(syn::Error::new(
-        span,
-        "BotEvent requires either #[root_event(...)] or #[event(...)] attribute",
-    ))
+        impl #root_name {
+            fn data(&self) -> #data_field_ty {
+                self.#data_field_ident.clone()
+            }
+        }
+    })
 }
 
-fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
-    let mut result = FieldAttrs::default();
+pub fn expand_event_data(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let data_attr = parse_event_data_attr(attr)?;
+    let mut data_enum: ItemEnum = syn::parse2(item)?;
 
-    for attr in attrs {
-        if !attr.path().is_ident("event") {
-            continue;
-        }
-        attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("parent") {
-                result.is_parent = true;
-            } else if meta.path.is_ident("message") {
-                result.is_message = true;
-            } else if meta.path.is_ident("user_id") {
-                result.is_user_id = true;
-            } else if meta.path.is_ident("group_id") {
-                result.is_group_id = true;
-            } else if meta.path.is_ident("guild_id") {
-                result.is_guild_id = true;
-            } else if meta.path.is_ident("scene_id") {
-                result.is_scene_id = true;
-            }
-            Ok(())
-        })?;
-    }
+    let enum_name = data_enum.ident.clone();
+    let variant_specs = collect_variant_specs(&enum_name, &data_enum.variants)?;
 
-    Ok(result)
-}
-
-// ============================================================================
-// Code generation
-// ============================================================================
-
-fn generate_struct_impl(
-    name: &Ident,
-    kind: &EventKind,
-    fields: &Fields,
-) -> syn::Result<TokenStream> {
-    // Scan fields for markers
-    let mut parent_field: Option<(Ident, Type)> = None;
-    let mut message_field: Option<(Ident, Type)> = None;
-    let mut user_id_field: Option<Ident> = None;
-    let mut group_id_field: Option<Ident> = None;
-    let mut guild_id_field: Option<Ident> = None;
-    let mut scene_id_field: Option<Ident> = None;
-
-    if let Fields::Named(named) = fields {
-        for f in &named.named {
-            let fa = parse_field_attrs(&f.attrs)?;
-            let ident = f.ident.as_ref().unwrap();
-            if fa.is_parent {
-                parent_field = Some((ident.clone(), f.ty.clone()));
-            }
-            if fa.is_message {
-                message_field = Some((ident.clone(), f.ty.clone()));
-            }
-            if fa.is_user_id {
-                user_id_field = Some(ident.clone());
-            }
-            if fa.is_group_id {
-                group_id_field = Some(ident.clone());
-            }
-            if fa.is_guild_id {
-                guild_id_field = Some(ident.clone());
-            }
-            if fa.is_scene_id {
-                scene_id_field = Some(ident.clone());
+    strip_custom_attrs(&mut data_enum.attrs);
+    for variant in &mut data_enum.variants {
+        strip_custom_attrs(&mut variant.attrs);
+        if let Fields::Named(fields) = &mut variant.fields {
+            for field in &mut fields.named {
+                strip_custom_attrs(&mut field.attrs);
             }
         }
     }
 
-    match kind {
-        EventKind::Root {
-            platform,
-            segment_type,
-        } => {
-            if parent_field.is_some() {
-                return Err(syn::Error::new(
-                    name.span(),
-                    "#[root_event] must not have a #[event(parent)] field",
-                ));
-            }
-            generate_root_event(name, platform, segment_type, message_field, user_id_field)
-        }
-        EventKind::Child {
-            name: event_name,
-            event_type,
-            scene,
-        } => {
-            let (pf_ident, pf_ty) = parent_field.ok_or_else(|| {
-                syn::Error::new(
-                    name.span(),
-                    "#[event] requires a field marked with #[event(parent)]",
-                )
-            })?;
-            Ok(generate_child_event(
-                name,
-                event_name.as_deref(),
-                event_type.as_deref(),
-                scene.as_deref(),
-                &pf_ident,
-                &pf_ty,
-                message_field,
-                user_id_field,
-                group_id_field,
-                guild_id_field,
-                scene_id_field,
-            ))
-        }
-    }
-}
+    let write_id_arms = variant_specs.iter().map(write_id_arm);
+    let event_type_arms = variant_specs.iter().map(event_type_arm);
+    let scene_arms = variant_specs
+        .iter()
+        .map(scene_arm)
+        .collect::<syn::Result<Vec<_>>>()?;
 
-// ============================================================================
-// Root event generation
-// ============================================================================
-
-fn generate_root_event(
-    name: &Ident,
-    platform: &str,
-    segment_type_str: &str,
-    message_field: Option<(Ident, Type)>,
-    user_id_field: Option<Ident>,
-) -> syn::Result<TokenStream> {
-    let platform_lit = syn::LitStr::new(platform, name.span());
-    let seg_ty: Type = syn::parse_str(segment_type_str)?;
-
-    let (segment_type_impl, get_message_impl);
-    if let Some((mf, _)) = message_field {
-        segment_type_impl = quote! { type Segment = #seg_ty; };
-        get_message_impl = quote! {
-            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
-                &self.#mf
-            }
-        };
-    } else {
-        segment_type_impl = quote! { type Segment = #seg_ty; };
-        get_message_impl = quote! {
-            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
-                static EMPTY: ::std::sync::OnceLock<::alloy_core::Message<#seg_ty>> = ::std::sync::OnceLock::new();
-                EMPTY.get_or_init(|| ::alloy_core::Message::new())
-            }
-        };
-    }
-
-    let get_user_id_impl = if let Some(uid) = user_id_field {
+    let can_generate_user_id = variant_specs
+        .iter()
+        .any(|spec| user_id_field(spec).is_some() || nested_user_id_field(spec).is_some());
+    let user_id_method = if can_generate_user_id {
+        let user_id_arms: Vec<_> = variant_specs.iter().map(user_id_arm).collect();
         quote! {
-            fn get_user_id(&self) -> Option<String> {
-                Some(self.#uid.to_string())
+            fn user_id(&self) -> Option<String> {
+                match self {
+                    #(#user_id_arms)*
+                }
             }
         }
     } else {
         quote! {}
     };
 
-    let downgrade_any_impl = quote! {
-        fn downgrade_any(&self, type_id: ::std::any::TypeId) -> Option<Box<dyn ::std::any::Any>> {
-            // Root event: only matches self
-            if type_id == ::std::any::TypeId::of::<Self>() {
-                Some(Box::new(self.clone()))
-            } else {
-                None
+    let can_generate_message_methods = variant_specs
+        .iter()
+        .any(|spec| message_field(spec).is_some() || nested_message_field(spec).is_some());
+    let message_methods = if can_generate_message_methods {
+        let (plain_text_arms, rich_text_arms): (Vec<_>, Vec<_>) =
+            variant_specs.iter().map(message_text_arms).unzip();
+        quote! {
+            fn plain_text(&self) -> String {
+                match self {
+                    #(#plain_text_arms)*
+                }
+            }
+
+            fn rich_text(&self) -> Vec<::alloy_core::RichTextSegment> {
+                match self {
+                    #(#rich_text_arms)*
+                }
             }
         }
+    } else {
+        quote! {}
     };
 
-    let event_impl = quote! {
-        impl ::alloy_core::Event for #name {
-            fn event_name(&self) -> &'static str {
-                #platform_lit
-            }
-
-            fn platform(&self) -> &'static str {
-                #platform_lit
-            }
-
-            #downgrade_any_impl
-            #get_user_id_impl
-            #segment_type_impl
-            #get_message_impl
-        }
-    };
+    let view_defs = variant_specs
+        .iter()
+        .map(|spec| generate_view_tokens(&enum_name, &data_attr.parent, spec));
 
     Ok(quote! {
-        #event_impl
+        #data_enum
+
+        impl #enum_name {
+            fn write_id(&self, s: &mut String) {
+                match self {
+                    #(#write_id_arms)*
+                }
+            }
+
+            fn event_type(&self) -> ::alloy_core::EventType {
+                match self {
+                    #(#event_type_arms)*
+                }
+            }
+
+            fn scene(&self) -> Option<::alloy_core::Scene> {
+                match self {
+                    #(#scene_arms)*
+                }
+            }
+
+            #user_id_method
+
+            #message_methods
+        }
+
+        #(#view_defs)*
     })
 }
 
-// ============================================================================
-// Child event generation
-// ============================================================================
+struct EventRootAttr {
+    platform: syn::LitStr,
+}
 
-#[allow(clippy::too_many_arguments)]
-fn generate_child_event(
-    name: &Ident,
-    event_name: Option<&str>,
-    event_type: Option<&str>,
-    scene: Option<&str>,
-    parent_field_ident: &Ident,
-    parent_ty: &Type,
-    message_field: Option<(Ident, Type)>,
-    user_id_field: Option<Ident>,
-    group_id_field: Option<Ident>,
-    guild_id_field: Option<Ident>,
-    scene_id_field: Option<Ident>,
-) -> TokenStream {
-    // ── event_type ──
-    let event_type_impl = match event_type {
-        Some(t) => {
-            let variant = match t.to_lowercase().as_str() {
-                "message" => quote! { ::alloy_core::EventType::Message },
-                "notice" => quote! { ::alloy_core::EventType::Notice },
-                "request" => quote! { ::alloy_core::EventType::Request },
-                "meta" => quote! { ::alloy_core::EventType::Meta },
-                _ => quote! { ::alloy_core::EventType::Other },
-            };
-            quote! { fn event_type(&self) -> ::alloy_core::EventType { #variant } }
+struct EventDataAttr {
+    parent: Type,
+}
+
+#[derive(Clone)]
+struct VariantFieldSpec {
+    ident: Ident,
+    ty: Type,
+    is_user_id: bool,
+    is_group_id: bool,
+    is_guild_id: bool,
+    is_message: bool,
+    is_event_data: bool,
+    nested_user_id: bool,
+    nested_message: bool,
+}
+
+struct VariantSpec {
+    variant_ident: Ident,
+    view_name: Ident,
+    view_id: syn::LitStr,
+    view_type: Option<Ident>,
+    view_scene: Option<Ident>,
+    view_scene_func: Option<Path>,
+    fields: Vec<VariantFieldSpec>,
+}
+
+fn parse_event_root_attr(attr: TokenStream) -> syn::Result<EventRootAttr> {
+    let mut platform: Option<syn::LitStr> = None;
+
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("platform") {
+            platform = Some(meta.value()?.parse::<syn::LitStr>()?);
+            return Ok(());
         }
-        None => {
-            quote! {
-                fn event_type(&self) -> ::alloy_core::EventType {
-                    <#parent_ty as ::alloy_core::Event>::event_type(&self.#parent_field_ident)
+        Err(meta.error("unsupported key in #[event_root(...)], expected `platform`"))
+    });
+
+    parser.parse2(attr)?;
+
+    let platform = platform.ok_or_else(|| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[event_root(...)] requires `platform = \"...\"`",
+        )
+    })?;
+
+    Ok(EventRootAttr { platform })
+}
+
+fn parse_event_data_attr(attr: TokenStream) -> syn::Result<EventDataAttr> {
+    let mut parent: Option<Type> = None;
+
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("parent") {
+            parent = Some(meta.value()?.parse::<Type>()?);
+            return Ok(());
+        }
+        Err(meta.error("unsupported key in #[event_data(...)], expected `parent`"))
+    });
+
+    parser.parse2(attr)?;
+
+    let parent = parent.ok_or_else(|| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[event_data(...)] requires `parent = Type`",
+        )
+    })?;
+
+    Ok(EventDataAttr { parent })
+}
+
+fn parse_event_view_attr(
+    attrs: &[Attribute],
+    variant: &Variant,
+) -> syn::Result<(
+    Ident,
+    syn::LitStr,
+    Option<Ident>,
+    Option<Ident>,
+    Option<Path>,
+)> {
+    let attr = attrs
+        .iter()
+        .find(|a| a.path().is_ident("event_view"))
+        .ok_or_else(|| {
+            syn::Error::new(
+                variant.span(),
+                "each variant in #[event_data] enum must have #[event_view(name = ..., id = ...)]",
+            )
+        })?;
+
+    let mut name: Option<Ident> = None;
+    let mut id: Option<syn::LitStr> = None;
+    let mut event_type: Option<Ident> = None;
+    let mut scene: Option<Ident> = None;
+    let mut scene_func: Option<Path> = None;
+
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("name") {
+            name = Some(meta.value()?.parse::<Ident>()?);
+            return Ok(());
+        }
+        if meta.path.is_ident("id") {
+            id = Some(meta.value()?.parse::<syn::LitStr>()?);
+            return Ok(());
+        }
+        if meta.path.is_ident("type") {
+            event_type = Some(meta.value()?.parse::<Ident>()?);
+            return Ok(());
+        }
+        if meta.path.is_ident("scene") {
+            scene = Some(meta.value()?.parse::<Ident>()?);
+            return Ok(());
+        }
+        if meta.path.is_ident("scene_func") {
+            scene_func = Some(meta.value()?.parse::<Path>()?);
+            return Ok(());
+        }
+        Err(meta
+            .error("unsupported key in #[event_view(...)], expected name/id/type/scene/scene_func"))
+    })?;
+
+    let name =
+        name.ok_or_else(|| syn::Error::new(variant.span(), "#[event_view] missing `name = ...`"))?;
+    let id =
+        id.ok_or_else(|| syn::Error::new(variant.span(), "#[event_view] missing `id = \"...\"`"))?;
+
+    Ok((name, id, event_type, scene, scene_func))
+}
+
+fn collect_variant_specs(
+    enum_name: &Ident,
+    variants: &syn::punctuated::Punctuated<Variant, syn::token::Comma>,
+) -> syn::Result<Vec<VariantSpec>> {
+    let mut specs = Vec::new();
+
+    for variant in variants {
+        let (view_name, view_id, view_type, view_scene, view_scene_func) =
+            parse_event_view_attr(&variant.attrs, variant)?;
+
+        let mut fields = Vec::new();
+        match &variant.fields {
+            Fields::Unit => {}
+            Fields::Named(named) => {
+                for field in &named.named {
+                    let ident = field
+                        .ident
+                        .clone()
+                        .ok_or_else(|| syn::Error::new(field.span(), "named field expected"))?;
+                    let mut is_user_id = false;
+                    let mut is_group_id = false;
+                    let mut is_guild_id = false;
+                    let mut is_message = false;
+                    let mut is_event_data = false;
+                    let mut nested_user_id = false;
+                    let mut nested_message = false;
+
+                    for attr in &field.attrs {
+                        if attr.path().is_ident("event_field") {
+                            attr.parse_nested_meta(|meta| {
+                                if meta.path.is_ident("user_id") {
+                                    is_user_id = true;
+                                    return Ok(());
+                                }
+                                if meta.path.is_ident("message") {
+                                    is_message = true;
+                                    return Ok(());
+                                }
+                                if meta.path.is_ident("group_id") {
+                                    is_group_id = true;
+                                    return Ok(());
+                                }
+                                if meta.path.is_ident("guild_id") {
+                                    is_guild_id = true;
+                                    return Ok(());
+                                }
+                                Err(meta.error(
+                                    "unsupported key in #[event_field(...)], expected user_id/group_id/guild_id/message",
+                                ))
+                            })?;
+                        }
+                        if attr.path().is_ident("event_data") {
+                            is_event_data = true;
+                            if matches!(&attr.meta, Meta::List(_)) {
+                                attr.parse_nested_meta(|meta| {
+                                    if meta.path.is_ident("user_id") {
+                                        nested_user_id = true;
+                                        return Ok(());
+                                    }
+                                    if meta.path.is_ident("message") {
+                                        nested_message = true;
+                                        return Ok(());
+                                    }
+                                    Err(meta.error(
+                                        "unsupported key in field #[event_data(...)], expected user_id/message",
+                                    ))
+                                })?;
+                            }
+                        }
+                    }
+
+                    fields.push(VariantFieldSpec {
+                        ident,
+                        ty: field.ty.clone(),
+                        is_user_id,
+                        is_group_id,
+                        is_guild_id,
+                        is_message,
+                        is_event_data,
+                        nested_user_id,
+                        nested_message,
+                    });
                 }
             }
+            Fields::Unnamed(_) => {
+                return Err(syn::Error::new(
+                    variant.span(),
+                    format!(
+                        "{}::{} does not support tuple variants, use named or unit variant",
+                        enum_name, variant.ident
+                    ),
+                ));
+            }
         }
-    };
 
-    // ── event_name ──
-    // For child events with a name suffix, we build "{platform}.{suffix}" at first call
-    // using OnceLock + Box::leak to get a &'static str.
-    // For child events without a name, we delegate to parent.
-    let event_name_impl = if let Some(suffix) = event_name {
-        let suffix_lit = syn::LitStr::new(suffix, name.span());
-        quote! {
-            fn event_name(&self) -> &'static str {
-                static FULL_NAME: ::std::sync::OnceLock<String> = ::std::sync::OnceLock::new();
-                FULL_NAME.get_or_init(|| {
-                    let platform = <#parent_ty as ::alloy_core::Event>::platform(&self.#parent_field_ident);
-                    format!("{}.{}", platform, #suffix_lit)
+        let nested_count = fields.iter().filter(|f| f.is_event_data).count();
+        if nested_count > 1 {
+            return Err(syn::Error::new(
+                variant.span(),
+                "a variant can contain at most one #[event_data] field",
+            ));
+        }
+
+        specs.push(VariantSpec {
+            variant_ident: variant.ident.clone(),
+            view_name,
+            view_id,
+            view_type,
+            view_scene,
+            view_scene_func,
+            fields,
+        });
+    }
+
+    Ok(specs)
+}
+
+fn nested_data_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields.iter().find(|f| f.is_event_data)
+}
+
+fn nested_user_id_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields
+        .iter()
+        .find(|f| f.is_event_data && f.nested_user_id)
+}
+
+fn nested_message_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields
+        .iter()
+        .find(|f| f.is_event_data && f.nested_message)
+}
+
+fn user_id_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields.iter().find(|f| f.is_user_id)
+}
+
+fn group_id_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields.iter().find(|f| f.is_group_id)
+}
+
+fn guild_id_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields.iter().find(|f| f.is_guild_id)
+}
+
+fn message_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
+    spec.fields.iter().find(|f| f.is_message)
+}
+
+fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
+    let variant_ident = &spec.variant_ident;
+
+    if let Some(scene_func) = &spec.view_scene_func {
+        if spec.fields.is_empty() {
+            return Ok(quote! {
+                Self::#variant_ident => #scene_func(self),
+            });
+        }
+
+        return Ok(quote! {
+            Self::#variant_ident { .. } => #scene_func(self),
+        });
+    }
+
+    if let Some(view_scene) = &spec.view_scene {
+        let scene = view_scene.to_string();
+        return match scene.as_str() {
+            "Private" => {
+                let user_id = user_id_field(spec).ok_or_else(|| {
+                    syn::Error::new(
+                        view_scene.span(),
+                        format!(
+                            "variant {} declares scene = Private but is missing #[event_field(user_id)]",
+                            variant_ident
+                        ),
+                    )
+                })?;
+                let user_ident = &user_id.ident;
+                Ok(quote! {
+                    Self::#variant_ident { #user_ident, .. } => Some(::alloy_core::Scene::Private {
+                        user_id: #user_ident.to_string(),
+                    }),
                 })
             }
-        }
-    } else {
-        quote! {
-            fn event_name(&self) -> &'static str {
-                <#parent_ty as ::alloy_core::Event>::event_name(&self.#parent_field_ident)
+            "Group" => {
+                let group_id = group_id_field(spec).ok_or_else(|| {
+                    syn::Error::new(
+                        view_scene.span(),
+                        format!(
+                            "variant {} declares scene = Group but is missing #[event_field(group_id)]",
+                            variant_ident
+                        ),
+                    )
+                })?;
+                let group_ident = &group_id.ident;
+                if let Some(user_id) = user_id_field(spec) {
+                    let user_ident = &user_id.ident;
+                    Ok(quote! {
+                        Self::#variant_ident { #group_ident, #user_ident, .. } => Some(::alloy_core::Scene::Group {
+                            group_id: #group_ident.to_string(),
+                            user_id: Some(#user_ident.to_string()),
+                        }),
+                    })
+                } else {
+                    Ok(quote! {
+                        Self::#variant_ident { #group_ident, .. } => Some(::alloy_core::Scene::Group {
+                            group_id: #group_ident.to_string(),
+                            user_id: None,
+                        }),
+                    })
+                }
             }
-        }
-    };
-
-    // ── platform — always delegate to parent ──
-    let platform_impl = quote! {
-        fn platform(&self) -> &'static str {
-            <#parent_ty as ::alloy_core::Event>::platform(&self.#parent_field_ident)
-        }
-    };
-
-    // ── message type / get_message / get_plain_text ──
-    let (segment_type_impl, get_message_impl);
-    if let Some((mf, _)) = message_field {
-        segment_type_impl = quote! {
-            type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
-        };
-        get_message_impl = quote! {
-            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
-                &self.#mf
+            "Guild" => {
+                let guild_id = guild_id_field(spec).ok_or_else(|| {
+                    syn::Error::new(
+                        view_scene.span(),
+                        format!(
+                            "variant {} declares scene = Guild but is missing #[event_field(guild_id)]",
+                            variant_ident
+                        ),
+                    )
+                })?;
+                let guild_ident = &guild_id.ident;
+                Ok(quote! {
+                    Self::#variant_ident { #guild_ident, .. } => Some(::alloy_core::Scene::Guild {
+                        guild_id: #guild_ident.to_string(),
+                    }),
+                })
             }
+            _ => Err(syn::Error::new(
+                view_scene.span(),
+                "unsupported scene in #[event_view(...)] , expected Private/Group/Guild",
+            )),
         };
-    } else {
-        segment_type_impl = quote! {
-            type Segment = <#parent_ty as ::alloy_core::Event>::Segment;
+    }
+
+    if spec.fields.is_empty() {
+        return Ok(quote! {
+            Self::#variant_ident => None,
+        });
+    }
+
+    if let Some(nested) = nested_data_field(spec) {
+        let nested_ident = &nested.ident;
+        return Ok(quote! {
+            Self::#variant_ident { #nested_ident, .. } => #nested_ident.scene(),
+        });
+    }
+
+    Ok(quote! {
+        Self::#variant_ident { .. } => None,
+    })
+}
+
+fn write_id_arm(spec: &VariantSpec) -> TokenStream {
+    let variant_ident = &spec.variant_ident;
+    let view_id = &spec.view_id;
+
+    if spec.fields.is_empty() {
+        return quote! {
+            Self::#variant_ident => s.push_str(#view_id),
         };
-        get_message_impl = quote! {
-            fn get_message(&self) -> &::alloy_core::Message<Self::Segment> where Self: Sized {
-                <#parent_ty as ::alloy_core::Event>::get_message(&self.#parent_field_ident)
+    }
+
+    if let Some(nested) = nested_data_field(spec) {
+        let nested_ident = &nested.ident;
+        let id_with_dot = syn::LitStr::new(&(view_id.value() + "."), view_id.span());
+        return quote! {
+            Self::#variant_ident { #nested_ident, .. } => {
+                s.push_str(#id_with_dot);
+                #nested_ident.write_id(s);
             }
         };
     }
 
-    // ── Deref / DerefMut ──
-    let deref_impls = quote! {
-        impl ::std::ops::Deref for #name {
-            type Target = #parent_ty;
-            #[inline]
-            fn deref(&self) -> &Self::Target {
-                &self.#parent_field_ident
-            }
-        }
-
-        impl ::std::ops::DerefMut for #name {
-            #[inline]
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                &mut self.#parent_field_ident
-            }
-        }
-    };
-
-    // ── get_user_id ──
-    let get_user_id_impl = if let Some(uid) = user_id_field.clone() {
-        quote! {
-            fn get_user_id(&self) -> Option<String> {
-                Some(self.#uid.to_string())
-            }
-        }
-    } else {
-        quote! {
-            fn get_user_id(&self) -> Option<String> {
-                <#parent_ty as ::alloy_core::Event>::get_user_id(&self.#parent_field_ident)
-            }
-        }
-    };
-
-    // ── get_scene ──
-    let get_scene_impl = build_scene_impl(
-        scene,
-        parent_field_ident,
-        parent_ty,
-        user_id_field,
-        group_id_field,
-        guild_id_field,
-        scene_id_field,
-    );
-
-    // ── DowngradeAny ──
-    let downgrade_any_impl = quote! {
-        fn downgrade_any(&self, type_id: ::std::any::TypeId) -> Option<Box<dyn ::std::any::Any>> {
-            // Check if it's self first
-            if type_id == ::std::any::TypeId::of::<Self>() {
-                return Some(Box::new(self.clone()));
-            }
-            // Delegate to parent
-            <#parent_ty as ::alloy_core::Event>::downgrade_any(&self.#parent_field_ident, type_id)
-        }
-    };
-
-    // ── Event trait impl ──
-    let event_impl = quote! {
-        impl ::alloy_core::Event for #name {
-            #event_name_impl
-            #platform_impl
-            #event_type_impl
-            #downgrade_any_impl
-            #get_user_id_impl
-            #get_scene_impl
-            #segment_type_impl
-            #get_message_impl
-        }
-    };
-
     quote! {
-        #deref_impls
-        #event_impl
+        Self::#variant_ident { .. } => s.push_str(#view_id),
     }
 }
 
-// ============================================================================
-// Scene code generation helper
-// ============================================================================
+fn event_type_arm(spec: &VariantSpec) -> TokenStream {
+    let variant_ident = &spec.variant_ident;
 
-/// Generates the `get_scene()` method body for a child event.
-///
-/// - `None` (no `scene` key): delegates to parent.
-/// - `"private"`: `Scene::Private { user_id }`.
-///   `user_id` comes from a `#[event(user_id)]` field on this struct if present;
-///   otherwise falls through the parent chain via `self.get_user_id()`.
-/// - `"group"`: `Scene::Group { group_id, user_id }`.
-///   `group_id` **must** be marked with `#[event(group_id)]` on this struct.
-///   `user_id` is `Some(local_field)` when `#[event(user_id)]` is set here, else `self.get_user_id()`.
-/// - `"guild"`: `Scene::Guild { guild_id }`.
-///   `guild_id` **must** be marked with `#[event(guild_id)]`.
-/// - `"other"`: `Scene::Other { id }`.
-///   `id` **must** be marked with `#[event(scene_id)]`.
-fn build_scene_impl(
-    scene: Option<&str>,
-    parent_field_ident: &Ident,
-    parent_ty: &Type,
-    user_id_field: Option<Ident>,
-    group_id_field: Option<Ident>,
-    guild_id_field: Option<Ident>,
-    scene_id_field: Option<Ident>,
-) -> TokenStream {
-    match scene {
-        None => quote! {
-            fn get_scene(&self) -> Option<::alloy_core::Scene> {
-                <#parent_ty as ::alloy_core::Event>::get_scene(&self.#parent_field_ident)
-            }
-        },
-        Some("private") => {
-            let user_id_expr = if let Some(uid) = user_id_field {
-                quote! { self.#uid.to_string() }
-            } else {
-                quote! { self.get_user_id()? }
+    if spec.fields.is_empty() {
+        if let Some(event_type) = &spec.view_type {
+            return quote! {
+                Self::#variant_ident => ::alloy_core::EventType::#event_type,
             };
-            quote! {
-                fn get_scene(&self) -> Option<::alloy_core::Scene> {
-                    Some(::alloy_core::Scene::Private {
-                        user_id: #user_id_expr,
-                    })
+        }
+        return quote! {
+            Self::#variant_ident => ::alloy_core::EventType::Other,
+        };
+    }
+
+    if let Some(event_type) = &spec.view_type {
+        return quote! {
+            Self::#variant_ident { .. } => ::alloy_core::EventType::#event_type,
+        };
+    }
+
+    if let Some(nested) = nested_data_field(spec) {
+        let nested_ident = &nested.ident;
+        return quote! {
+            Self::#variant_ident { #nested_ident, .. } => #nested_ident.event_type(),
+        };
+    }
+
+    quote! {
+        Self::#variant_ident { .. } => ::alloy_core::EventType::Other,
+    }
+}
+
+fn user_id_arm(spec: &VariantSpec) -> TokenStream {
+    let variant_ident = &spec.variant_ident;
+
+    if spec.fields.is_empty() {
+        return quote! {
+            Self::#variant_ident => None,
+        };
+    }
+
+    if let Some(user_id) = user_id_field(spec) {
+        let user_ident = &user_id.ident;
+        return quote! {
+            Self::#variant_ident { #user_ident, .. } => Some(#user_ident.to_string()),
+        };
+    }
+
+    if let Some(nested) = nested_user_id_field(spec) {
+        let nested_ident = &nested.ident;
+        return quote! {
+            Self::#variant_ident { #nested_ident, .. } => #nested_ident.user_id(),
+        };
+    }
+
+    quote! {
+        Self::#variant_ident { .. } => None,
+    }
+}
+
+fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
+    let variant_ident = &spec.variant_ident;
+
+    if spec.fields.is_empty() {
+        return (
+            quote! { Self::#variant_ident => String::new(), },
+            quote! { Self::#variant_ident => Vec::new(), },
+        );
+    }
+
+    if let Some(message) = message_field(spec) {
+        let message_ident = &message.ident;
+        return (
+            quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.to_string(), },
+            quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.extract_rich_text(), },
+        );
+    }
+
+    if let Some(nested) = nested_message_field(spec) {
+        let nested_ident = &nested.ident;
+        return (
+            quote! { Self::#variant_ident { #nested_ident, .. } => #nested_ident.plain_text(), },
+            quote! { Self::#variant_ident { #nested_ident, .. } => #nested_ident.rich_text(), },
+        );
+    }
+
+    (
+        quote! { Self::#variant_ident { .. } => String::new(), },
+        quote! { Self::#variant_ident { .. } => Vec::new(), },
+    )
+}
+
+fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec) -> TokenStream {
+    let view_name = &spec.view_name;
+    let variant_ident = &spec.variant_ident;
+
+    let view_fields = spec.fields.iter().map(|field| {
+        let ident = &field.ident;
+        let ty = &field.ty;
+        quote! { pub #ident: #ty }
+    });
+
+    let field_idents: Vec<_> = spec.fields.iter().map(|f| f.ident.clone()).collect();
+
+    let from_root = if spec.fields.is_empty() {
+        quote! {
+            fn from_root(event: Self::Root) -> Option<Self> {
+                if let Some(parent) = Self::Parent::from_root(event)
+                    && let #enum_name::#variant_ident = parent.data()
+                {
+                    Some(Self { parent })
+                } else {
+                    None
                 }
             }
         }
-        Some("group") => {
-            let gid = group_id_field
-                .expect("#[event(scene = \"group\")] requires a field marked #[event(group_id)]");
-            let user_id_expr = if let Some(uid) = user_id_field {
-                quote! { Some(self.#uid.to_string()) }
-            } else {
-                quote! { self.get_user_id() }
-            };
-            quote! {
-                fn get_scene(&self) -> Option<::alloy_core::Scene> {
-                    Some(::alloy_core::Scene::Group {
-                        group_id: self.#gid.to_string(),
-                        user_id: #user_id_expr,
+    } else {
+        quote! {
+            fn from_root(event: Self::Root) -> Option<Self> {
+                if let Some(parent) = Self::Parent::from_root(event)
+                    && let #enum_name::#variant_ident { #(#field_idents),* } = parent.data()
+                {
+                    Some(Self {
+                        parent,
+                        #(#field_idents),*
                     })
+                } else {
+                    None
                 }
             }
         }
-        Some("guild") => {
-            let guild_id = guild_id_field
-                .expect("#[event(scene = \"guild\")] requires a field marked #[event(guild_id)]");
-            quote! {
-                fn get_scene(&self) -> Option<::alloy_core::Scene> {
-                    Some(::alloy_core::Scene::Guild {
-                        guild_id: self.#guild_id.to_string(),
-                    })
+    };
+
+    let nested_data_impl = if let Some(nested) = nested_data_field(spec) {
+        let nested_ident = &nested.ident;
+        let nested_ty = &nested.ty;
+        quote! {
+            impl #view_name {
+                fn data(&self) -> #nested_ty {
+                    self.#nested_ident.clone()
                 }
             }
         }
-        Some("other") => {
-            let sid = scene_id_field
-                .expect("#[event(scene = \"other\")] requires a field marked #[event(scene_id)]");
-            quote! {
-                fn get_scene(&self) -> Option<::alloy_core::Scene> {
-                    Some(::alloy_core::Scene::Other {
-                        id: self.#sid.to_string(),
-                    })
-                }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        #[derive(Debug, Clone)]
+        pub struct #view_name {
+            parent: #parent_ty,
+            #(#view_fields,)*
+        }
+
+        impl ::alloy_core::EventView for #view_name {
+            type Root = <#parent_ty as ::alloy_core::EventView>::Root;
+            type Parent = #parent_ty;
+
+            #from_root
+
+            fn root(&self) -> &Self::Root {
+                self.parent.root()
             }
         }
-        Some(unknown) => {
-            let msg = format!(
-                "unknown scene type `{unknown}`; expected one of: private, group, guild, other"
-            );
-            quote! { compile_error!(#msg); }
+
+        #nested_data_impl
+
+        impl ::std::ops::Deref for #view_name {
+            type Target = #parent_ty;
+
+            fn deref(&self) -> &Self::Target {
+                &self.parent
+            }
         }
     }
+}
+
+fn find_root_data_field(root_struct: &ItemStruct) -> syn::Result<(Ident, Type)> {
+    let fields = match &root_struct.fields {
+        Fields::Named(fields) => fields,
+        _ => {
+            return Err(syn::Error::new(
+                root_struct.span(),
+                "#[event_root] only supports structs with named fields",
+            ));
+        }
+    };
+
+    let mut found: Option<(Ident, Type)> = None;
+    for field in &fields.named {
+        let has_event_data = field
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("event_data"));
+        if !has_event_data {
+            continue;
+        }
+
+        let ident = field
+            .ident
+            .clone()
+            .ok_or_else(|| syn::Error::new(field.span(), "named field expected"))?;
+
+        if found.is_some() {
+            return Err(syn::Error::new(
+                field.span(),
+                "#[event_root] expects exactly one field with #[event_data(...)]",
+            ));
+        }
+
+        found = Some((ident, field.ty.clone()));
+    }
+
+    found.ok_or_else(|| {
+        syn::Error::new(
+            root_struct.span(),
+            "#[event_root] requires one field marked with #[event_data(...)]",
+        )
+    })
+}
+
+fn strip_custom_attrs(attrs: &mut Vec<Attribute>) {
+    attrs.retain(|attr| {
+        let path = attr.path();
+        !(path.is_ident("event_root")
+            || path.is_ident("event_data")
+            || path.is_ident("event_field")
+            || path.is_ident("event_view"))
+    });
 }

@@ -171,14 +171,14 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
 
         // Log at appropriate level
         if event.event_type() == EventType::Meta {
-            trace!(bot_id = %bot_id, event = %event.event_name(), "Received meta event");
+            trace!(bot_id = %bot_id, event = %event.full_event_id(), "Received meta event");
         } else {
-            let text = event.get_rich_text();
+            let text = event.rich_text();
             if text.is_empty() {
-                info!(bot_id = %bot_id, event = %event.event_name(), "Received event");
+                info!(bot_id = %bot_id, event = %event.full_event_id(), "Received event");
             } else {
                 let text: RichText = text.into();
-                info!(bot_id = %bot_id, event = %event.event_name(), text = %text, "Received message event");
+                info!(bot_id = %bot_id, event = %event.full_event_id(), text = %text, "Received message event");
             }
         }
 

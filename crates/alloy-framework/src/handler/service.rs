@@ -38,7 +38,7 @@ impl HandlerResponse for () {
 async fn send_message(ctx: &HandlerContext, message: &dyn Sendable) {
     let bot = ctx.bot();
     let event = ctx.event();
-    if let Some(scene) = event.get_scene() {
+    if let Some(scene) = event.scene() {
         if let Err(e) = bot.send(&scene, message).await {
             error!("Failed to send message: {e}");
         }

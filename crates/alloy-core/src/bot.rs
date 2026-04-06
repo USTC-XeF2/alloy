@@ -79,3 +79,85 @@ impl_downcast!(sync Bot);
 
 /// A boxed Bot trait object.
 pub type BoxedBot = Arc<dyn Bot>;
+
+/// Generates strongly-typed async API wrapper methods based on [`Bot::call_api`].
+///
+/// This macro is intended for adapter-specific bot implementations that expose
+/// ergonomic API methods while sharing the same underlying request flow.
+///
+/// Each generated method:
+/// 1. Uses the function name as the API action (`stringify!($name)`).
+/// 2. Packs arguments into a JSON object.
+/// 3. Calls `self.call_api(...)` and maps the response to the requested return shape.
+///
+/// # Supported Forms
+///
+/// 1. No return payload (`ApiResult<()>`):
+///    `impl_api!(set_status, (online: bool));`
+///
+/// 2. Deserialize full response into a type:
+///    `impl_api!(get_profile, (user_id: i64) -> UserProfile);`
+///
+/// 3. Deserialize a specific response field:
+///    `impl_api!(get_msg_id, (seq: i64) -> String, "message_id");`
+///
+/// # Parameters
+///
+/// - Optional outer attributes can be attached to generated methods
+///   (e.g. doc comments, cfg attributes).
+/// - `$name`: generated function name, and also the action string.
+/// - `($arg: $typ, ...)`: named parameters used both in signature and JSON body.
+/// - `-> $ret`: target deserialize type for form (2) and (3).
+/// - `$field`: JSON field key to extract before deserialization for form (3).
+///
+/// # Example
+///
+/// ```ignore
+/// impl OneBotBot {
+///     impl_api!(
+///         /// Send a private message.
+///         send_private_msg,
+///         (user_id: i64, message: String) -> i64,
+///         "message_id"
+///     );
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_api {
+    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) $(,)?) => {
+        $(#[$meta])*
+        pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<()> {
+            self.call_api(
+                stringify!($name),
+                ::serde_json::json!({ $(stringify!($arg): $arg),* })
+            ).await?;
+            Ok(())
+        }
+    };
+
+    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty $(,)?) => {
+        $(#[$meta])*
+        pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<$ret> {
+            let result = self.call_api(
+                stringify!($name),
+                ::serde_json::json!({ $(stringify!($arg): $arg),* })
+            ).await?;
+            Ok(::serde_json::from_value(result)?)
+        }
+    };
+
+    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty, $field:expr $(,)?) => {
+        $(#[$meta])*
+        pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<$ret> {
+            let result = self.call_api(
+                stringify!($name),
+                ::serde_json::json!({ $(stringify!($arg): $arg),* })
+            ).await?;
+            result
+                .get($field)
+                .cloned()
+                .and_then(|v| ::serde_json::from_value::<$ret>(v).ok())
+                .ok_or_else(|| ::alloy_core::error::ApiError::SerializationError(format!("Missing {}", $field)))
+        }
+    };
+}

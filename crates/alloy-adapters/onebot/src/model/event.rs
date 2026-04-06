@@ -1,144 +1,13 @@
-//! OneBot v11 Event System — **parent-in-child** design.
-//!
-//! Each child event struct contains its parent via `#[serde(flatten)]`.
-//! The `#[derive(BotEvent)]` macro auto-generates `Deref`/`DerefMut` so that
-//! any child can transparently access all ancestor fields:
-//!
-//! ```text
-//! PrivateMessageEvent  ──Deref──▶  MessageEvent  ──Deref──▶  OneBotEvent
-//!   sub_type, temp_source           message_id, user_id, …    time, self_id
-//! ```
-//!
-//! # Event Hierarchy
-//!
-//! ```text
-//! OneBotEvent { time, self_id }                         ← root
-//! ├── MessageEvent { message_id, user_id, message, … }  ← type = "message"
-//! │   ├── PrivateMessageEvent { sub_type, temp_source }
-//! │   └── GroupMessageEvent   { group_id, anonymous, sub_type }
-//! ├── NoticeEvent {}                                     ← type = "notice"
-//! │   ├── GroupUploadEvent, GroupAdminEvent, …
-//! │   └── NotifyEvent { group_id, user_id }
-//! │       ├── PokeEvent, LuckyKingEvent, HonorEvent
-//! ├── RequestEvent {}                                    ← type = "request"
-//! │   ├── FriendRequestEvent
-//! │   └── GroupRequestEvent
-//! └── MetaEvent {}                                       ← type = "meta"
-//!     ├── LifecycleEvent
-//!     └── HeartbeatEvent
-//! ```
-//!
-//! # Parsing
-//!
-//! The adapter inspects `post_type`, `message_type`, etc. in the raw JSON
-//! and constructs the **most specific** leaf event type. Because each child
-//! embeds its parents via `#[serde(flatten)]`, all fields are deserialized
-//! in a single pass.
+//! OneBot v11 Event model based on EventView.
 
-use std::sync::Arc;
-
-use alloy_core::BoxedEvent;
-use alloy_macros::BotEvent;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use alloy_core::Scene;
+use alloy_macros::{event_data, event_root};
+use serde::Deserialize;
 
 use crate::model::message::OneBotMessage;
-use crate::model::types::{Anonymous, Sender};
+use crate::model::types::{PrivateSender, Sender, Status};
 
-/// The root OneBot v11 event.
-///
-/// Contains common fields shared by **all** OneBot events.
-/// Child events embed this via `#[serde(flatten)] parent: OneBotEvent`.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[root_event(platform = "onebot", segment_type = "crate::model::segment::Segment")]
-pub struct OneBotEvent {
-    /// Unix timestamp when the event occurred.
-    pub time: i64,
-    /// Bot's QQ ID.
-    pub self_id: i64,
-    /// Post type discriminator (e.g. "message", "notice", "request", "meta_event").
-    pub post_type: String,
-}
-
-/// Message event with common fields.
-///
-/// `Deref` → [`OneBotEvent`], so `msg.time` and `msg.self_id` work directly.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "message", type = "message")]
-pub struct MessageEvent {
-    /// Embedded parent fields (time, self_id, …).
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: OneBotEvent,
-
-    /// Message type discriminator.
-    pub message_type: String,
-    /// Message ID.
-    pub message_id: i32,
-    /// Sender's user ID.
-    #[event(user_id)]
-    pub user_id: i64,
-    /// Message content (array of segments).
-    #[event(message)]
-    #[serde(with = "super::message::serde_message")]
-    pub message: OneBotMessage,
-    /// Raw message string (CQ codes or plain text).
-    pub raw_message: String,
-    /// Font (usually 0).
-    pub font: i32,
-    /// Sender information.
-    pub sender: Sender,
-}
-
-/// Private message event.
-///
-/// `Deref` chain: `PrivateMessageEvent` → [`MessageEvent`] → [`OneBotEvent`].
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "message.private", scene = "private")]
-pub struct PrivateMessageEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: MessageEvent,
-
-    /// Sub-type ("friend", "group", "discuss", "other").
-    pub sub_type: String,
-}
-
-/// Group message event.
-///
-/// `Deref` chain: `GroupMessageEvent` → [`MessageEvent`] → [`OneBotEvent`].
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "message.group", scene = "group")]
-pub struct GroupMessageEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: MessageEvent,
-
-    /// Sub-type ("normal", "anonymous", "notice").
-    pub sub_type: String,
-    /// Group ID.
-    #[event(group_id)]
-    pub group_id: i64,
-    /// Anonymous user info (if anonymous).
-    #[serde(default)]
-    pub anonymous: Option<Anonymous>,
-}
-
-/// Notice event base — matches any event with `post_type = "notice"`.
-///
-/// Use `EventContext<NoticeEvent>` to match **any** notice event.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice", type = "notice")]
-pub struct NoticeEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: OneBotEvent,
-
-    pub notice_type: String,
-}
-
-/// Uploaded file info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct UploadedFile {
     pub id: String,
     pub name: String,
@@ -146,323 +15,256 @@ pub struct UploadedFile {
     pub busid: i64,
 }
 
-/// Group file upload event.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_upload", scene = "group")]
-pub struct GroupUploadEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
+#[derive(Debug, Clone, Deserialize)]
+#[event_root(platform = "onebot")]
+pub struct OneBotEvent {
+    pub time: i64,
+    pub self_id: i64,
 
-    #[event(group_id)]
-    pub group_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
-    pub file: UploadedFile,
+    #[event_data]
+    #[serde(flatten)]
+    pub data: EventData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_admin", scene = "group")]
-pub struct GroupAdminEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
+#[derive(Debug, Clone, Deserialize)]
+#[event_data(parent = OneBotEvent)]
+#[serde(tag = "post_type", rename_all = "snake_case")]
+pub enum EventData {
+    #[event_view(name = MessageEvent, id = "message", type = Message)]
+    Message {
+        message_id: i32,
+        #[event_field(message)]
+        #[serde(with = "super::message::serde_message")]
+        message: OneBotMessage,
+        raw_message: String,
+        font: i32,
 
-    pub sub_type: String,
-    #[event(group_id)]
-    pub group_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
+        #[event_data(user_id)]
+        #[serde(flatten)]
+        message_type: MessageType,
+    },
+
+    #[event_view(name = NoticeEvent, id = "notice", type = Notice)]
+    Notice {
+        #[event_data(user_id)]
+        #[serde(flatten)]
+        notice_type: NoticeType,
+    },
+
+    #[event_view(name = RequestEvent, id = "request", type = Request)]
+    Request {
+        #[event_data(user_id)]
+        #[serde(flatten)]
+        request_type: RequestType,
+    },
+
+    #[event_view(name = MetaEvent, id = "meta_event", type = Meta)]
+    MetaEvent {
+        #[event_data]
+        #[serde(flatten)]
+        meta_event_type: MetaEventType,
+    },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_decrease", scene = "group")]
-pub struct GroupDecreaseEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    pub sub_type: String,
-    #[event(group_id)]
-    pub group_id: i64,
-    pub operator_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_increase", scene = "group")]
-pub struct GroupIncreaseEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    pub sub_type: String,
-    #[event(group_id)]
-    pub group_id: i64,
-    pub operator_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_ban", scene = "group")]
-pub struct GroupBanEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    pub sub_type: String,
-    #[event(group_id)]
-    pub group_id: i64,
-    pub operator_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
-    pub duration: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.friend_add", scene = "private")]
-pub struct FriendAddEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    #[event(user_id)]
-    pub user_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.group_recall", scene = "group")]
-pub struct GroupRecallEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    #[event(group_id)]
-    pub group_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
-    pub operator_id: i64,
-    pub message_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.friend_recall", scene = "private")]
-pub struct FriendRecallEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    #[event(user_id)]
-    pub user_id: i64,
-    pub message_id: i64,
-}
-
-/// Notify event with common fields shared by poke / lucky_king / honor.
-///
-/// `Deref` → [`NoticeEvent`] → [`OneBotEvent`].
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.notify")]
-pub struct NotifyEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NoticeEvent,
-
-    pub sub_type: String,
-    #[event(user_id)]
-    pub user_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.notify.poke")]
-pub struct PokeEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NotifyEvent,
-
-    #[serde(default)]
-    pub group_id: Option<i64>,
-    pub target_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.notify.lucky_king", scene = "group")]
-pub struct LuckyKingEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NotifyEvent,
-
-    #[event(group_id)]
-    pub group_id: i64,
-    pub target_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "notice.notify.honor", scene = "group")]
-pub struct HonorEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: NotifyEvent,
-
-    #[event(group_id)]
-    pub group_id: i64,
-    pub honor_type: String,
-}
-
-/// Request event base — matches any event with `post_type = "request"`.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "request", type = "request")]
-pub struct RequestEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: OneBotEvent,
-
-    pub request_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "request.friend", scene = "private")]
-pub struct FriendRequestEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: RequestEvent,
-
-    #[event(user_id)]
-    pub user_id: i64,
-    pub comment: String,
-    pub flag: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "request.group", scene = "group")]
-pub struct GroupRequestEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: RequestEvent,
-
-    pub sub_type: String,
-    #[event(group_id)]
-    pub group_id: i64,
-    #[event(user_id)]
-    pub user_id: i64,
-    pub comment: String,
-    pub flag: String,
-}
-
-/// Meta event base — matches any event with `post_type = "meta_event"`.
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "meta_event", type = "meta")]
-pub struct MetaEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: OneBotEvent,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "meta_event.lifecycle")]
-pub struct LifecycleEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: MetaEvent,
-    /// Sub-type ("enable", "disable", "connect").
-    pub sub_type: String,
-}
-
-/// Heartbeat status info.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct HeartbeatStatus {
-    #[serde(default)]
-    pub app_initialized: Option<bool>,
-    #[serde(default)]
-    pub app_enabled: Option<bool>,
-    #[serde(default)]
-    pub app_good: Option<bool>,
-    #[serde(default)]
-    pub online: Option<bool>,
-    #[serde(default)]
-    pub good: Option<bool>,
-    #[serde(flatten)]
-    pub extra: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, BotEvent)]
-#[event(name = "meta_event.heartbeat")]
-pub struct HeartbeatEvent {
-    #[event(parent)]
-    #[serde(flatten)]
-    pub parent: MetaEvent,
-    #[serde(default)]
-    pub status: HeartbeatStatus,
-    #[serde(default)]
-    pub interval: i64,
-}
-
-/// Parses raw JSON into the most specific `BoxedEvent`.
-///
-/// The adapter calls this from `on_message`.
-pub fn parse_onebot_event(raw: &str) -> serde_json::Result<BoxedEvent> {
-    // Pre-parse to extract type discriminators
-    let v: Value = serde_json::from_str(raw)?;
-    let post_type = v.get("post_type").and_then(|v| v.as_str()).unwrap_or("");
-
-    macro_rules! parse_event {
-        ($ty:ty) => {
-            Ok(Arc::new(serde_json::from_value::<$ty>(v)?))
-        };
+impl MessageEvent {
+    /// Get the sender information for this message event.
+    pub fn sender(&self) -> &PrivateSender {
+        match &self.message_type {
+            MessageType::Private { sender, .. } => sender,
+            MessageType::Group { sender, .. } => sender,
+        }
     }
+}
 
-    match post_type {
-        "message" => {
-            let msg_type = v.get("message_type").and_then(|v| v.as_str()).unwrap_or("");
-            match msg_type {
-                "private" => parse_event!(PrivateMessageEvent),
-                "group" => parse_event!(GroupMessageEvent),
-                _ => parse_event!(MessageEvent),
+#[derive(Debug, Clone, Deserialize)]
+#[event_data(parent = MessageEvent)]
+#[serde(tag = "message_type", rename_all = "snake_case")]
+pub enum MessageType {
+    #[event_view(name = PrivateMessageEvent, id = "private", scene = Private)]
+    Private {
+        sub_type: String,
+        #[event_field(user_id)]
+        user_id: i64,
+        sender: PrivateSender,
+    },
+
+    #[event_view(name = GroupMessageEvent, id = "group", scene = Group)]
+    Group {
+        sub_type: String,
+        #[event_field(group_id)]
+        group_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+        sender: Sender,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[event_data(parent = NoticeEvent)]
+#[serde(tag = "notice_type", rename_all = "snake_case")]
+pub enum NoticeType {
+    #[event_view(name = GroupUploadEvent, id = "group_upload", scene = Group)]
+    GroupUpload {
+        #[event_field(group_id)]
+        group_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+        file: UploadedFile,
+    },
+
+    #[event_view(name = GroupAdminEvent, id = "group_admin", scene = Group)]
+    GroupAdmin {
+        sub_type: String,
+        #[event_field(group_id)]
+        group_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+    },
+
+    #[event_view(name = GroupDecreaseEvent, id = "group_decrease", scene = Group)]
+    GroupDecrease {
+        sub_type: String,
+        #[event_field(group_id)]
+        group_id: i64,
+        operator_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+    },
+
+    #[event_view(name = GroupIncreaseEvent, id = "group_increase", scene = Group)]
+    GroupIncrease {
+        sub_type: String,
+        #[event_field(group_id)]
+        group_id: i64,
+        operator_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+    },
+
+    #[event_view(name = GroupBanEvent, id = "group_ban", scene = Group)]
+    GroupBan {
+        sub_type: String,
+        #[event_field(group_id)]
+        group_id: i64,
+        operator_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+        duration: i64,
+    },
+
+    #[event_view(name = FriendAddEvent, id = "friend_add", scene = Private)]
+    FriendAdd {
+        #[event_field(user_id)]
+        user_id: i64,
+    },
+
+    #[event_view(name = GroupRecallEvent, id = "group_recall", scene = Group)]
+    GroupRecall {
+        #[event_field(group_id)]
+        group_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+        operator_id: i64,
+        message_id: i64,
+    },
+
+    #[event_view(name = FriendRecallEvent, id = "friend_recall", scene = Private)]
+    FriendRecall {
+        #[event_field(user_id)]
+        user_id: i64,
+        message_id: i64,
+    },
+
+    #[event_view(name = NotifyEvent, id = "notify")]
+    Notify {
+        #[event_data(user_id)]
+        #[serde(flatten)]
+        sub_type: NotifyType,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[event_data(parent = NotifyEvent)]
+#[serde(tag = "sub_type", rename_all = "snake_case")]
+pub enum NotifyType {
+    #[event_view(name = PokeEvent, id = "poke", scene_func = get_poke_scene)]
+    Poke {
+        #[serde(default)]
+        group_id: Option<i64>,
+        #[event_field(user_id)]
+        user_id: i64,
+        target_id: i64,
+    },
+
+    #[event_view(name = LuckyKingEvent, id = "lucky_king", scene = Group)]
+    LuckyKing {
+        #[event_field(group_id)]
+        group_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+        target_id: i64,
+    },
+
+    #[event_view(name = HonorEvent, id = "honor", scene = Group)]
+    Honor {
+        #[event_field(group_id)]
+        group_id: i64,
+        honor_type: String,
+        #[event_field(user_id)]
+        user_id: i64,
+    },
+}
+
+fn get_poke_scene(data: &NotifyType) -> Option<Scene> {
+    match data {
+        NotifyType::Poke {
+            group_id, user_id, ..
+        } => {
+            if let Some(group_id) = group_id {
+                Some(Scene::Group {
+                    group_id: group_id.to_string(),
+                    user_id: Some(user_id.to_string()),
+                })
+            } else {
+                Some(Scene::Private {
+                    user_id: user_id.to_string(),
+                })
             }
         }
-        "notice" => {
-            let notice_type = v.get("notice_type").and_then(|v| v.as_str()).unwrap_or("");
-            match notice_type {
-                "group_upload" => parse_event!(GroupUploadEvent),
-                "group_admin" => parse_event!(GroupAdminEvent),
-                "group_decrease" => parse_event!(GroupDecreaseEvent),
-                "group_increase" => parse_event!(GroupIncreaseEvent),
-                "group_ban" => parse_event!(GroupBanEvent),
-                "friend_add" => parse_event!(FriendAddEvent),
-                "group_recall" => parse_event!(GroupRecallEvent),
-                "friend_recall" => parse_event!(FriendRecallEvent),
-                "notify" => {
-                    let sub_type = v.get("sub_type").and_then(|v| v.as_str()).unwrap_or("");
-                    match sub_type {
-                        "poke" => parse_event!(PokeEvent),
-                        "lucky_king" => parse_event!(LuckyKingEvent),
-                        "honor" => parse_event!(HonorEvent),
-                        _ => parse_event!(NotifyEvent),
-                    }
-                }
-                _ => parse_event!(NoticeEvent),
-            }
-        }
-        "request" => {
-            let req_type = v.get("request_type").and_then(|v| v.as_str()).unwrap_or("");
-            match req_type {
-                "friend" => parse_event!(FriendRequestEvent),
-                "group" => parse_event!(GroupRequestEvent),
-                _ => parse_event!(RequestEvent),
-            }
-        }
-        "meta_event" => {
-            let meta_type = v
-                .get("meta_event_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            match meta_type {
-                "lifecycle" => parse_event!(LifecycleEvent),
-                "heartbeat" => parse_event!(HeartbeatEvent),
-                _ => parse_event!(MetaEvent),
-            }
-        }
-        _ => parse_event!(OneBotEvent), // Unknown post_type — fall back to root event
+        _ => None,
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[event_data(parent = RequestEvent)]
+#[serde(tag = "request_type", rename_all = "snake_case")]
+pub enum RequestType {
+    #[event_view(name = FriendRequestEvent, id = "friend")]
+    Friend {
+        #[event_field(user_id)]
+        user_id: i64,
+        comment: String,
+        flag: String,
+    },
+
+    #[event_view(name = GroupRequestEvent, id = "group")]
+    Group {
+        sub_type: String,
+        group_id: i64,
+        #[event_field(user_id)]
+        user_id: i64,
+        comment: String,
+        flag: String,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[event_data(parent = MetaEvent)]
+#[serde(tag = "meta_event_type", rename_all = "snake_case")]
+pub enum MetaEventType {
+    #[event_view(name = LifecycleEvent, id = "lifecycle")]
+    Lifecycle { sub_type: String },
+
+    #[event_view(name = HeartbeatEvent, id = "heartbeat")]
+    Heartbeat { status: Status, interval: i64 },
 }

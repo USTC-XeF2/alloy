@@ -43,12 +43,14 @@ use tokio::time::timeout;
 use tracing::{debug, warn};
 
 use crate::model::api::{
-    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, Status,
-    StrangerInfo, VersionInfo,
+    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, StrangerInfo,
+    VersionInfo,
 };
 use crate::model::message::OneBotMessage;
+use crate::model::types::Status;
 use alloy_core::{
-    ApiError, ApiResult, Bot, ConnectionHandle, PostJsonFn, Scene, Sendable, Sender, TransportError,
+    ApiError, ApiResult, Bot, ConnectionHandle, PostJsonFn, Scene, Sendable, Sender,
+    TransportError, impl_api,
 };
 
 // =============================================================================
@@ -269,37 +271,6 @@ impl Bot for OneBotBot {
 // Message APIs
 // =========================================================================
 
-macro_rules! impl_api {
-    // No return value
-    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) $(,)?) => {
-        $(#[$meta])*
-        pub async fn $name(&self, $($arg: $typ),*) -> ApiResult<()> {
-            self.call_api(stringify!($name), json!({ $(stringify!($arg): $arg),* })).await?;
-            Ok(())
-        }
-    };
-    // Returns a type T (deserialized from "data" or full response)
-    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty $(,)?) => {
-        $(#[$meta])*
-        pub async fn $name(&self, $($arg: $typ),*) -> ApiResult<$ret> {
-            let result = self.call_api(stringify!($name), json!({ $(stringify!($arg): $arg),* })).await?;
-            Ok(serde_json::from_value::<$ret>(result)?)
-        }
-    };
-    // Returns a specific field from the response
-    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty, $field:expr $(,)?) => {
-        $(#[$meta])*
-        pub async fn $name(&self, $($arg: $typ),*) -> ApiResult<$ret> {
-            let result = self.call_api(stringify!($name), json!({ $(stringify!($arg): $arg),* })).await?;
-            result
-                .get($field)
-                .cloned()
-                .and_then(|v| serde_json::from_value::<$ret>(v).ok())
-                .ok_or_else(|| ApiError::SerializationError(format!("Missing {}", $field)))
-        }
-    };
-}
-
 impl OneBotBot {
     impl_api!(
         /// Sends a private message.
@@ -402,12 +373,6 @@ impl OneBotBot {
     );
 
     impl_api!(
-        /// Bans an anonymous user in a group.
-        set_group_anonymous_ban,
-        (group_id: i64, anonymous_flag: &str, duration: u32)
-    );
-
-    impl_api!(
         /// Enables/disables whole group ban.
         set_group_whole_ban,
         (group_id: i64, enable: bool)
@@ -417,12 +382,6 @@ impl OneBotBot {
         /// Sets/unsets a user as group admin.
         set_group_admin,
         (group_id: i64, user_id: i64, enable: bool)
-    );
-
-    impl_api!(
-        /// Enables/disables anonymous chat in a group.
-        set_group_anonymous,
-        (group_id: i64, enable: bool)
     );
 
     impl_api!(

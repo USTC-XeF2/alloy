@@ -82,13 +82,6 @@ pub struct Credentials {
     pub csrf_token: i32,
 }
 
-/// Status info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Status {
-    pub online: Option<bool>,
-    pub good: bool,
-}
-
 /// Version info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionInfo {

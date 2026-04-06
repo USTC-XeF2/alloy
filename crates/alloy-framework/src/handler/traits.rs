@@ -17,7 +17,7 @@
 //!
 //! // Handler with extractor
 //! async fn echo_handler(event: EventContext<MessageEvent>) {
-//!     println!("Message: {}", event.get_plain_text());
+//!     println!("Message: {}", event.plain_text());
 //! }
 //!
 //! // Handler with multiple extractors
@@ -68,7 +68,7 @@ use crate::extractor::FromContext;
 ///
 /// // Handler with message event extraction
 /// async fn echo_handler(event: EventContext<MessageEvent>) {
-///     println!("Message: {}", event.get_plain_text());
+///     println!("Message: {}", event.plain_text());
 /// }
 ///
 /// // Handler with multiple extractors

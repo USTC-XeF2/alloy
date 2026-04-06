@@ -19,7 +19,7 @@
 //! use alloy::prelude::*;
 //!
 //! async fn echo(event: EventContext<MessageEvent>) -> anyhow::Result<String> {
-//!     Ok(event.get_plain_text().to_string())
+//!     Ok(event.plain_text())
 //! }
 //!
 //! define_plugin! {

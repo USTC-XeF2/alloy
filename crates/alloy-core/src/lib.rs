@@ -48,7 +48,7 @@ pub use bridge::{AdapterBridge, BridgeRuntime, Dispatcher};
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };
-pub use event::{AsText, BoxedEvent, Event, EventType, Scene};
+pub use event::{BoxedEvent, EventRoot, EventType, EventView, Scene};
 pub use message::{Message, MessageSegment, RichText, RichTextSegment, Sendable};
 pub use transport::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, HTTP_LISTEN_REGISTRY,

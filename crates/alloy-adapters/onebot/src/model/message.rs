@@ -270,9 +270,6 @@ fn cq_to_segment(func: &str, params: &[(String, String)]) -> Option<Segment> {
             id: get("id")?.to_string(),
             name: get("name").map(ToString::to_string),
         })),
-        "anonymous" => Some(Segment::Anonymous(super::segment::AnonymousData {
-            ignore: get("ignore").map(ToString::to_string),
-        })),
         "share" => Some(Segment::Share(super::segment::ShareData {
             url: get("url")?.to_string(),
             title: get("title")?.to_string(),

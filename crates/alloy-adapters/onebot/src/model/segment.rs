@@ -58,8 +58,6 @@ pub enum Segment {
     Shake(ShakeData),
     /// Poke message.
     Poke(PokeData),
-    /// Anonymous flag (send only).
-    Anonymous(AnonymousData),
     /// Link share.
     Share(ShareData),
     /// Contact recommendation.
@@ -99,7 +97,6 @@ impl std::fmt::Display for Segment {
             Segment::Dice(_) => write!(f, "[骰子]"),
             Segment::Shake(_) => write!(f, "[窗口抖动]"),
             Segment::Poke(data) => write!(f, "[戳一戳:{}]", data.poke_type),
-            Segment::Anonymous(_) => write!(f, "[匿名]"),
             Segment::Share(data) => write!(f, "[分享:{}]", data.title),
             Segment::Contact(data) => write!(f, "[推荐{}:{}]", data.contact_type, data.id),
             Segment::Location(data) => {
@@ -132,7 +129,6 @@ impl MessageSegmentTrait for Segment {
             Segment::Dice(_) => "dice",
             Segment::Shake(_) => "shake",
             Segment::Poke(_) => "poke",
-            Segment::Anonymous(_) => "anonymous",
             Segment::Share(_) => "share",
             Segment::Contact(_) => "contact",
             Segment::Location(_) => "location",
@@ -548,14 +544,6 @@ pub struct PokeData {
     pub name: Option<String>,
 }
 
-/// Anonymous segment data.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AnonymousData {
-    /// Whether to continue sending if anonymous fails.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ignore: Option<String>,
-}
-
 /// Link share segment data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShareData {
@@ -734,13 +722,6 @@ impl Segment {
             Segment::Shake(_) => "[CQ:shake]".to_string(),
             Segment::Poke(data) => {
                 format!("[CQ:poke,type={},id={}]", data.poke_type, data.id)
-            }
-            Segment::Anonymous(data) => {
-                if let Some(ref i) = data.ignore {
-                    format!("[CQ:anonymous,ignore={i}]")
-                } else {
-                    "[CQ:anonymous]".to_string()
-                }
             }
             Segment::Share(data) => {
                 let mut cq = format!(

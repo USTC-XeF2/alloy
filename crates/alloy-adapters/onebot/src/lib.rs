@@ -17,21 +17,21 @@ pub use config::{
 
 // Re-export segment types
 pub use model::segment::{
-    AnonymousData, AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData,
-    LocationData, MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment,
-    ShakeData, ShareData, TextData, VideoData, XmlData,
+    AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData, LocationData,
+    MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment, ShakeData, ShareData,
+    TextData, VideoData, XmlData,
 };
 
 // Re-export message type and extension trait
 pub use model::message::{OneBotMessage, OneBotMessageExt};
 
 // Re-export types
-pub use model::types::{Anonymous, Sender};
+pub use model::types::{PrivateSender, Sender, Status};
 
 // Re-export API response types
 pub use model::api::{
-    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, Status,
-    StrangerInfo, VersionInfo,
+    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, StrangerInfo,
+    VersionInfo,
 };
 
 // Re-export event types

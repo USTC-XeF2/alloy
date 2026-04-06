@@ -18,7 +18,7 @@ use tower::ServiceBuilder;
 use tower::filter::FilterLayer;
 use tower_layer::{Identity, Stack};
 
-use alloy_core::{Event, EventType};
+use alloy_core::{EventType, EventView};
 
 use crate::context::HandlerContext;
 use crate::handler::{EventPredicate, ServiceBuilderExt};
@@ -50,7 +50,16 @@ pub fn on_message() -> FilterServiceBuilder {
 /// event type `E`.
 ///
 /// Uses strict type equality checking.
-pub fn on<E: Event + 'static>() -> FilterServiceBuilder {
-    ServiceBuilder::new()
-        .rule_sync(move |ctx: &HandlerContext| ctx.event().downcast_ref::<E>().is_some())
+pub fn on<E>() -> FilterServiceBuilder
+where
+    E: EventView,
+    E::Root: Clone,
+{
+    ServiceBuilder::new().rule_sync(move |ctx: &HandlerContext| {
+        ctx.event()
+            .downcast_ref::<E::Root>()
+            .cloned()
+            .and_then(E::from_root)
+            .is_some()
+    })
 }

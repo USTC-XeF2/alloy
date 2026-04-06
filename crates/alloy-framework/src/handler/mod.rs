@@ -28,12 +28,12 @@
 //!
 //! // Handler with extractor - receives the typed event
 //! async fn on_private_msg(event: Event<PrivateMessage>) {
-//!     println!("Message: {}", event.get_plain_text());
+//!     println!("Message: {}", event.plain_text());
 //! }
 //!
 //! // Handler with return value - sends a message
 //! async fn echo(event: Event<PrivateMessage>) -> String {
-//!     event.get_plain_text()
+//!     event.plain_text()
 //! }
 //! ```
 //!

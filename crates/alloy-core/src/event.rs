@@ -1,38 +1,18 @@
 //! Event system for the Alloy framework.
 //!
-//! This module provides the core event infrastructure:
+//! This module defines the EventView-based event model:
 //!
-//! - [`Event`] - Base trait for all events
-//! - [`EventType`] - Event type classification (message, notice, request, meta)
-//! - [`EventContext<T>`] - Wrapper providing access to extracted event data
-//!
-//! # Hierarchical Event Extraction
-//!
-//! The event system supports downgrades where events can be extracted
-//! at any level of the hierarchy through parent delegation:
-//!
-//! ```rust,ignore
-//! use alloy_core::{Event, EventContext};
-//!
-//! // Extract the most specific event type
-//! async fn on_poke(event: EventContext<Poke>) {
-//!     println!("Target: {}", event.target_id);
-//! }
-//!
-//! // Extract an intermediate event type
-//! async fn on_notice(event: EventContext<NoticeEvent>) {
-//!     println!("Notice: {}", event.event_name());
-//! }
-//! ```
+//! - [`EventRoot`] for type-erased dispatch (`Arc<dyn EventRoot>`)
+//! - [`EventView`] for typed extraction (`Event<T>` where `T: EventView`)
+//! - [`EventType`] and [`Scene`] shared classification types
 
-use std::any::{Any, TypeId};
 use std::convert::Infallible;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use downcast_rs::{Downcast, impl_downcast};
 
-use super::message::{Message, MessageSegment, RichTextSegment};
+use super::message::RichTextSegment;
 
 // ============================================================================
 // Session Scene Identifier
@@ -40,9 +20,7 @@ use super::message::{Message, MessageSegment, RichTextSegment};
 
 /// Session scene (conversation context) identifier.
 ///
-/// Returned by [`Event::get_scene`](Event::get_scene).
-/// Use `scene = "..."` in `#[event(...)]` with field-level markers
-/// (`#[event(scene_user_id)]`, etc.) to let the derive macro generate this automatically.
+/// Returned by [`EventRoot::scene`](EventRoot::scene).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Scene {
     Private {
@@ -102,148 +80,49 @@ impl FromStr for EventType {
 }
 
 // ============================================================================
-// Text Extraction Trait
+// EventRoot
 // ============================================================================
 
-/// Trait for extracting text content from events.
-///
-/// This trait is automatically implemented for all types that implement [`Event`].
-/// It provides an object-safe way to extract both plain text and rich text content
-/// from events, even when accessed through a trait object.
-///
-/// # Type Safety
-///
-/// While `AsText` itself is object-safe and can be used with `dyn AsText`,
-/// the blanket implementation `impl<E: Event> AsText for E` leverages the fact
-/// that concrete types are `Sized` to safely call `get_message()`. This means:
-///
-/// - Direct calls on concrete types: Always works
-/// - Calls through `&dyn AsText`: Always works
-/// - Calls through `&dyn Event`: Not available (use downcasting or trait casting if needed)
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use alloy_core::{Event, AsText};
-///
-/// fn process_events(events: Vec<Box<dyn AsText>>) {
-///     for event in events {
-///         println!("Plain: {}", event.get_plain_text());
-///         for seg in event.get_rich_text() {
-///             println!("  {:?}", seg);
-///         }
-///     }
-/// }
-/// ```
-pub trait AsText: Send + Sync {
-    /// Extracts plain text from the event's message.
-    ///
-    /// For message events, this returns the concatenated text content of all
-    /// text segments. For non-message events, returns an empty string.
-    fn get_plain_text(&self) -> String;
-
-    /// Extracts rich text segments from the event's message.
-    ///
-    /// Returns a vector of [`RichTextSegment`] representing the full message
-    /// content including images, mentions, and text. For non-message events,
-    /// returns an empty vector.
-    fn get_rich_text(&self) -> Vec<RichTextSegment>;
-}
-
-// ============================================================================
-// Core Event Trait
-// ============================================================================
-
-/// The base trait for all events in the Alloy framework.
-///
-/// Events are type-erased using `dyn Event` and can be downcast to concrete
-/// types using `downcast_ref()`. Events can also be downgraded to parent types
-/// using the `downgrade_any()` method.
-///
-/// All events automatically implement [`AsText`], which provides the
-/// `get_plain_text()` and `get_rich_text()` methods in a type-safe way.
-///
-/// # Derive Macro
-///
-/// Use `#[derive(BotEvent)]` to automatically implement common methods.
-pub trait Event: AsText + Downcast + Send + Sync {
-    /// Returns the human-readable name of this event type.
-    fn event_name(&self) -> &'static str;
-
-    /// Returns the platform/adapter name.
+/// Type-erased root event trait used by runtime dispatch.
+pub trait EventRoot: Downcast + Send + Sync {
+    /// Platform name (adapter name).
     fn platform(&self) -> &'static str;
 
-    /// Returns the high-level event type classification.
-    ///
-    /// This is used by matchers like `on_message()` to filter events
-    /// without knowing the specific event type.
-    fn event_type(&self) -> EventType {
-        EventType::Other
+    /// Adapter-specific event id suffix, e.g. `message.private.friend`.
+    fn event_id(&self) -> String;
+
+    /// Full event id formatted as `{platform}.{event_id}`.
+    fn full_event_id(&self) -> String {
+        let id = self.event_id();
+        if id.is_empty() {
+            self.platform().to_string()
+        } else {
+            format!("{}.{}", self.platform(), id)
+        }
     }
 
-    /// Returns the user ID associated with this event, if applicable.
-    ///
-    /// For events with a field marked with `#[event(user_id)]`, the derive macro
-    /// automatically generates an implementation that returns `Some(user_id)`.
-    /// Otherwise returns `None`.
-    fn get_user_id(&self) -> Option<String> {
-        None
-    }
+    /// High-level event classification.
+    fn event_type(&self) -> EventType;
 
-    /// Returns the session scene for this event, if applicable.
-    ///
-    /// The scene identifies which conversation context this event belongs to:
-    /// private chat, group chat, guild channel, or a generic fallback.
-    ///
-    /// Use `scene = "private" | "group" | "guild" | "other"` in `#[event(...)]`
-    /// together with field-level markers (`#[event(scene_user_id)]`, etc.) to let
-    /// the derive macro generate this automatically. Child events without a
-    /// `scene` key delegate to their parent.
-    fn get_scene(&self) -> Option<Scene> {
-        None
-    }
+    /// User id associated with this event if available.
+    fn user_id(&self) -> Option<String>;
 
-    /// Attempts to downgrade to any type identified by `TypeId`, returned as `Box<dyn Any>`.
-    ///
-    /// This follows the parent chain:
-    /// 1. If the event's type matches the target `TypeId`, returns `Some(boxed_clone)`
-    /// 2. If the event has a parent, delegates to the parent's `downgrade_any`
-    /// 3. Otherwise, returns `None` (type not in parent chain)
-    ///
-    /// This ensures an event can only be converted to itself or one of its
-    /// ancestors in the event hierarchy.
-    fn downgrade_any(&self, _type_id: TypeId) -> Option<Box<dyn Any>> {
-        None
-    }
+    /// Scene associated with this event if available.
+    fn scene(&self) -> Option<Scene>;
 
-    /// The segment type used by messages in this event's platform.
-    ///
-    /// For all events under the same adapter/platform, this should be the same type.
-    /// The root event specifies the segment type, and child events inherit it.
-    ///
-    /// Messages are represented as `Message<Self::Segment>`.
-    ///
-    /// This is gated by `Self: Sized` so that `dyn Event` remains object-safe.
-    type Segment: MessageSegment
-    where
-        Self: Sized;
+    /// Plain text projection of this event.
+    fn plain_text(&self) -> String;
 
-    /// Returns a reference to the message contained in this event.
-    ///
-    /// Only available on concrete (sized) event types, not through `dyn Event`.
-    /// For message events, adapters should return the concrete message.
-    /// For non-message events, returns an empty message by default.
-    fn get_message(&self) -> &Message<Self::Segment>
-    where
-        Self: Sized;
+    /// Rich text projection of this event.
+    fn rich_text(&self) -> Vec<RichTextSegment>;
 }
 
-impl_downcast!(Event);
+impl_downcast!(EventRoot);
 
-impl std::fmt::Debug for dyn Event {
+impl std::fmt::Debug for dyn EventRoot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Event")
-            .field("name", &self.event_name())
+        f.debug_struct("EventRoot")
+            .field("id", &self.event_id())
             .field("platform", &self.platform())
             .field("type", &self.event_type())
             .finish()
@@ -251,23 +130,30 @@ impl std::fmt::Debug for dyn Event {
 }
 
 // ============================================================================
-// AsText Blanket Implementation
+// EventView
 // ============================================================================
 
-/// Automatic implementation of [`AsText`] for all [`Event`] types.
-///
-/// This blanket implementation safely leverages the `Sized` bound on concrete
-/// types to call `get_message()` and extract text. While both `Event`
-/// and `AsText` are object-safe on their own, this implementation ensures
-/// that whenever you use `&dyn AsText`, you get the correct behavior.
-impl<E: Event> AsText for E {
-    fn get_plain_text(&self) -> String {
-        self.get_message().extract_plain_text()
+/// Typed event view extraction trait.
+pub trait EventView: Sized + Send {
+    type Root: EventRoot;
+    type Parent: EventView<Root = Self::Root>;
+
+    fn from_root(event: Self::Root) -> Option<Self>;
+
+    fn root(&self) -> &Self::Root;
+}
+
+impl<T: EventRoot> EventView for T {
+    type Root = Self;
+    type Parent = Self;
+
+    fn from_root(event: Self::Root) -> Option<Self> {
+        Some(event)
     }
 
-    fn get_rich_text(&self) -> Vec<RichTextSegment> {
-        self.get_message().extract_rich_text()
+    fn root(&self) -> &Self::Root {
+        self
     }
 }
 
-pub type BoxedEvent = Arc<dyn Event>;
+pub type BoxedEvent = Arc<dyn EventRoot>;

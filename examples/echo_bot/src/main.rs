@@ -41,13 +41,11 @@ struct SigninCommand {}
 
 /// Logs every incoming message.
 async fn logging_handler(event: Event<MessageEvent>) {
-    let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
-
     info!(
         "[Message] {} ({}): {}",
-        nickname,
-        event.user_id,
-        event.get_plain_text()
+        event.sender().nickname,
+        event.sender().user_id,
+        event.plain_text()
     );
 }
 
@@ -87,15 +85,12 @@ async fn info_handler(
         ))
     } else {
         // Display group information
-        let nickname = event.sender.nickname.as_deref().unwrap_or("Unknown");
-
         Ok(format!(
             "Group Info\n\
              • Group ID: {}\n\
              • From: {} ({})\n\
-             • Message ID: {}\n\
-             • Type: {}",
-            event.group_id, nickname, event.user_id, event.message_id, event.message_type
+             • Message ID: {}",
+            event.group_id, event.sender.nickname, event.user_id, event.message_id
         ))
     }
 }
@@ -115,7 +110,7 @@ async fn signin_handler(
         HashMap::new()
     };
 
-    let user_id = event.user_id.to_string();
+    let user_id = event.sender().user_id.to_string();
 
     let format = format_description!("[year]-[month]-[day]");
     let Some(today) = OffsetDateTime::now_local()
@@ -124,19 +119,22 @@ async fn signin_handler(
     else {
         return Ok(RichText::msg(
             "Failed to get current date.",
-            event.get_user_id(),
+            event.user_id(),
         ));
     };
 
     if records.get(&user_id).is_some_and(|d| d == &today) {
-        return Ok(RichText::msg("You have already signed in today!", event.get_user_id()));
+        return Ok(RichText::msg(
+            "You have already signed in today!",
+            event.user_id(),
+        ));
     }
 
     records.insert(user_id, today);
     let json = serde_json::to_string_pretty(&records)?;
     tokio::fs::write(&path, json).await?;
 
-    Ok(RichText::msg("Sign-in successful!", event.get_user_id()))
+    Ok(RichText::msg("Sign-in successful!", event.user_id()))
 }
 
 async fn on_load(ctx: PluginLoadContext) -> Result<()> {

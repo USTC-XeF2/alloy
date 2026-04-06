@@ -33,7 +33,7 @@
 //! use alloy_adapter_onebot::{MessageEvent, OneBotAdapter};
 //!
 //! async fn echo(event: EventContext<MessageEvent>) -> anyhow::Result<String> {
-//!     Ok(event.get_plain_text().to_string())
+//!     Ok(event.plain_text())
 //! }
 //!
 //! #[tokio::main]
@@ -76,7 +76,7 @@ pub mod prelude {
     pub use alloy_macros::define_plugin;
 
     // Event system - for building handlers
-    pub use alloy_core::AsText;
+    pub use alloy_core::{EventRoot, EventView};
     pub use alloy_framework::handler::{HandlerService, Layer, ServiceBuilderExt};
 
     // Extractors - for handler parameters
@@ -98,5 +98,5 @@ pub mod prelude {
     pub use alloy_core::{Bot as __Bot, BoxedBot};
 
     // Core traits for custom implementations
-    pub use alloy_core::{BoxedEvent, Event as __Event, Message, RichText, RichTextSegment, Scene};
+    pub use alloy_core::{BoxedEvent, Message, RichText, RichTextSegment, Scene};
 }

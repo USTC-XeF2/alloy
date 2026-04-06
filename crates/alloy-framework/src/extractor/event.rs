@@ -1,11 +1,9 @@
-use std::any::TypeId;
-
 use derive_more::{AsRef, Deref};
 
 use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
-use alloy_core::{BoxedEvent, Event as EventTrait, Scene};
+use alloy_core::{BoxedEvent, EventView, Scene};
 
 /// Context wrapper that provides access to extracted event data.
 ///
@@ -18,7 +16,7 @@ use alloy_core::{BoxedEvent, Event as EventTrait, Scene};
 /// #[handler]
 /// async fn handler(event: Event<PrivateMessage>) -> Outcome {
 ///     // Access fields directly via Deref
-///     println!("From: {} Message: {}", event.user_id, event.get_plain_text());
+///     println!("From: {} Message: {}", event.user_id, event.plain_text());
 ///     
 ///     // The event can be passed directly to APIs
 ///     bot.send(event.as_ref(), "reply").await.ok();
@@ -27,8 +25,7 @@ use alloy_core::{BoxedEvent, Event as EventTrait, Scene};
 /// }
 /// ```
 #[derive(Debug, Clone, Deref, AsRef)]
-#[as_ref(dyn EventTrait)]
-pub struct Event<T: EventTrait>(T);
+pub struct Event<T: EventView>(T);
 
 /// Implementation for extracting `Event<T>` where `T: EventTrait`.
 ///
@@ -45,18 +42,23 @@ pub struct Event<T: EventTrait>(T);
 ///
 /// // Extract an intermediate event type
 /// async fn on_notice(event: Event<NoticeEvent>) {
-///     println!("Notice: {}", event.event_name());
+///     println!("Notice: {}", event.full_event_id());
 /// }
 /// ```
-impl<T: EventTrait> FromContext for Event<T> {
+impl<T> FromContext for Event<T>
+where
+    T: EventView,
+    T::Root: Clone,
+{
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.event()
-            .downgrade_any(TypeId::of::<T>())
-            .and_then(|boxed| boxed.downcast::<T>().ok())
-            .map(|boxed| Event(*boxed))
+            .downcast_ref::<T::Root>()
+            .cloned()
+            .and_then(T::from_root)
+            .map(Event)
             .ok_or_else(|| ExtractError::EventTypeMismatch {
                 expected: std::any::type_name::<T>(),
-                got: ctx.event().event_name(),
+                got: ctx.event().full_event_id(),
             })
     }
 }
@@ -78,7 +80,7 @@ impl FromContext for BoxedEvent {
 impl FromContext for Scene {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.event()
-            .get_scene()
+            .scene()
             .ok_or_else(|| ExtractError::Custom("Scene not found".into()))
     }
 }

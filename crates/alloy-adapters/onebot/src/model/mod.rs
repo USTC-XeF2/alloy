@@ -13,8 +13,8 @@ pub use api::*;
 pub use event::*;
 pub use message::{OneBotMessage, parse_cq_string};
 pub use segment::{
-    AnonymousData, AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData,
-    LocationData, MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment,
-    ShakeData, ShareData, TextData, VideoData, XmlData,
+    AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData, LocationData,
+    MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment, ShakeData, ShareData,
+    TextData, VideoData, XmlData,
 };
-pub use types::{Anonymous, Sender};
+pub use types::Sender;

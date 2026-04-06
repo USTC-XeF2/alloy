@@ -9,7 +9,7 @@ use tracing::{trace, warn};
 
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
-use crate::model::event::parse_onebot_event;
+use crate::model::event::OneBotEvent;
 use alloy_core::{
     Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandle, ConnectionHandler, ConnectionInfo,
     HttpClientConfig, HttpServerConfig, TransportContext, TransportError, TransportResult,
@@ -78,15 +78,13 @@ impl Adapter for OneBotAdapter {
         }
 
         // Parse as event
-        let boxed_event = match parse_onebot_event(raw) {
-            Ok(e) => e,
+        match serde_json::from_str::<OneBotEvent>(raw) {
+            Ok(e) => Some(Arc::new(e)),
             Err(e) => {
                 warn!(bot_id = %bot_id, error = %e, raw_data = %raw, "Failed to parse event raw data");
-                return None;
+                None
             }
-        };
-
-        Some(boxed_event)
+        }
     }
 
     async fn on_start(

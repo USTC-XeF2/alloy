@@ -19,7 +19,7 @@ pub enum ExtractError {
         /// Expected type name.
         expected: &'static str,
         /// Actual type name.
-        got: &'static str,
+        got: String,
     },
 
     /// The bot type does not match the expected type.
