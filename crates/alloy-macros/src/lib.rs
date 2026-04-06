@@ -19,7 +19,7 @@ pub fn event_root(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// EventView data macro.
 ///
 /// Apply to enums marked as event data containers. This will generate:
-/// - aggregate helper methods (write_id/event_type/user_id/plain_text/rich_text)
+/// - aggregate helper methods (write_id/event_type/scene/plain_text/rich_text)
 /// - view structs declared by variant-level #[event_view(...)]
 /// - EventView + Deref impls for generated view structs
 #[proc_macro_attribute]

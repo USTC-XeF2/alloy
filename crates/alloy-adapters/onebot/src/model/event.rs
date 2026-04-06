@@ -39,21 +39,21 @@ pub enum EventData {
         raw_message: String,
         font: i32,
 
-        #[event_data(user_id)]
+        #[event_data]
         #[serde(flatten)]
         message_type: MessageType,
     },
 
     #[event_view(name = NoticeEvent, id = "notice", type = Notice)]
     Notice {
-        #[event_data(user_id)]
+        #[event_data]
         #[serde(flatten)]
         notice_type: NoticeType,
     },
 
     #[event_view(name = RequestEvent, id = "request", type = Request)]
     Request {
-        #[event_data(user_id)]
+        #[event_data]
         #[serde(flatten)]
         request_type: RequestType,
     },
@@ -177,7 +177,7 @@ pub enum NoticeType {
 
     #[event_view(name = NotifyEvent, id = "notify")]
     Notify {
-        #[event_data(user_id)]
+        #[event_data]
         #[serde(flatten)]
         sub_type: NotifyType,
     },
@@ -191,7 +191,6 @@ pub enum NotifyType {
     Poke {
         #[serde(default)]
         group_id: Option<i64>,
-        #[event_field(user_id)]
         user_id: i64,
         target_id: i64,
     },
@@ -241,7 +240,6 @@ fn get_poke_scene(data: &NotifyType) -> Option<Scene> {
 pub enum RequestType {
     #[event_view(name = FriendRequestEvent, id = "friend")]
     Friend {
-        #[event_field(user_id)]
         user_id: i64,
         comment: String,
         flag: String,
@@ -251,7 +249,6 @@ pub enum RequestType {
     Group {
         sub_type: String,
         group_id: i64,
-        #[event_field(user_id)]
         user_id: i64,
         comment: String,
         flag: String,

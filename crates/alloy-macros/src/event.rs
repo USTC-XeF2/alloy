@@ -38,10 +38,6 @@ pub fn expand_event_root(attr: TokenStream, item: TokenStream) -> syn::Result<To
                 self.#data_field_ident.event_type()
             }
 
-            fn user_id(&self) -> Option<String> {
-                self.#data_field_ident.user_id()
-            }
-
             fn scene(&self) -> Option<::alloy_core::Scene> {
                 self.#data_field_ident.scene()
             }
@@ -86,45 +82,8 @@ pub fn expand_event_data(attr: TokenStream, item: TokenStream) -> syn::Result<To
         .iter()
         .map(scene_arm)
         .collect::<syn::Result<Vec<_>>>()?;
-
-    let can_generate_user_id = variant_specs
-        .iter()
-        .any(|spec| user_id_field(spec).is_some() || nested_user_id_field(spec).is_some());
-    let user_id_method = if can_generate_user_id {
-        let user_id_arms: Vec<_> = variant_specs.iter().map(user_id_arm).collect();
-        quote! {
-            fn user_id(&self) -> Option<String> {
-                match self {
-                    #(#user_id_arms)*
-                }
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let can_generate_message_methods = variant_specs
-        .iter()
-        .any(|spec| message_field(spec).is_some() || nested_message_field(spec).is_some());
-    let message_methods = if can_generate_message_methods {
-        let (plain_text_arms, rich_text_arms): (Vec<_>, Vec<_>) =
-            variant_specs.iter().map(message_text_arms).unzip();
-        quote! {
-            fn plain_text(&self) -> String {
-                match self {
-                    #(#plain_text_arms)*
-                }
-            }
-
-            fn rich_text(&self) -> Vec<::alloy_core::RichTextSegment> {
-                match self {
-                    #(#rich_text_arms)*
-                }
-            }
-        }
-    } else {
-        quote! {}
-    };
+    let (plain_text_arms, rich_text_arms): (Vec<_>, Vec<_>) =
+        variant_specs.iter().map(message_text_arms).unzip();
 
     let view_defs = variant_specs
         .iter()
@@ -152,9 +111,17 @@ pub fn expand_event_data(attr: TokenStream, item: TokenStream) -> syn::Result<To
                 }
             }
 
-            #user_id_method
+            fn plain_text(&self) -> String {
+                match self {
+                    #(#plain_text_arms)*
+                }
+            }
 
-            #message_methods
+            fn rich_text(&self) -> Vec<::alloy_core::RichTextSegment> {
+                match self {
+                    #(#rich_text_arms)*
+                }
+            }
         }
 
         #(#view_defs)*
@@ -178,8 +145,7 @@ struct VariantFieldSpec {
     is_guild_id: bool,
     is_message: bool,
     is_event_data: bool,
-    nested_user_id: bool,
-    nested_message: bool,
+    cfg_attrs: Vec<Attribute>,
 }
 
 struct VariantSpec {
@@ -190,6 +156,23 @@ struct VariantSpec {
     view_scene: Option<Ident>,
     view_scene_func: Option<Path>,
     fields: Vec<VariantFieldSpec>,
+    cfg_attrs: Vec<Attribute>,
+}
+
+fn collect_cfg_attrs(attrs: &[Attribute]) -> Vec<Attribute> {
+    attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr"))
+        .cloned()
+        .collect()
+}
+
+fn arm_with_cfg(spec: &VariantSpec, arm: TokenStream) -> TokenStream {
+    let cfg_attrs = &spec.cfg_attrs;
+    quote! {
+        #(#cfg_attrs)*
+        #arm
+    }
 }
 
 fn parse_event_root_attr(attr: TokenStream) -> syn::Result<EventRootAttr> {
@@ -306,6 +289,7 @@ fn collect_variant_specs(
     for variant in variants {
         let (view_name, view_id, view_type, view_scene, view_scene_func) =
             parse_event_view_attr(&variant.attrs, variant)?;
+        let variant_cfg_attrs = collect_cfg_attrs(&variant.attrs);
 
         let mut fields = Vec::new();
         match &variant.fields {
@@ -321,8 +305,7 @@ fn collect_variant_specs(
                     let mut is_guild_id = false;
                     let mut is_message = false;
                     let mut is_event_data = false;
-                    let mut nested_user_id = false;
-                    let mut nested_message = false;
+                    let cfg_attrs = collect_cfg_attrs(&field.attrs);
 
                     for attr in &field.attrs {
                         if attr.path().is_ident("event_field") {
@@ -350,20 +333,11 @@ fn collect_variant_specs(
                         }
                         if attr.path().is_ident("event_data") {
                             is_event_data = true;
-                            if matches!(&attr.meta, Meta::List(_)) {
-                                attr.parse_nested_meta(|meta| {
-                                    if meta.path.is_ident("user_id") {
-                                        nested_user_id = true;
-                                        return Ok(());
-                                    }
-                                    if meta.path.is_ident("message") {
-                                        nested_message = true;
-                                        return Ok(());
-                                    }
-                                    Err(meta.error(
-                                        "unsupported key in field #[event_data(...)], expected user_id/message",
-                                    ))
-                                })?;
+                            if !matches!(&attr.meta, Meta::Path(_)) {
+                                return Err(syn::Error::new(
+                                    attr.span(),
+                                    "field #[event_data] does not accept arguments, use #[event_data]",
+                                ));
                             }
                         }
                     }
@@ -376,8 +350,7 @@ fn collect_variant_specs(
                         is_guild_id,
                         is_message,
                         is_event_data,
-                        nested_user_id,
-                        nested_message,
+                        cfg_attrs,
                     });
                 }
             }
@@ -408,6 +381,7 @@ fn collect_variant_specs(
             view_scene,
             view_scene_func,
             fields,
+            cfg_attrs: variant_cfg_attrs,
         });
     }
 
@@ -416,18 +390,6 @@ fn collect_variant_specs(
 
 fn nested_data_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
     spec.fields.iter().find(|f| f.is_event_data)
-}
-
-fn nested_user_id_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
-    spec.fields
-        .iter()
-        .find(|f| f.is_event_data && f.nested_user_id)
-}
-
-fn nested_message_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
-    spec.fields
-        .iter()
-        .find(|f| f.is_event_data && f.nested_message)
 }
 
 fn user_id_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
@@ -451,14 +413,20 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
 
     if let Some(scene_func) = &spec.view_scene_func {
         if spec.fields.is_empty() {
-            return Ok(quote! {
-                Self::#variant_ident => #scene_func(self),
-            });
+            return Ok(arm_with_cfg(
+                spec,
+                quote! {
+                    Self::#variant_ident => #scene_func(self),
+                },
+            ));
         }
 
-        return Ok(quote! {
-            Self::#variant_ident { .. } => #scene_func(self),
-        });
+        return Ok(arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident { .. } => #scene_func(self),
+            },
+        ));
     }
 
     if let Some(view_scene) = &spec.view_scene {
@@ -475,11 +443,14 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
                     )
                 })?;
                 let user_ident = &user_id.ident;
-                Ok(quote! {
-                    Self::#variant_ident { #user_ident, .. } => Some(::alloy_core::Scene::Private {
-                        user_id: #user_ident.to_string(),
-                    }),
-                })
+                Ok(arm_with_cfg(
+                    spec,
+                    quote! {
+                        Self::#variant_ident { #user_ident, .. } => Some(::alloy_core::Scene::Private {
+                            user_id: #user_ident.to_string(),
+                        }),
+                    },
+                ))
             }
             "Group" => {
                 let group_id = group_id_field(spec).ok_or_else(|| {
@@ -494,19 +465,25 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
                 let group_ident = &group_id.ident;
                 if let Some(user_id) = user_id_field(spec) {
                     let user_ident = &user_id.ident;
-                    Ok(quote! {
-                        Self::#variant_ident { #group_ident, #user_ident, .. } => Some(::alloy_core::Scene::Group {
-                            group_id: #group_ident.to_string(),
-                            user_id: Some(#user_ident.to_string()),
-                        }),
-                    })
+                    Ok(arm_with_cfg(
+                        spec,
+                        quote! {
+                            Self::#variant_ident { #group_ident, #user_ident, .. } => Some(::alloy_core::Scene::Group {
+                                group_id: #group_ident.to_string(),
+                                user_id: Some(#user_ident.to_string()),
+                            }),
+                        },
+                    ))
                 } else {
-                    Ok(quote! {
-                        Self::#variant_ident { #group_ident, .. } => Some(::alloy_core::Scene::Group {
-                            group_id: #group_ident.to_string(),
-                            user_id: None,
-                        }),
-                    })
+                    Ok(arm_with_cfg(
+                        spec,
+                        quote! {
+                            Self::#variant_ident { #group_ident, .. } => Some(::alloy_core::Scene::Group {
+                                group_id: #group_ident.to_string(),
+                                user_id: None,
+                            }),
+                        },
+                    ))
                 }
             }
             "Guild" => {
@@ -520,11 +497,14 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
                     )
                 })?;
                 let guild_ident = &guild_id.ident;
-                Ok(quote! {
-                    Self::#variant_ident { #guild_ident, .. } => Some(::alloy_core::Scene::Guild {
-                        guild_id: #guild_ident.to_string(),
-                    }),
-                })
+                Ok(arm_with_cfg(
+                    spec,
+                    quote! {
+                        Self::#variant_ident { #guild_ident, .. } => Some(::alloy_core::Scene::Guild {
+                            guild_id: #guild_ident.to_string(),
+                        }),
+                    },
+                ))
             }
             _ => Err(syn::Error::new(
                 view_scene.span(),
@@ -534,21 +514,30 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
     }
 
     if spec.fields.is_empty() {
-        return Ok(quote! {
-            Self::#variant_ident => None,
-        });
+        return Ok(arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident => None,
+            },
+        ));
     }
 
     if let Some(nested) = nested_data_field(spec) {
         let nested_ident = &nested.ident;
-        return Ok(quote! {
-            Self::#variant_ident { #nested_ident, .. } => #nested_ident.scene(),
-        });
+        return Ok(arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident { #nested_ident, .. } => #nested_ident.scene(),
+            },
+        ));
     }
 
-    Ok(quote! {
-        Self::#variant_ident { .. } => None,
-    })
+    Ok(arm_with_cfg(
+        spec,
+        quote! {
+            Self::#variant_ident { .. } => None,
+        },
+    ))
 }
 
 fn write_id_arm(spec: &VariantSpec) -> TokenStream {
@@ -556,25 +545,34 @@ fn write_id_arm(spec: &VariantSpec) -> TokenStream {
     let view_id = &spec.view_id;
 
     if spec.fields.is_empty() {
-        return quote! {
-            Self::#variant_ident => s.push_str(#view_id),
-        };
+        return arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident => s.push_str(#view_id),
+            },
+        );
     }
 
     if let Some(nested) = nested_data_field(spec) {
         let nested_ident = &nested.ident;
         let id_with_dot = syn::LitStr::new(&(view_id.value() + "."), view_id.span());
-        return quote! {
-            Self::#variant_ident { #nested_ident, .. } => {
-                s.push_str(#id_with_dot);
-                #nested_ident.write_id(s);
-            }
-        };
+        return arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident { #nested_ident, .. } => {
+                    s.push_str(#id_with_dot);
+                    #nested_ident.write_id(s);
+                }
+            },
+        );
     }
 
-    quote! {
-        Self::#variant_ident { .. } => s.push_str(#view_id),
-    }
+    arm_with_cfg(
+        spec,
+        quote! {
+            Self::#variant_ident { .. } => s.push_str(#view_id),
+        },
+    )
 }
 
 fn event_type_arm(spec: &VariantSpec) -> TokenStream {
@@ -582,59 +580,46 @@ fn event_type_arm(spec: &VariantSpec) -> TokenStream {
 
     if spec.fields.is_empty() {
         if let Some(event_type) = &spec.view_type {
-            return quote! {
-                Self::#variant_ident => ::alloy_core::EventType::#event_type,
-            };
+            return arm_with_cfg(
+                spec,
+                quote! {
+                    Self::#variant_ident => ::alloy_core::EventType::#event_type,
+                },
+            );
         }
-        return quote! {
-            Self::#variant_ident => ::alloy_core::EventType::Other,
-        };
+        return arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident => ::alloy_core::EventType::Other,
+            },
+        );
     }
 
     if let Some(event_type) = &spec.view_type {
-        return quote! {
-            Self::#variant_ident { .. } => ::alloy_core::EventType::#event_type,
-        };
+        return arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident { .. } => ::alloy_core::EventType::#event_type,
+            },
+        );
     }
 
     if let Some(nested) = nested_data_field(spec) {
         let nested_ident = &nested.ident;
-        return quote! {
-            Self::#variant_ident { #nested_ident, .. } => #nested_ident.event_type(),
-        };
+        return arm_with_cfg(
+            spec,
+            quote! {
+                Self::#variant_ident { #nested_ident, .. } => #nested_ident.event_type(),
+            },
+        );
     }
 
-    quote! {
-        Self::#variant_ident { .. } => ::alloy_core::EventType::Other,
-    }
-}
-
-fn user_id_arm(spec: &VariantSpec) -> TokenStream {
-    let variant_ident = &spec.variant_ident;
-
-    if spec.fields.is_empty() {
-        return quote! {
-            Self::#variant_ident => None,
-        };
-    }
-
-    if let Some(user_id) = user_id_field(spec) {
-        let user_ident = &user_id.ident;
-        return quote! {
-            Self::#variant_ident { #user_ident, .. } => Some(#user_ident.to_string()),
-        };
-    }
-
-    if let Some(nested) = nested_user_id_field(spec) {
-        let nested_ident = &nested.ident;
-        return quote! {
-            Self::#variant_ident { #nested_ident, .. } => #nested_ident.user_id(),
-        };
-    }
-
-    quote! {
-        Self::#variant_ident { .. } => None,
-    }
+    arm_with_cfg(
+        spec,
+        quote! {
+            Self::#variant_ident { .. } => ::alloy_core::EventType::Other,
+        },
+    )
 }
 
 fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
@@ -642,44 +627,80 @@ fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
 
     if spec.fields.is_empty() {
         return (
-            quote! { Self::#variant_ident => String::new(), },
-            quote! { Self::#variant_ident => Vec::new(), },
+            arm_with_cfg(spec, quote! { Self::#variant_ident => String::new(), }),
+            arm_with_cfg(spec, quote! { Self::#variant_ident => Vec::new(), }),
         );
     }
 
     if let Some(message) = message_field(spec) {
         let message_ident = &message.ident;
         return (
-            quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.to_string(), },
-            quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.extract_rich_text(), },
+            arm_with_cfg(
+                spec,
+                quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.to_string(), },
+            ),
+            arm_with_cfg(
+                spec,
+                quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.extract_rich_text(), },
+            ),
         );
     }
 
-    if let Some(nested) = nested_message_field(spec) {
+    if let Some(nested) = nested_data_field(spec) {
         let nested_ident = &nested.ident;
         return (
-            quote! { Self::#variant_ident { #nested_ident, .. } => #nested_ident.plain_text(), },
-            quote! { Self::#variant_ident { #nested_ident, .. } => #nested_ident.rich_text(), },
+            arm_with_cfg(
+                spec,
+                quote! { Self::#variant_ident { #nested_ident, .. } => #nested_ident.plain_text(), },
+            ),
+            arm_with_cfg(
+                spec,
+                quote! { Self::#variant_ident { #nested_ident, .. } => #nested_ident.rich_text(), },
+            ),
         );
     }
 
     (
-        quote! { Self::#variant_ident { .. } => String::new(), },
-        quote! { Self::#variant_ident { .. } => Vec::new(), },
+        arm_with_cfg(
+            spec,
+            quote! { Self::#variant_ident { .. } => String::new(), },
+        ),
+        arm_with_cfg(spec, quote! { Self::#variant_ident { .. } => Vec::new(), }),
     )
 }
 
 fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec) -> TokenStream {
     let view_name = &spec.view_name;
     let variant_ident = &spec.variant_ident;
+    let variant_cfg_attrs = &spec.cfg_attrs;
 
     let view_fields = spec.fields.iter().map(|field| {
         let ident = &field.ident;
         let ty = &field.ty;
-        quote! { pub #ident: #ty }
+        let cfg_attrs = &field.cfg_attrs;
+        quote! {
+            #(#cfg_attrs)*
+            pub #ident: #ty
+        }
     });
 
-    let field_idents: Vec<_> = spec.fields.iter().map(|f| f.ident.clone()).collect();
+    let field_patterns = spec.fields.iter().map(|field| {
+        let ident = &field.ident;
+        let cfg_attrs = &field.cfg_attrs;
+        quote! {
+            #(#cfg_attrs)*
+            #ident
+        }
+    });
+
+    let field_inits = spec.fields.iter().map(|field| {
+        let ident = &field.ident;
+        let cfg_attrs = &field.cfg_attrs;
+        quote! {
+            #(#cfg_attrs)*
+            #ident
+        }
+    });
 
     let from_root = if spec.fields.is_empty() {
         quote! {
@@ -697,11 +718,11 @@ fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec)
         quote! {
             fn from_root(event: Self::Root) -> Option<Self> {
                 if let Some(parent) = Self::Parent::from_root(event)
-                    && let #enum_name::#variant_ident { #(#field_idents),* } = parent.data()
+                    && let #enum_name::#variant_ident { #(#field_patterns,)* .. } = parent.data()
                 {
                     Some(Self {
                         parent,
-                        #(#field_idents),*
+                        #(#field_inits,)*
                     })
                 } else {
                     None
@@ -713,7 +734,9 @@ fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec)
     let nested_data_impl = if let Some(nested) = nested_data_field(spec) {
         let nested_ident = &nested.ident;
         let nested_ty = &nested.ty;
+        let nested_cfg_attrs = &nested.cfg_attrs;
         quote! {
+            #(#nested_cfg_attrs)*
             impl #view_name {
                 fn data(&self) -> #nested_ty {
                     self.#nested_ident.clone()
@@ -725,12 +748,14 @@ fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec)
     };
 
     quote! {
+        #(#variant_cfg_attrs)*
         #[derive(Debug, Clone)]
         pub struct #view_name {
             parent: #parent_ty,
             #(#view_fields,)*
         }
 
+        #(#variant_cfg_attrs)*
         impl ::alloy_core::EventView for #view_name {
             type Root = <#parent_ty as ::alloy_core::EventView>::Root;
             type Parent = #parent_ty;
@@ -744,6 +769,7 @@ fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec)
 
         #nested_data_impl
 
+        #(#variant_cfg_attrs)*
         impl ::std::ops::Deref for #view_name {
             type Target = #parent_ty;
 
@@ -767,10 +793,19 @@ fn find_root_data_field(root_struct: &ItemStruct) -> syn::Result<(Ident, Type)> 
 
     let mut found: Option<(Ident, Type)> = None;
     for field in &fields.named {
-        let has_event_data = field
-            .attrs
-            .iter()
-            .any(|attr| attr.path().is_ident("event_data"));
+        let mut has_event_data = false;
+        for attr in &field.attrs {
+            if !attr.path().is_ident("event_data") {
+                continue;
+            }
+            if !matches!(&attr.meta, Meta::Path(_)) {
+                return Err(syn::Error::new(
+                    attr.span(),
+                    "field #[event_data] does not accept arguments, use #[event_data]",
+                ));
+            }
+            has_event_data = true;
+        }
         if !has_event_data {
             continue;
         }

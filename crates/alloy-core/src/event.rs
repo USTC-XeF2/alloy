@@ -104,11 +104,17 @@ pub trait EventRoot: Downcast + Send + Sync {
     /// High-level event classification.
     fn event_type(&self) -> EventType;
 
-    /// User id associated with this event if available.
-    fn user_id(&self) -> Option<String>;
-
     /// Scene associated with this event if available.
     fn scene(&self) -> Option<Scene>;
+
+    /// User id associated with this event if available.
+    fn user_id(&self) -> Option<String> {
+        match self.scene() {
+            Some(Scene::Private { user_id }) => Some(user_id.clone()),
+            Some(Scene::Group { user_id, .. }) => user_id,
+            _ => None,
+        }
+    }
 
     /// Plain text projection of this event.
     fn plain_text(&self) -> String;

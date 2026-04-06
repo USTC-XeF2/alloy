@@ -111,30 +111,25 @@ async fn signin_handler(
     };
 
     let user_id = event.sender().user_id.to_string();
+    let msg = RichText::new().at(user_id.clone());
 
     let format = format_description!("[year]-[month]-[day]");
     let Some(today) = OffsetDateTime::now_local()
         .ok()
         .and_then(|dt| dt.format(format).ok())
     else {
-        return Ok(RichText::msg(
-            "Failed to get current date.",
-            event.user_id(),
-        ));
+        return Ok(msg.text("Failed to get current date."));
     };
 
     if records.get(&user_id).is_some_and(|d| d == &today) {
-        return Ok(RichText::msg(
-            "You have already signed in today!",
-            event.user_id(),
-        ));
+        return Ok(msg.text("You have already signed in today!"));
     }
 
     records.insert(user_id, today);
     let json = serde_json::to_string_pretty(&records)?;
     tokio::fs::write(&path, json).await?;
 
-    Ok(RichText::msg("Sign-in successful!", event.user_id()))
+    Ok(msg.text("Sign-in successful!"))
 }
 
 async fn on_load(ctx: PluginLoadContext) -> Result<()> {

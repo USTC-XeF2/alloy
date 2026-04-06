@@ -156,7 +156,7 @@ impl Display for RichTextSegment {
 /// # Type Parameters
 ///
 /// - `S`: The segment type, must implement [`MessageSegment`]
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Deref, DerefMut, AsRef, AsMut, From)]
+#[derive(Debug, Clone, Serialize, Deserialize, Deref, DerefMut, AsRef, AsMut, From)]
 #[serde(transparent)]
 pub struct Message<S: MessageSegment> {
     #[serde(bound(deserialize = "S: Deserialize<'de>"))]
@@ -228,12 +228,15 @@ impl<S: MessageSegment> Message<S> {
     }
 }
 
+impl<S: MessageSegment> Default for Message<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<S: MessageSegment> Display for Message<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for segment in &self.segments {
-            write!(f, "{segment}")?;
-        }
-        Ok(())
+        self.segments.iter().try_for_each(|seg| write!(f, "{seg}"))
     }
 }
 
@@ -281,15 +284,6 @@ impl RichText {
     /// Adds an image segment.
     pub fn image(self, reference: impl Into<String>) -> Self {
         self.with(RichTextSegment::Image(reference.into()))
-    }
-
-    /// A convenience constructor for a simple message with optional at-mention.
-    pub fn msg(text: impl Into<String>, at: Option<impl Into<String>>) -> Self {
-        let mut msg = Self::new();
-        if let Some(id) = at {
-            msg = msg.at(id);
-        }
-        msg.text(text)
     }
 }
 
