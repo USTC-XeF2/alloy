@@ -15,7 +15,7 @@ pub struct GetMsgResponse {
     pub message_id: i32,
     pub real_id: i32,
     pub sender: Sender,
-    #[serde(with = "super::message::serde_message")]
+    #[cfg_attr(feature = "cqcode", serde(with = "super::cqcode::serde_message"))]
     pub message: OneBotMessage,
 }
 

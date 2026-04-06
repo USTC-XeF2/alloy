@@ -6,6 +6,10 @@ repository = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
 
+[features]
+default = []
+cqcode = []
+
 [dependencies]
 alloy-core = { workspace = true }
 alloy-macros = { workspace = true }

@@ -34,7 +34,7 @@ pub enum EventData {
     Message {
         message_id: i32,
         #[event_field(message)]
-        #[serde(with = "super::message::serde_message")]
+        #[cfg_attr(feature = "cqcode", serde(with = "super::cqcode::serde_message"))]
         message: OneBotMessage,
         raw_message: String,
         font: i32,

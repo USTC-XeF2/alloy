@@ -8,3 +8,6 @@ pub mod event;
 pub mod message;
 pub mod segment;
 pub mod types;
+
+#[cfg(feature = "cqcode")]
+mod cqcode;

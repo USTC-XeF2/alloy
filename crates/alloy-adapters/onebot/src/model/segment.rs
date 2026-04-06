@@ -3,28 +3,8 @@
 //! This module defines all message segment types as specified in the OneBot v11 protocol.
 //! A message segment represents a single unit of content in a message, such as plain text,
 //! images, mentions, etc.
-//!
-//! # CQ Code Mapping
-//!
-//! Each segment type corresponds to a CQ code in the string format:
-//! - `text` → plain text (no CQ code)
-//! - `face` → `[CQ:face,id=123]`
-//! - `image` → `[CQ:image,file=xxx]`
-//! - etc.
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use alloy_adapter_onebot::Segment;
-//!
-//! let text = Segment::text("Hello, ");
-//! let at = Segment::at(10001000);
-//! let face = Segment::face(178);
-//! ```
 
-use std::fmt::Write;
-
-use alloy_core::{MessageSegment as MessageSegmentTrait, RichTextSegment};
+use alloy_core::{MessageSegment, RichTextSegment};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -112,7 +92,7 @@ impl std::fmt::Display for Segment {
     }
 }
 
-impl MessageSegmentTrait for Segment {
+impl MessageSegment for Segment {
     fn text(text: impl Into<String>) -> Self {
         Segment::Text(TextData { text: text.into() })
     }
@@ -656,194 +636,6 @@ pub struct JsonData {
 }
 
 // ============================================================================
-// CQ Code Conversion
-// ============================================================================
-
-impl Segment {
-    /// Converts this segment to a CQ code string.
-    ///
-    /// Text segments are returned as plain text (with escaping).
-    /// Other segments are formatted as `[CQ:type,key=value,...]`.
-    pub fn to_cq_code(&self) -> String {
-        match self {
-            Segment::Text(data) => escape_cq_text(&data.text),
-            Segment::Face(data) => format!("[CQ:face,id={}]", data.id),
-            Segment::Image(data) => {
-                let mut cq = format!("[CQ:image,file={}", escape_cq_value(&data.file));
-                if let Some(ref t) = data.image_type {
-                    write!(cq, ",type={}", escape_cq_value(t)).unwrap();
-                }
-                if let Some(ref c) = data.cache {
-                    write!(cq, ",cache={c}").unwrap();
-                }
-                if let Some(ref p) = data.proxy {
-                    write!(cq, ",proxy={p}").unwrap();
-                }
-                if let Some(ref t) = data.timeout {
-                    write!(cq, ",timeout={t}").unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Record(data) => {
-                let mut cq = format!("[CQ:record,file={}", escape_cq_value(&data.file));
-                if let Some(ref m) = data.magic {
-                    write!(cq, ",magic={m}").unwrap();
-                }
-                if let Some(ref c) = data.cache {
-                    write!(cq, ",cache={c}").unwrap();
-                }
-                if let Some(ref p) = data.proxy {
-                    write!(cq, ",proxy={p}").unwrap();
-                }
-                if let Some(ref t) = data.timeout {
-                    write!(cq, ",timeout={t}").unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Video(data) => {
-                let mut cq = format!("[CQ:video,file={}", escape_cq_value(&data.file));
-                if let Some(ref c) = data.cache {
-                    write!(cq, ",cache={c}").unwrap();
-                }
-                if let Some(ref p) = data.proxy {
-                    write!(cq, ",proxy={p}").unwrap();
-                }
-                if let Some(ref t) = data.timeout {
-                    write!(cq, ",timeout={t}").unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::At(data) => format!("[CQ:at,qq={}]", data.qq),
-            Segment::Rps(_) => "[CQ:rps]".to_string(),
-            Segment::Dice(_) => "[CQ:dice]".to_string(),
-            Segment::Shake(_) => "[CQ:shake]".to_string(),
-            Segment::Poke(data) => {
-                format!("[CQ:poke,type={},id={}]", data.poke_type, data.id)
-            }
-            Segment::Share(data) => {
-                let mut cq = format!(
-                    "[CQ:share,url={},title={}",
-                    escape_cq_value(&data.url),
-                    escape_cq_value(&data.title)
-                );
-                if let Some(ref c) = data.content {
-                    write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                }
-                if let Some(ref i) = data.image {
-                    write!(cq, ",image={}", escape_cq_value(i)).unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Contact(data) => {
-                format!("[CQ:contact,type={},id={}]", data.contact_type, data.id)
-            }
-            Segment::Location(data) => {
-                let mut cq = format!("[CQ:location,lat={},lon={}", data.lat, data.lon);
-                if let Some(ref t) = data.title {
-                    write!(cq, ",title={}", escape_cq_value(t)).unwrap();
-                }
-                if let Some(ref c) = data.content {
-                    write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Music(data) => {
-                if data.music_type == "custom" {
-                    let mut cq = "[CQ:music,type=custom".to_string();
-                    if let Some(ref u) = data.url {
-                        write!(cq, ",url={}", escape_cq_value(u)).unwrap();
-                    }
-                    if let Some(ref a) = data.audio {
-                        write!(cq, ",audio={}", escape_cq_value(a)).unwrap();
-                    }
-                    if let Some(ref t) = data.title {
-                        write!(cq, ",title={}", escape_cq_value(t)).unwrap();
-                    }
-                    if let Some(ref c) = data.content {
-                        write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                    }
-                    if let Some(ref i) = data.image {
-                        write!(cq, ",image={}", escape_cq_value(i)).unwrap();
-                    }
-                    cq.push(']');
-                    cq
-                } else {
-                    format!(
-                        "[CQ:music,type={},id={}]",
-                        data.music_type,
-                        data.id.as_deref().unwrap_or("")
-                    )
-                }
-            }
-            Segment::Reply(data) => format!("[CQ:reply,id={}]", data.id),
-            Segment::Forward(data) => format!("[CQ:forward,id={}]", data.id),
-            Segment::Node(data) => {
-                if let Some(ref id) = data.id {
-                    format!("[CQ:node,id={id}]")
-                } else {
-                    let mut cq = "[CQ:node".to_string();
-                    if let Some(ref u) = data.user_id {
-                        write!(cq, ",user_id={u}").unwrap();
-                    }
-                    if let Some(ref n) = data.nickname {
-                        write!(cq, ",nickname={}", escape_cq_value(n)).unwrap();
-                    }
-                    if let Some(ref c) = data.content {
-                        write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                    }
-                    cq.push(']');
-                    cq
-                }
-            }
-            Segment::Xml(data) => format!("[CQ:xml,data={}]", escape_cq_value(&data.data)),
-            Segment::Json(data) => format!("[CQ:json,data={}]", escape_cq_value(&data.data)),
-        }
-    }
-}
-
-// ============================================================================
-// CQ Code Escaping Utilities
-// ============================================================================
-
-/// Escapes special characters in plain text for CQ code format.
-///
-/// Escapes: `&` → `&amp;`, `[` → `&#91;`, `]` → `&#93;`
-pub fn escape_cq_text(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('[', "&#91;")
-        .replace(']', "&#93;")
-}
-
-/// Unescapes CQ code special characters back to plain text.
-pub fn unescape_cq_text(text: &str) -> String {
-    text.replace("&#91;", "[")
-        .replace("&#93;", "]")
-        .replace("&#44;", ",")
-        .replace("&amp;", "&")
-}
-
-/// Escapes special characters in CQ code parameter values.
-///
-/// Escapes: `&` → `&amp;`, `[` → `&#91;`, `]` → `&#93;`, `,` → `&#44;`
-pub fn escape_cq_value(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('[', "&#91;")
-        .replace(']', "&#93;")
-        .replace(',', "&#44;")
-}
-
-/// Unescapes CQ code parameter value special characters.
-pub fn unescape_cq_value(value: &str) -> String {
-    unescape_cq_text(value)
-}
-
-// ============================================================================
 // Tests
 // ============================================================================
 
@@ -882,30 +674,6 @@ mod tests {
         let json = r#"{"type":"at","data":{"qq":"all"}}"#;
         let segment: Segment = serde_json::from_str(json).unwrap();
         assert!(matches!(segment, Segment::At(AtData { qq }) if qq == "all"));
-    }
-
-    #[test]
-    fn test_cq_code_conversion() {
-        assert_eq!(Segment::text("Hello").to_cq_code(), "Hello");
-        assert_eq!(Segment::face(178).to_cq_code(), "[CQ:face,id=178]");
-        assert_eq!(Segment::at(10001000).to_cq_code(), "[CQ:at,qq=10001000]");
-        assert_eq!(Segment::at_all().to_cq_code(), "[CQ:at,qq=all]");
-        assert_eq!(Segment::rps().to_cq_code(), "[CQ:rps]");
-        assert_eq!(Segment::dice().to_cq_code(), "[CQ:dice]");
-        assert_eq!(
-            Segment::image("http://example.com/1.jpg").to_cq_code(),
-            "[CQ:image,file=http://example.com/1.jpg]"
-        );
-    }
-
-    #[test]
-    fn test_cq_escaping() {
-        assert_eq!(escape_cq_text("Hello [World]"), "Hello &#91;World&#93;");
-        assert_eq!(escape_cq_text("A & B"), "A &amp; B");
-        assert_eq!(unescape_cq_text("&#91;x&#93; &amp;"), "[x] &");
-
-        assert_eq!(escape_cq_value("a,b,c"), "a&#44;b&#44;c");
-        assert_eq!(unescape_cq_value("a&#44;b&#44;c"), "a,b,c");
     }
 
     #[test]
