@@ -67,6 +67,8 @@ pub trait Dispatcher: Send + Sync + 'static {
 // Adapter Bridge
 // =============================================================================
 
+type BotEntry<B> = (Arc<B>, ConnectionHandle);
+
 /// Central bridge that wires together the runtime, the transport layer, and an adapter.
 ///
 /// - Implements [`ConnectionHandler`] — transport implementations call it when
@@ -79,7 +81,7 @@ pub trait Dispatcher: Send + Sync + 'static {
 pub struct AdapterBridge<A: Adapter, D: Dispatcher> {
     adapter: A,
     /// Active bots and their connection handles, keyed by bot ID.
-    entries: RwLock<HashMap<String, (Arc<A::Bot>, ConnectionHandle)>>,
+    entries: RwLock<HashMap<String, BotEntry<A::Bot>>>,
     /// Event dispatcher — distributes parsed events to handlers.
     event_dispatcher: Arc<D>,
     /// Available transport capabilities.

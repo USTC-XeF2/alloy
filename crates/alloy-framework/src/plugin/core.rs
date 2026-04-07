@@ -56,7 +56,8 @@ impl std::ops::Deref for PluginLoadContext {
 /// Type of the async `on_load` function stored inside a [`Plugin`].
 ///
 /// Must return `Ok(())` on success or `Err(BoxError)` on failure.
-pub type OnLoadFn = fn(PluginLoadContext) -> BoxFuture<'static, Result<(), Box<dyn std::fmt::Display + Send>>>;
+pub type OnLoadFn =
+    fn(PluginLoadContext) -> BoxFuture<'static, Result<(), Box<dyn std::fmt::Display + Send>>>;
 
 /// Type of the async `on_unload` function stored inside a [`Plugin`].
 pub type OnUnloadFn = fn() -> BoxFuture<'static, ()>;
@@ -259,7 +260,10 @@ impl Plugin {
     ///
     /// [`PluginManager`]: crate::manager::PluginManager
     /// [`PluginLoadState::Failed`]: crate::manager::PluginLoadState::Failed
-    pub(crate) async fn on_load(&self, ctx: PluginLoadContext) -> Result<(), Box<dyn std::fmt::Display + Send>> {
+    pub(crate) async fn on_load(
+        &self,
+        ctx: PluginLoadContext,
+    ) -> Result<(), Box<dyn std::fmt::Display + Send>> {
         if let Some(f) = &self.on_load_fn {
             f(ctx).await
         } else {

@@ -136,6 +136,14 @@ struct EventDataAttr {
     parent: Type,
 }
 
+struct EventViewAttr {
+    name: Ident,
+    id: syn::LitStr,
+    event_type: Option<Ident>,
+    scene: Option<Ident>,
+    scene_func: Option<Path>,
+}
+
 #[derive(Clone)]
 struct VariantFieldSpec {
     ident: Ident,
@@ -150,11 +158,7 @@ struct VariantFieldSpec {
 
 struct VariantSpec {
     variant_ident: Ident,
-    view_name: Ident,
-    view_id: syn::LitStr,
-    view_type: Option<Ident>,
-    view_scene: Option<Ident>,
-    view_scene_func: Option<Path>,
+    view_attr: EventViewAttr,
     fields: Vec<VariantFieldSpec>,
     cfg_attrs: Vec<Attribute>,
 }
@@ -221,16 +225,7 @@ fn parse_event_data_attr(attr: TokenStream) -> syn::Result<EventDataAttr> {
     Ok(EventDataAttr { parent })
 }
 
-fn parse_event_view_attr(
-    attrs: &[Attribute],
-    variant: &Variant,
-) -> syn::Result<(
-    Ident,
-    syn::LitStr,
-    Option<Ident>,
-    Option<Ident>,
-    Option<Path>,
-)> {
+fn parse_event_view_attr(attrs: &[Attribute], variant: &Variant) -> syn::Result<EventViewAttr> {
     let attr = attrs
         .iter()
         .find(|a| a.path().is_ident("event_view"))
@@ -277,7 +272,13 @@ fn parse_event_view_attr(
     let id =
         id.ok_or_else(|| syn::Error::new(variant.span(), "#[event_view] missing `id = \"...\"`"))?;
 
-    Ok((name, id, event_type, scene, scene_func))
+    Ok(EventViewAttr {
+        name,
+        id,
+        event_type,
+        scene,
+        scene_func,
+    })
 }
 
 fn collect_variant_specs(
@@ -287,8 +288,7 @@ fn collect_variant_specs(
     let mut specs = Vec::new();
 
     for variant in variants {
-        let (view_name, view_id, view_type, view_scene, view_scene_func) =
-            parse_event_view_attr(&variant.attrs, variant)?;
+        let view_attr = parse_event_view_attr(&variant.attrs, variant)?;
         let variant_cfg_attrs = collect_cfg_attrs(&variant.attrs);
 
         let mut fields = Vec::new();
@@ -375,11 +375,7 @@ fn collect_variant_specs(
 
         specs.push(VariantSpec {
             variant_ident: variant.ident.clone(),
-            view_name,
-            view_id,
-            view_type,
-            view_scene,
-            view_scene_func,
+            view_attr,
             fields,
             cfg_attrs: variant_cfg_attrs,
         });
@@ -411,7 +407,7 @@ fn message_field(spec: &VariantSpec) -> Option<&VariantFieldSpec> {
 fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
     let variant_ident = &spec.variant_ident;
 
-    if let Some(scene_func) = &spec.view_scene_func {
+    if let Some(scene_func) = &spec.view_attr.scene_func {
         if spec.fields.is_empty() {
             return Ok(arm_with_cfg(
                 spec,
@@ -429,7 +425,7 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
         ));
     }
 
-    if let Some(view_scene) = &spec.view_scene {
+    if let Some(view_scene) = &spec.view_attr.scene {
         let scene = view_scene.to_string();
         return match scene.as_str() {
             "Private" => {
@@ -437,8 +433,7 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
                     syn::Error::new(
                         view_scene.span(),
                         format!(
-                            "variant {} declares scene = Private but is missing #[event_field(user_id)]",
-                            variant_ident
+                            "variant {variant_ident} declares scene = Private but is missing #[event_field(user_id)]"
                         ),
                     )
                 })?;
@@ -457,8 +452,7 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
                     syn::Error::new(
                         view_scene.span(),
                         format!(
-                            "variant {} declares scene = Group but is missing #[event_field(group_id)]",
-                            variant_ident
+                            "variant {variant_ident} declares scene = Group but is missing #[event_field(group_id)]"
                         ),
                     )
                 })?;
@@ -491,8 +485,7 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
                     syn::Error::new(
                         view_scene.span(),
                         format!(
-                            "variant {} declares scene = Guild but is missing #[event_field(guild_id)]",
-                            variant_ident
+                            "variant {variant_ident} declares scene = Guild but is missing #[event_field(guild_id)]"
                         ),
                     )
                 })?;
@@ -542,7 +535,7 @@ fn scene_arm(spec: &VariantSpec) -> syn::Result<TokenStream> {
 
 fn write_id_arm(spec: &VariantSpec) -> TokenStream {
     let variant_ident = &spec.variant_ident;
-    let view_id = &spec.view_id;
+    let view_id = &spec.view_attr.id;
 
     if spec.fields.is_empty() {
         return arm_with_cfg(
@@ -579,7 +572,7 @@ fn event_type_arm(spec: &VariantSpec) -> TokenStream {
     let variant_ident = &spec.variant_ident;
 
     if spec.fields.is_empty() {
-        if let Some(event_type) = &spec.view_type {
+        if let Some(event_type) = &spec.view_attr.event_type {
             return arm_with_cfg(
                 spec,
                 quote! {
@@ -595,7 +588,7 @@ fn event_type_arm(spec: &VariantSpec) -> TokenStream {
         );
     }
 
-    if let Some(event_type) = &spec.view_type {
+    if let Some(event_type) = &spec.view_attr.event_type {
         return arm_with_cfg(
             spec,
             quote! {
@@ -670,7 +663,7 @@ fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
 }
 
 fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec) -> TokenStream {
-    let view_name = &spec.view_name;
+    let view_name = &spec.view_attr.name;
     let variant_ident = &spec.variant_ident;
     let variant_cfg_attrs = &spec.cfg_attrs;
 
@@ -781,14 +774,11 @@ fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec)
 }
 
 fn find_root_data_field(root_struct: &ItemStruct) -> syn::Result<(Ident, Type)> {
-    let fields = match &root_struct.fields {
-        Fields::Named(fields) => fields,
-        _ => {
-            return Err(syn::Error::new(
-                root_struct.span(),
-                "#[event_root] only supports structs with named fields",
-            ));
-        }
+    let Fields::Named(fields) = &root_struct.fields else {
+        return Err(syn::Error::new(
+            root_struct.span(),
+            "#[event_root] only supports structs with named fields",
+        ));
     };
 
     let mut found: Option<(Ident, Type)> = None;
