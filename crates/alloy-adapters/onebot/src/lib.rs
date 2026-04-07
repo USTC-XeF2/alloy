@@ -15,30 +15,9 @@ pub use config::{
     WsServerConfig,
 };
 
-// Re-export segment types
-pub use model::segment::{
-    AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData, LocationData,
-    MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment, ShakeData, ShareData,
-    TextData, VideoData, XmlData,
-};
-
-// Re-export message type and extension trait
-pub use model::message::{OneBotMessage, OneBotMessageExt};
-
-// Re-export types
-pub use model::types::{PrivateSender, Sender, Status};
-
-// Re-export API response types
-pub use model::api::{
-    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, StrangerInfo,
-    VersionInfo,
-};
-
-// Re-export event types
-pub use model::event::{
-    FriendAddEvent, FriendRecallEvent, FriendRequestEvent, GroupAdminEvent, GroupBanEvent,
-    GroupDecreaseEvent, GroupIncreaseEvent, GroupMessageEvent, GroupRecallEvent, GroupRequestEvent,
-    GroupUploadEvent, HeartbeatEvent, HonorEvent, LifecycleEvent, LuckyKingEvent, MessageEvent,
-    MetaEvent, NoticeEvent, NotifyEvent, OneBotEvent, PokeEvent, PrivateMessageEvent, RequestEvent,
-    UploadedFile,
-};
+// Re-export model types for easier access.
+pub use model::api::*;
+pub use model::event::*;
+pub use model::message::*;
+pub use model::segment::*;
+pub use model::types::*;

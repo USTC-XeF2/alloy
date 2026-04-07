@@ -91,16 +91,6 @@ pub trait EventRoot: Downcast + Send + Sync {
     /// Adapter-specific event id suffix, e.g. `message.private.friend`.
     fn event_id(&self) -> String;
 
-    /// Full event id formatted as `{platform}.{event_id}`.
-    fn full_event_id(&self) -> String {
-        let id = self.event_id();
-        if id.is_empty() {
-            self.platform().to_string()
-        } else {
-            format!("{}.{}", self.platform(), id)
-        }
-    }
-
     /// High-level event classification.
     fn event_type(&self) -> EventType;
 

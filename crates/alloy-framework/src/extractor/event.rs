@@ -27,24 +27,10 @@ use alloy_core::{BoxedEvent, EventView, Scene};
 #[derive(Debug, Clone, Deref, AsRef)]
 pub struct Event<T: EventView>(T);
 
-/// Implementation for extracting `Event<T>` where `T: EventTrait`.
+/// Implementation for extracting `Event<T>` where `T: EventView`.
 ///
 /// This enables handlers to request events at any level of the hierarchy
-/// through the parent delegation mechanism via `DowngradeAny`:
-///
-/// ```rust,ignore
-/// use alloy_core::Event;
-///
-/// // Extract a specific event type
-/// async fn on_poke(event: Event<PokeNotifyEvent>) {
-///     println!("Target: {}", event.target_id);
-/// }
-///
-/// // Extract an intermediate event type
-/// async fn on_notice(event: Event<NoticeEvent>) {
-///     println!("Notice: {}", event.full_event_id());
-/// }
-/// ```
+/// through the parent delegation mechanism via `DowngradeAny`
 impl<T> FromContext for Event<T>
 where
     T: EventView,
@@ -58,7 +44,7 @@ where
             .map(Event)
             .ok_or_else(|| ExtractError::EventTypeMismatch {
                 expected: std::any::type_name::<T>(),
-                got: ctx.event().full_event_id(),
+                got: ctx.event().event_id(),
             })
     }
 }

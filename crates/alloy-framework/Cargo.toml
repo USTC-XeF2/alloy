@@ -28,7 +28,7 @@ tracing = { workspace = true }
 [dependencies.clap]
 version = "4.6.0"
 default-features = false
-features = ["error-context", "help", "std", "usage"]
+features = ["derive", "error-context", "help", "std", "usage"]
 optional = true
 
 [dev-dependencies]
