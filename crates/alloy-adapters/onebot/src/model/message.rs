@@ -16,7 +16,7 @@
 //! use alloy_adapter_onebot::{OneBotMessage, Segment, OneBotMessageExt};
 //!
 //! // Create a message
-//! let msg = OneBotMessage::from_segments(vec![
+//! let msg = OneBotMessage::from(vec![
 //!     Segment::text("Hello, "),
 //!     Segment::at(10001000),
 //! ]);
@@ -93,13 +93,13 @@ impl OneBotMessageExt for OneBotMessage {
 
 #[cfg(test)]
 mod tests {
-    use alloy_core::MessageSegment;
+    use alloy_core::SendMessageSegment;
 
     use super::*;
 
     #[test]
     fn test_mentioned_users() {
-        let msg = OneBotMessage::from_segments(vec![
+        let msg = OneBotMessage::from(vec![
             Segment::at(10001000),
             Segment::text(" and "),
             Segment::at(10001001),
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_reply_to() {
-        let msg = OneBotMessage::from_segments(vec![
+        let msg = OneBotMessage::from(vec![
             Segment::reply("12345"),
             Segment::text("This is a reply"),
         ]);

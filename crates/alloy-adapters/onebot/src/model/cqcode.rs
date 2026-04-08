@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use alloy_core::{Message, MessageSegment};
+use alloy_core::{Message, SendMessageSegment};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 
@@ -20,10 +20,10 @@ where
     }
 
     match MessageFormat::deserialize(deserializer)? {
-        MessageFormat::Array(segments) => Ok(Message::from_segments(segments)),
+        MessageFormat::Array(segments) => Ok(segments.into()),
         MessageFormat::String(cq_string) => {
             let segments = parse_cq_string(&cq_string);
-            Ok(Message::from_segments(segments))
+            Ok(segments.into())
         }
     }
 }
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_to_cq_string() {
-        let msg = OneBotMessage::from_segments(vec![
+        let msg = OneBotMessage::from(vec![
             Segment::text("Hello "),
             Segment::face(178),
             Segment::text(" World"),

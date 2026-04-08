@@ -15,7 +15,7 @@ use tracing::error;
 
 use super::traits::FromCtxFn;
 use crate::context::HandlerContext;
-use alloy_core::{Message, MessageSegment, Sendable};
+use alloy_core::{Message, ReceiveMessageSegment, Sendable};
 
 // ============================================================================
 // HandlerResponse
@@ -55,7 +55,7 @@ impl HandlerResponse for String {
 }
 
 /// Implementation for `Message<S>` - sends the message using `send_message`.
-impl<S: MessageSegment> HandlerResponse for Message<S> {
+impl<S: ReceiveMessageSegment> HandlerResponse for Message<S> {
     async fn process_response(self, ctx: &HandlerContext) {
         send_message(ctx, &self).await;
     }

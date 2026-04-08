@@ -223,7 +223,11 @@ impl Bot for OneBotBot {
     }
 
     async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value> {
-        let response = self.call_strategy.call(action, params).await?;
+        let mut response = self.call_strategy.call(action, params).await?;
+        let response = response.as_object_mut().ok_or_else(|| {
+            ApiError::SerializationError("Expected API response to be an object".into())
+        })?;
+
         if let Some(retcode) = response.get("retcode").and_then(Value::as_i64)
             && retcode != 0
         {
@@ -235,7 +239,10 @@ impl Bot for OneBotBot {
                 .to_string();
             return Err(ApiError::ApiError { retcode, message });
         }
-        Ok(response.get("data").cloned().unwrap_or(response))
+
+        response.remove("data").ok_or_else(|| {
+            ApiError::SerializationError("Expected API response to contain data".into())
+        })
     }
 
     async fn send(&self, scene: &Scene, message: &dyn Sendable) -> ApiResult<String> {
@@ -244,14 +251,14 @@ impl Bot for OneBotBot {
         match scene {
             Scene::Group { group_id, .. } => {
                 if let Ok(group_id) = group_id.parse::<i64>() {
-                    Some(self.send_group_msg(group_id, onebot_msg).await?)
+                    Some(self.send_group_msg(group_id, &onebot_msg).await?)
                 } else {
                     None
                 }
             }
             Scene::Private { user_id } => {
                 if let Ok(user_id) = user_id.parse::<i64>() {
-                    Some(self.send_private_msg(user_id, onebot_msg).await?)
+                    Some(self.send_private_msg(user_id, &onebot_msg).await?)
                 } else {
                     None
                 }
@@ -279,7 +286,7 @@ impl OneBotBot {
         /// * `user_id` - Target user's QQ number
         /// * `message` - Message content as OneBotMessage
         send_private_msg,
-        (user_id: i64, message: OneBotMessage) -> i32,
+        (user_id: i64, message: &OneBotMessage) -> i32,
         "message_id"
     );
 
@@ -290,7 +297,7 @@ impl OneBotBot {
         /// * `group_id` - Target group number
         /// * `message` - Message content as OneBotMessage
         send_group_msg,
-        (group_id: i64, message: OneBotMessage) -> i32,
+        (group_id: i64, message: &OneBotMessage) -> i32,
         "message_id"
     );
 
@@ -302,7 +309,7 @@ impl OneBotBot {
         message_type: Option<&str>,
         user_id: Option<i64>,
         group_id: Option<i64>,
-        message: OneBotMessage,
+        message: &OneBotMessage,
     ) -> ApiResult<i64> {
         let mut params = json!({
             "message": message

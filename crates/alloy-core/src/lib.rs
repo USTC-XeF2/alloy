@@ -9,7 +9,8 @@
 //! ## Core Components
 //!
 //! ### Messages
-//! - **MessageSegment**, **Message**: Cross-protocol message abstraction
+//! - **ReceiveMessageSegment** / **SendMessageSegment**, **Message**:
+//!   Cross-protocol message abstraction
 //!
 //! ### Transport
 //! - **Capabilities**: Protocol-agnostic transport traits
@@ -49,7 +50,9 @@ pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
 };
 pub use event::{BoxedEvent, EventRoot, EventType, EventView, Scene};
-pub use message::{Message, MessageSegment, RichText, RichTextSegment, Sendable};
+pub use message::{
+    Message, ReceiveMessageSegment, RichText, RichTextSegment, SendMessageSegment, Sendable,
+};
 pub use transport::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, HTTP_LISTEN_REGISTRY,
     HTTP_START_CLIENT_REGISTRY, HttpClientConfig, HttpListenFn, HttpServerConfig,

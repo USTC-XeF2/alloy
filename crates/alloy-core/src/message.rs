@@ -6,14 +6,16 @@
 //! # Architecture
 //!
 //! The message system is built around two core abstractions:
-//! - [`MessageSegment`]: A trait for a single unit of content (text, image, etc.)
+//! - [`ReceiveMessageSegment`] / [`SendMessageSegment`]: Traits for incoming/outgoing
+//!   message segments
 //! - [`Message<S>`]: A generic struct holding a collection of segments
 //!
 //! Protocol adapters define their own segment types and use `Message<TheirSegment>`.
 
-use std::fmt::{Debug, Display};
+use std::borrow::Cow;
+use std::fmt::Display;
 
-use derive_more::{AsMut, AsRef, Deref, DerefMut, From};
+use derive_more::{AsMut, AsRef, Deref, DerefMut, From, Into, IntoIterator};
 use downcast_rs::{Downcast, impl_downcast};
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +27,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This enum provides a unified representation of message segments across
 /// all adapters. Adapters can convert their platform-specific segments
-/// into `RichTextSegment` via [`MessageSegment::as_rich_text()`].
+/// into `RichTextSegment` via [`ReceiveMessageSegment::as_rich_text()`].
 ///
 /// # Variants
 ///
@@ -47,18 +49,11 @@ pub enum RichTextSegment {
 }
 
 // ============================================================================
-// Message Segment Trait
+// Message Segment Traits
 // ============================================================================
 
-/// A trait representing a single segment of a message.
-///
-/// A message segment is the smallest unit of content in a message.
-/// It can be plain text, an image, an emoji, a mention, etc.
-///
-/// Protocol adapters should implement this trait for their segment types.
-pub trait MessageSegment: Debug + Clone + Display + Send + Sync + 'static {
-    fn text(text: impl Into<String>) -> Self;
-
+/// A trait for segments received from an adapter/protocol.
+pub trait ReceiveMessageSegment: Send + Sync + 'static {
     /// Returns the type identifier of this segment (e.g., "text", "image", "at").
     fn segment_type(&self) -> &str;
 
@@ -71,40 +66,25 @@ pub trait MessageSegment: Debug + Clone + Display + Send + Sync + 'static {
     fn as_text(&self) -> Option<&str>;
 
     /// Converts this segment into a platform-agnostic [`RichTextSegment`].
-    ///
-    /// The default implementation returns `Some(RichTextSegment::Text)` if this is a
-    /// text segment (via [`as_text()`](MessageSegment::as_text)), or `None` otherwise.
-    /// Adapters should override this to properly convert image and at-mention
-    /// segments into their rich-text equivalents.
-    fn as_rich_text(&self) -> Option<RichTextSegment> {
-        self.as_text().map(RichTextSegment::text)
-    }
+    fn as_rich_text(&self) -> Option<RichTextSegment>;
+}
+
+/// A trait for segments that can be constructed and sent via an adapter.
+pub trait SendMessageSegment: ReceiveMessageSegment + Clone {
+    fn text(text: impl Into<String>) -> Self;
 
     /// Attempts to construct a segment from a platform-agnostic [`RichTextSegment`].
     ///
-    /// The default implementation returns `None` (no conversion possible).
-    /// Adapters should override this to support cross-protocol message forwarding.
-    ///
     /// `Text` segments should always be convertible. `Image` and `At` segments
     /// should be converted where the protocol supports them.
-    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
-        if let RichTextSegment::Text(s) = seg {
-            Some(Self::text(s))
-        } else {
-            None
-        }
-    }
+    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self>;
 }
 
 // ============================================================================
-// RichTextSegment as a first-class MessageSegment
+// RichTextSegment as first-class receive/send segment
 // ============================================================================
 
-impl MessageSegment for RichTextSegment {
-    fn text(text: impl Into<String>) -> Self {
-        RichTextSegment::Text(text.into())
-    }
-
+impl ReceiveMessageSegment for RichTextSegment {
     fn segment_type(&self) -> &str {
         match self {
             RichTextSegment::Text(_) => "text",
@@ -124,6 +104,12 @@ impl MessageSegment for RichTextSegment {
     /// Identity conversion — a `RichTextSegment` is already its own rich form.
     fn as_rich_text(&self) -> Option<RichTextSegment> {
         Some(self.clone())
+    }
+}
+
+impl SendMessageSegment for RichTextSegment {
+    fn text(text: impl Into<String>) -> Self {
+        RichTextSegment::Text(text.into())
     }
 
     /// Identity: `RichTextSegment` can always be constructed from itself.
@@ -152,63 +138,52 @@ impl Display for RichTextSegment {
 /// This struct provides common message functionality for all adapters.
 /// Each adapter uses `Message<TheirSegmentType>` and can implement
 /// adapter-specific methods via `impl Message<TheirSegment>`.
-///
-/// # Type Parameters
-///
-/// - `S`: The segment type, must implement [`MessageSegment`]
-#[derive(Debug, Clone, Serialize, Deserialize, Deref, DerefMut, AsRef, AsMut, From)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, Deref, DerefMut, AsRef, AsMut, From, Into, IntoIterator,
+)]
 #[serde(transparent)]
-pub struct Message<S: MessageSegment> {
-    #[serde(bound(deserialize = "S: Deserialize<'de>"))]
+pub struct Message<S> {
     segments: Vec<S>,
 }
 
-impl<S: MessageSegment> Message<S> {
-    /// Creates a new empty message.
-    pub const fn new() -> Self {
-        Self {
-            segments: Vec::new(),
-        }
+impl<S: ReceiveMessageSegment> Message<S> {
+    /// Extracts all plain text content from the message.
+    ///
+    /// This concatenates the text content of all text segments,
+    /// ignoring non-text segments like images or mentions.
+    pub fn extract_plain_text(&self) -> String {
+        self.iter()
+            .filter_map(ReceiveMessageSegment::as_text)
+            .collect()
     }
 
-    /// Creates a message from a vector of segments.
-    pub fn from_segments(segments: Vec<S>) -> Self {
-        Self { segments }
+    /// Extracts rich text segments from the message.
+    ///
+    /// Converts each platform-specific segment into a [`RichTextSegment`]
+    /// using [`ReceiveMessageSegment::as_rich_text()`].
+    pub fn extract_rich_text(&self) -> Vec<RichTextSegment> {
+        self.iter()
+            .filter_map(ReceiveMessageSegment::as_rich_text)
+            .collect()
     }
+}
 
+impl<S: SendMessageSegment> Message<S> {
     /// Creates a message from a type-erased `ErasedMessage`.
     ///
     /// This attempts to downcast the `ErasedMessage` to `Message<S>`. If the downcast
     /// fails, it tries to convert from rich text segments using `S::from_rich_text_segment`.
-    pub fn from_erased_message(msg: &dyn Sendable) -> Self {
+    pub fn from_erased_message(msg: &dyn Sendable) -> Cow<'_, Self> {
         if let Some(msg) = msg.downcast_ref::<Self>() {
-            msg.clone()
+            Cow::Borrowed(msg)
         } else {
-            Self::from_segments(
+            Cow::Owned(
                 msg.extract_rich_text()
                     .iter()
                     .filter_map(S::from_rich_text_segment)
                     .collect(),
             )
         }
-    }
-
-    /// Extracts all plain text content from the message.
-    ///
-    /// This concatenates the text content of all text segments,
-    /// ignoring non-text segments like images or mentions.
-    pub fn extract_plain_text(&self) -> String {
-        self.iter().filter_map(|seg| seg.as_text()).collect()
-    }
-
-    /// Extracts rich text segments from the message.
-    ///
-    /// Converts each platform-specific segment into a [`RichTextSegment`]
-    /// using [`MessageSegment::as_rich_text()`].
-    pub fn extract_rich_text(&self) -> Vec<RichTextSegment> {
-        self.iter()
-            .filter_map(MessageSegment::as_rich_text)
-            .collect()
     }
 
     /// Adds a segment to the end of the message.
@@ -221,26 +196,30 @@ impl<S: MessageSegment> Message<S> {
         self.segments.push(segment);
         self
     }
+}
 
-    /// Consumes the message and returns the inner segments vector.
-    pub fn into_segments(self) -> Vec<S> {
-        self.segments
+impl<S> Message<S> {
+    /// Creates a new empty message.
+    pub const fn new() -> Self {
+        Self {
+            segments: Vec::new(),
+        }
     }
 }
 
-impl<S: MessageSegment> Default for Message<S> {
+impl<S> Default for Message<S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<S: MessageSegment> Display for Message<S> {
+impl<S: Display> Display for Message<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.segments.iter().try_for_each(|seg| write!(f, "{seg}"))
     }
 }
 
-impl<S: MessageSegment> From<S> for Message<S> {
+impl<S> From<S> for Message<S> {
     fn from(segment: S) -> Self {
         Self {
             segments: vec![segment],
@@ -248,7 +227,7 @@ impl<S: MessageSegment> From<S> for Message<S> {
     }
 }
 
-impl<S: MessageSegment> FromIterator<S> for Message<S> {
+impl<S> FromIterator<S> for Message<S> {
     fn from_iter<T: IntoIterator<Item = S>>(iter: T) -> Self {
         Self {
             segments: iter.into_iter().collect(),
@@ -265,7 +244,7 @@ impl<S: MessageSegment> FromIterator<S> for Message<S> {
 /// Handlers can return `RichText` (or `Result<RichText, E>`) and the
 /// framework will deliver it via [`Bot::send_message`]. Each adapter
 /// converts it to its native format via
-/// [`MessageSegment::from_rich_text_segment`]; unknown segment kinds are
+/// [`SendMessageSegment::from_rich_text_segment`]; unknown segment kinds are
 /// silently dropped and the adapter falls back to plain text if the result
 /// would be empty.
 pub type RichText = Message<RichTextSegment>;
@@ -312,7 +291,7 @@ impl Sendable for String {
     }
 }
 
-impl<S: MessageSegment> Sendable for Message<S> {
+impl<S: ReceiveMessageSegment> Sendable for Message<S> {
     fn extract_rich_text(&self) -> Vec<RichTextSegment> {
         Message::extract_rich_text(self)
     }

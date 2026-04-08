@@ -149,15 +149,15 @@ macro_rules! impl_api {
     ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty, $field:expr $(,)?) => {
         $(#[$meta])*
         pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<$ret> {
-            let result = self.call_api(
+            let mut result = self.call_api(
                 stringify!($name),
                 ::serde_json::json!({ $(stringify!($arg): $arg),* })
             ).await?;
-            result
-                .get($field)
-                .cloned()
-                .and_then(|v| ::serde_json::from_value::<$ret>(v).ok())
-                .ok_or_else(|| ::alloy_core::error::ApiError::SerializationError(format!("Missing {}", $field)))
+            let value = result
+                .as_object_mut()
+                .and_then(|obj| obj.remove($field))
+                .ok_or_else(|| ::alloy_core::error::ApiError::SerializationError(format!("Missing {}", $field)))?;
+            Ok(::serde_json::from_value(value)?)
         }
     };
 }

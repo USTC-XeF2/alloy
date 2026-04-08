@@ -4,7 +4,7 @@
 //! A message segment represents a single unit of content in a message, such as plain text,
 //! images, mentions, etc.
 
-use alloy_core::{MessageSegment, RichTextSegment};
+use alloy_core::{ReceiveMessageSegment, RichTextSegment, SendMessageSegment};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -92,11 +92,7 @@ impl std::fmt::Display for Segment {
     }
 }
 
-impl MessageSegment for Segment {
-    fn text(text: impl Into<String>) -> Self {
-        Segment::Text(TextData { text: text.into() })
-    }
-
+impl ReceiveMessageSegment for Segment {
     fn segment_type(&self) -> &str {
         match self {
             Segment::Text(_) => "text",
@@ -139,6 +135,12 @@ impl MessageSegment for Segment {
             }),
             _ => None,
         }
+    }
+}
+
+impl SendMessageSegment for Segment {
+    fn text(text: impl Into<String>) -> Self {
+        Segment::Text(TextData { text: text.into() })
     }
 
     fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
