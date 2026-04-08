@@ -47,7 +47,7 @@ pub fn expand_event_root(attr: TokenStream, item: TokenStream) -> syn::Result<To
                 self.#data_field_ident.plain_text()
             }
 
-            fn rich_text(&self) -> Vec<::alloy_core::RichTextSegment> {
+            fn rich_text(&self) -> ::alloy_core::RichText {
                 self.#data_field_ident.rich_text()
             }
         }
@@ -118,7 +118,7 @@ pub fn expand_event_data(attr: TokenStream, item: TokenStream) -> syn::Result<To
                 }
             }
 
-            fn rich_text(&self) -> Vec<::alloy_core::RichTextSegment> {
+            fn rich_text(&self) -> ::alloy_core::RichText {
                 match self {
                     #(#rich_text_arms)*
                 }
@@ -635,13 +635,6 @@ fn event_type_arm(spec: &VariantSpec) -> TokenStream {
 fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
     let variant_ident = &spec.variant_ident;
 
-    if spec.fields.is_empty() {
-        return (
-            arm_with_cfg(spec, quote! { Self::#variant_ident => String::new(), }),
-            arm_with_cfg(spec, quote! { Self::#variant_ident => Vec::new(), }),
-        );
-    }
-
     if let Some(message) = message_field(spec) {
         let message_ident = &message.ident;
         return (
@@ -675,7 +668,10 @@ fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
             spec,
             quote! { Self::#variant_ident { .. } => String::new(), },
         ),
-        arm_with_cfg(spec, quote! { Self::#variant_ident { .. } => Vec::new(), }),
+        arm_with_cfg(
+            spec,
+            quote! { Self::#variant_ident { .. } => ::alloy_core::RichText::new(), },
+        ),
     )
 }
 

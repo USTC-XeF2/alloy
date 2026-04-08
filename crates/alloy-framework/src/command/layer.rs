@@ -220,7 +220,7 @@ where
                 return Err(EventSkipped.into());
             }
 
-            let rich_text = ctx.event().get_rich_text();
+            let rich_text = ctx.event().rich_text();
             let (args, registry) = rich_text_shell_split(&rich_text);
 
             let expected_cmd = format!("{start_tag}{name}");

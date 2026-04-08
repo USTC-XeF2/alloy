@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use downcast_rs::{Downcast, impl_downcast};
 
-use super::message::RichTextSegment;
+use super::message::RichText;
 
 // ============================================================================
 // Session Scene Identifier
@@ -110,7 +110,7 @@ pub trait EventRoot: Downcast + Send + Sync {
     fn plain_text(&self) -> String;
 
     /// Rich text projection of this event.
-    fn rich_text(&self) -> Vec<RichTextSegment>;
+    fn rich_text(&self) -> RichText;
 }
 
 impl_downcast!(EventRoot);

@@ -32,7 +32,6 @@ use crate::adapter::Adapter;
 use crate::bot::{Bot, BoxedBot};
 use crate::error::AdapterResult;
 use crate::event::{BoxedEvent, EventType};
-use crate::message::RichText;
 use crate::transport::{
     ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, Sender, TransportContext,
 };
@@ -172,32 +171,26 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
         };
 
         // Log at appropriate level
-        if event.event_type() == EventType::Meta {
-            trace!(
+        match event.event_type() {
+            EventType::Message => info!(
+                bot_id = %bot_id,
+                platform = %event.platform(),
+                event_id = %event.event_id(),
+                text = %event.rich_text(),
+                "Received message event"
+            ),
+            EventType::Meta => trace!(
                 bot_id = %bot_id,
                 platform = %event.platform(),
                 event_id = %event.event_id(),
                 "Received meta event"
-            );
-        } else {
-            let text = event.rich_text();
-            if text.is_empty() {
-                info!(
-                    bot_id = %bot_id,
-                    platform = %event.platform(),
-                    event_id = %event.event_id(),
-                    "Received event"
-                );
-            } else {
-                let text: RichText = text.into();
-                info!(
-                    bot_id = %bot_id,
-                    platform = %event.platform(),
-                    event_id = %event.event_id(),
-                    text = %text,
-                    "Received message event"
-                );
-            }
+            ),
+            _ => info!(
+                bot_id = %bot_id,
+                platform = %event.platform(),
+                event_id = %event.event_id(),
+                "Received event"
+            ),
         }
 
         // Dispatch in a separate task so we don't block the transport receiver.

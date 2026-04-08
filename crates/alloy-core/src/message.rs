@@ -161,7 +161,7 @@ impl<S: ReceiveMessageSegment> Message<S> {
     ///
     /// Converts each platform-specific segment into a [`RichTextSegment`]
     /// using [`ReceiveMessageSegment::as_rich_text()`].
-    pub fn extract_rich_text(&self) -> Vec<RichTextSegment> {
+    pub fn extract_rich_text(&self) -> RichText {
         self.iter()
             .filter_map(ReceiveMessageSegment::as_rich_text)
             .collect()
@@ -280,19 +280,19 @@ impl RichText {
 /// If the downcast fails they should fall back to [`ErasedMessage::extract_rich_text`].
 pub trait Sendable: Downcast + Send + Sync {
     /// Extracts platform-agnostic rich text segments from the message.
-    fn extract_rich_text(&self) -> Vec<RichTextSegment>;
+    fn extract_rich_text(&self) -> RichText;
 }
 
 impl_downcast!(Sendable);
 
 impl Sendable for String {
-    fn extract_rich_text(&self) -> Vec<RichTextSegment> {
-        vec![RichTextSegment::text(self)]
+    fn extract_rich_text(&self) -> RichText {
+        RichTextSegment::text(self).into()
     }
 }
 
 impl<S: ReceiveMessageSegment> Sendable for Message<S> {
-    fn extract_rich_text(&self) -> Vec<RichTextSegment> {
+    fn extract_rich_text(&self) -> RichText {
         Message::extract_rich_text(self)
     }
 }
