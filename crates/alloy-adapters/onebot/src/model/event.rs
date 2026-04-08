@@ -88,7 +88,7 @@ pub struct OneBotEvent {
 #[event_data(parent = OneBotEvent)]
 #[serde(tag = "post_type", rename_all = "snake_case")]
 pub enum EventData {
-    #[event_view(name = MessageEvent, id = "message", type = Message)]
+    #[event_view(type = Message)]
     Message {
         message_id: i32,
         #[event_field(message)]
@@ -105,21 +105,21 @@ pub enum EventData {
         message_type: MessageEventType,
     },
 
-    #[event_view(name = NoticeEvent, id = "notice", type = Notice)]
+    #[event_view(type = Notice)]
     Notice {
         #[event_data]
         #[serde(flatten)]
         notice_type: NoticeEventType,
     },
 
-    #[event_view(name = RequestEvent, id = "request", type = Request)]
+    #[event_view(type = Request)]
     Request {
         #[event_data]
         #[serde(flatten)]
         request_type: RequestEventType,
     },
 
-    #[event_view(name = MetaEvent, id = "meta_event", type = Meta)]
+    #[event_view(name = MetaEvent, type = Meta)]
     MetaEvent {
         #[event_data]
         #[serde(flatten)]
@@ -141,7 +141,7 @@ impl MessageEvent {
 #[event_data(parent = MessageEvent)]
 #[serde(tag = "message_type", rename_all = "snake_case")]
 pub enum MessageEventType {
-    #[event_view(name = PrivateMessageEvent, id = "private", scene = Private)]
+    #[event_view(name = PrivateMessageEvent, scene = Private)]
     Private {
         sub_type: PrivateMessageType,
         #[event_field(user_id)]
@@ -149,7 +149,7 @@ pub enum MessageEventType {
         sender: PrivateSender,
     },
 
-    #[event_view(name = GroupMessageEvent, id = "group", scene = Group)]
+    #[event_view(name = GroupMessageEvent, scene = Group)]
     Group {
         sub_type: GroupMessageType,
         #[event_field(group_id)]
@@ -164,7 +164,7 @@ pub enum MessageEventType {
 #[event_data(parent = NoticeEvent)]
 #[serde(tag = "notice_type", rename_all = "snake_case")]
 pub enum NoticeEventType {
-    #[event_view(name = GroupUploadEvent, id = "group_upload", scene = Group)]
+    #[event_view(scene = Group)]
     GroupUpload {
         #[event_field(group_id)]
         group_id: i64,
@@ -173,7 +173,7 @@ pub enum NoticeEventType {
         file: UploadedFile,
     },
 
-    #[event_view(name = GroupAdminEvent, id = "group_admin", scene = Group)]
+    #[event_view(scene = Group)]
     GroupAdmin {
         sub_type: AdminSetType,
         #[event_field(group_id)]
@@ -182,7 +182,7 @@ pub enum NoticeEventType {
         user_id: i64,
     },
 
-    #[event_view(name = GroupDecreaseEvent, id = "group_decrease", scene = Group)]
+    #[event_view(scene = Group)]
     GroupDecrease {
         sub_type: GroupDecreaseType,
         #[event_field(group_id)]
@@ -192,7 +192,7 @@ pub enum NoticeEventType {
         user_id: i64,
     },
 
-    #[event_view(name = GroupIncreaseEvent, id = "group_increase", scene = Group)]
+    #[event_view(scene = Group)]
     GroupIncrease {
         sub_type: GroupIncreaseType,
         #[event_field(group_id)]
@@ -202,7 +202,7 @@ pub enum NoticeEventType {
         user_id: i64,
     },
 
-    #[event_view(name = GroupBanEvent, id = "group_ban", scene = Group)]
+    #[event_view(scene = Group)]
     GroupBan {
         sub_type: GroupBanType,
         #[event_field(group_id)]
@@ -213,13 +213,13 @@ pub enum NoticeEventType {
         duration: i64,
     },
 
-    #[event_view(name = FriendAddEvent, id = "friend_add", scene = Private)]
+    #[event_view(scene = Private)]
     FriendAdd {
         #[event_field(user_id)]
         user_id: i64,
     },
 
-    #[event_view(name = GroupRecallEvent, id = "group_recall", scene = Group)]
+    #[event_view(scene = Group)]
     GroupRecall {
         #[event_field(group_id)]
         group_id: i64,
@@ -229,14 +229,14 @@ pub enum NoticeEventType {
         message_id: i64,
     },
 
-    #[event_view(name = FriendRecallEvent, id = "friend_recall", scene = Private)]
+    #[event_view(scene = Private)]
     FriendRecall {
         #[event_field(user_id)]
         user_id: i64,
         message_id: i64,
     },
 
-    #[event_view(name = NotifyEvent, id = "notify")]
+    #[event_view]
     Notify {
         #[event_data]
         #[serde(flatten)]
@@ -248,7 +248,7 @@ pub enum NoticeEventType {
 #[event_data(parent = NotifyEvent)]
 #[serde(tag = "sub_type", rename_all = "snake_case")]
 pub enum NotifyType {
-    #[event_view(name = PokeEvent, id = "poke", scene_func = get_poke_scene)]
+    #[event_view(scene_func = get_poke_scene)]
     Poke {
         #[serde(default)]
         group_id: Option<i64>,
@@ -256,7 +256,7 @@ pub enum NotifyType {
         target_id: i64,
     },
 
-    #[event_view(name = LuckyKingEvent, id = "lucky_king", scene = Group)]
+    #[event_view(scene = Group)]
     LuckyKing {
         #[event_field(group_id)]
         group_id: i64,
@@ -265,7 +265,7 @@ pub enum NotifyType {
         target_id: i64,
     },
 
-    #[event_view(name = HonorEvent, id = "honor", scene = Group)]
+    #[event_view(scene = Group)]
     Honor {
         #[event_field(group_id)]
         group_id: i64,
@@ -299,14 +299,14 @@ fn get_poke_scene(data: &NotifyType) -> Option<Scene> {
 #[event_data(parent = RequestEvent)]
 #[serde(tag = "request_type", rename_all = "snake_case")]
 pub enum RequestEventType {
-    #[event_view(name = FriendRequestEvent, id = "friend")]
+    #[event_view(name = FriendRequestEvent)]
     Friend {
         user_id: i64,
         comment: String,
         flag: String,
     },
 
-    #[event_view(name = GroupRequestEvent, id = "group")]
+    #[event_view(name = GroupRequestEvent)]
     Group {
         sub_type: GroupRequestType,
         group_id: i64,
@@ -320,9 +320,9 @@ pub enum RequestEventType {
 #[event_data(parent = MetaEvent)]
 #[serde(tag = "meta_event_type", rename_all = "snake_case")]
 pub enum MetaEventType {
-    #[event_view(name = LifecycleEvent, id = "lifecycle")]
+    #[event_view]
     Lifecycle { sub_type: LifecycleType },
 
-    #[event_view(name = HeartbeatEvent, id = "heartbeat")]
+    #[event_view]
     Heartbeat { status: Status, interval: i64 },
 }

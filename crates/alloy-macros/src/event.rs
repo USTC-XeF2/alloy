@@ -1,3 +1,4 @@
+use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
@@ -232,7 +233,7 @@ fn parse_event_view_attr(attrs: &[Attribute], variant: &Variant) -> syn::Result<
         .ok_or_else(|| {
             syn::Error::new(
                 variant.span(),
-                "each variant in #[event_data] enum must have #[event_view(name = ..., id = ...)]",
+                "each variant in #[event_data] enum must have #[event_view] or #[event_view(...)]",
             )
         })?;
 
@@ -242,35 +243,51 @@ fn parse_event_view_attr(attrs: &[Attribute], variant: &Variant) -> syn::Result<
     let mut scene: Option<Ident> = None;
     let mut scene_func: Option<Path> = None;
 
-    attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("name") {
-            name = Some(meta.value()?.parse::<Ident>()?);
-            return Ok(());
+    match &attr.meta {
+        Meta::Path(_) => {}
+        Meta::List(_) => {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("name") {
+                    name = Some(meta.value()?.parse::<Ident>()?);
+                    return Ok(());
+                }
+                if meta.path.is_ident("id") {
+                    id = Some(meta.value()?.parse::<syn::LitStr>()?);
+                    return Ok(());
+                }
+                if meta.path.is_ident("type") {
+                    event_type = Some(meta.value()?.parse::<Ident>()?);
+                    return Ok(());
+                }
+                if meta.path.is_ident("scene") {
+                    scene = Some(meta.value()?.parse::<Ident>()?);
+                    return Ok(());
+                }
+                if meta.path.is_ident("scene_func") {
+                    scene_func = Some(meta.value()?.parse::<Path>()?);
+                    return Ok(());
+                }
+                Err(meta.error(
+                    "unsupported key in #[event_view(...)], expected name/id/type/scene/scene_func",
+                ))
+            })?;
         }
-        if meta.path.is_ident("id") {
-            id = Some(meta.value()?.parse::<syn::LitStr>()?);
-            return Ok(());
+        Meta::NameValue(_) => {
+            return Err(syn::Error::new(
+                attr.span(),
+                "#[event_view] does not support name-value form, use #[event_view] or #[event_view(...)]",
+            ));
         }
-        if meta.path.is_ident("type") {
-            event_type = Some(meta.value()?.parse::<Ident>()?);
-            return Ok(());
-        }
-        if meta.path.is_ident("scene") {
-            scene = Some(meta.value()?.parse::<Ident>()?);
-            return Ok(());
-        }
-        if meta.path.is_ident("scene_func") {
-            scene_func = Some(meta.value()?.parse::<Path>()?);
-            return Ok(());
-        }
-        Err(meta
-            .error("unsupported key in #[event_view(...)], expected name/id/type/scene/scene_func"))
-    })?;
+    }
 
-    let name =
-        name.ok_or_else(|| syn::Error::new(variant.span(), "#[event_view] missing `name = ...`"))?;
-    let id =
-        id.ok_or_else(|| syn::Error::new(variant.span(), "#[event_view] missing `id = \"...\"`"))?;
+    let name = name.unwrap_or_else(|| {
+        let generated = format!("{}Event", variant.ident);
+        Ident::new(&generated, variant.ident.span())
+    });
+    let id = id.unwrap_or_else(|| {
+        let generated = variant.ident.to_string().to_snake_case();
+        syn::LitStr::new(&generated, variant.ident.span())
+    });
 
     Ok(EventViewAttr {
         name,
