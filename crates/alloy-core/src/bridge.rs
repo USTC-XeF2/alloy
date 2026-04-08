@@ -131,7 +131,7 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
 
 #[async_trait]
 impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> crate::error::TransportResult<String> {
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String> {
         self.adapter.get_bot_id(conn_info)
     }
 

@@ -346,12 +346,11 @@ async fn handle_http_request(
 
     // Ask the adapter to identify which bot this request belongs to.
     let bot_id = match handler.get_bot_id(conn_info) {
-        Ok(id) => id,
-        Err(e) => {
+        Some(id) => id,
+        None => {
             error!(
-                error       = %e,
                 remote_addr = %addr,
-                "Failed to extract bot ID from HTTP request",
+                "Failed to extract bot ID from HTTP request metadata, cannot process request",
             );
             return (StatusCode::BAD_REQUEST, "Failed to extract bot ID").into_response();
         }
@@ -432,17 +431,13 @@ async fn handle_ws_connection(
     }
 
     // Let the adapter identify which bot this connection belongs to.
-    let bot_id = match handler.get_bot_id(conn_info) {
-        Ok(id) => id,
-        Err(e) => {
-            error!(
-                error       = %e,
-                remote_addr = %addr,
-                "Failed to establish WebSocket connection",
-            );
-            let _ = ws_tx.close().await;
-            return;
-        }
+    let Some(bot_id) = handler.get_bot_id(conn_info) else {
+        error!(
+            remote_addr = %addr,
+            "Failed to extract bot ID from WebSocket connection metadata, closing connection",
+        );
+        let _ = ws_tx.close().await;
+        return;
     };
 
     info!(bot_id = %bot_id, remote_addr = %addr, "WebSocket connection established");

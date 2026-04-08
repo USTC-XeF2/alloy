@@ -12,8 +12,7 @@ use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
 use alloy_core::{
     Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    HttpClientConfig, HttpServerConfig, TransportContext, TransportError, TransportResult,
-    WsClientConfig, WsServerConfig,
+    HttpClientConfig, HttpServerConfig, TransportContext, WsClientConfig, WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -36,20 +35,8 @@ impl Adapter for OneBotAdapter {
         Self { config }
     }
 
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String> {
-        // OneBot v11 uses X-Self-ID header to identify the bot
-        let bot_id = conn_info
-            .metadata
-            .get("x-self-id")
-            .cloned()
-            .ok_or_else(|| TransportError::BotIdMissing {
-                reason: format!(
-                    "x-self-id header not found in connection metadata. Remote: {:?}",
-                    conn_info.remote_addr
-                ),
-            })?;
-
-        Ok(bot_id)
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String> {
+        conn_info.metadata.get("x-self-id").cloned()
     }
 
     fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> Self::Bot {

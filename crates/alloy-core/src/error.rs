@@ -21,52 +21,13 @@ pub enum TransportError {
         reason: String,
     },
 
-    /// Connection closed.
-    #[error("connection closed: {reason}")]
-    ConnectionClosed {
-        /// Reason for closure.
-        reason: String,
-    },
-
-    /// Bot identification failed.
-    #[error("bot identification failed: {reason}")]
-    BotIdMissing {
-        /// Reason for failure.
-        reason: String,
-    },
-
-    /// Message send failed.
-    #[error("failed to send message: {0}")]
-    SendFailed(String),
-
-    /// Transport not available.
-    #[error("transport '{transport}' not available")]
-    NotAvailable {
-        /// The transport type that's not available.
-        transport: &'static str,
-    },
-
-    /// Invalid configuration.
-    #[error("invalid transport configuration: {0}")]
-    InvalidConfig(String),
-
     /// I/O error.
     #[error("I/O error: {0}")]
     Io(String),
 
-    /// Bot already exists.
-    #[error("bot with ID '{id}' already exists")]
-    BotAlreadyExists {
-        /// The duplicate bot ID.
-        id: String,
-    },
-
-    /// Bot not found.
-    #[error("bot '{id}' not found")]
-    BotNotFound {
-        /// The missing bot ID.
-        id: String,
-    },
+    /// Serialization error.
+    #[error("serialization error: {0}")]
+    Serialization(String),
 }
 
 impl From<std::io::Error> for TransportError {
@@ -105,9 +66,6 @@ pub enum AdapterError {
 /// Error type for API calls.
 #[derive(Debug, Clone, Error)]
 pub enum ApiError {
-    /// The bot is not connected.
-    #[error("bot is not connected")]
-    NotConnected,
     /// The API call timed out.
     #[error("API call timed out")]
     Timeout,

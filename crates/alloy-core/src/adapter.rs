@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use crate::bot::Bot;
-use crate::error::{AdapterResult, TransportResult};
+use crate::error::AdapterResult;
 use crate::event::BoxedEvent;
 use crate::transport::{ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportContext};
 
@@ -42,7 +42,7 @@ pub trait Adapter: Send + Sync + 'static {
     /// Called when a new transport connection is established.
     /// Return the unique bot identifier derived from protocol-specific
     /// metadata (e.g., headers, query params).
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String>;
 
     /// Create a bot instance for a new connection.
     ///

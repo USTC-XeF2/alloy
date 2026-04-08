@@ -42,7 +42,7 @@ use crate::error::TransportResult;
 #[async_trait]
 pub trait ConnectionHandler: Send + Sync {
     /// Extract a bot ID from connection metadata when a new connection arrives.
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> TransportResult<String>;
+    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String>;
 
     /// Idempotently registers a bot and its optional send-capable connection sender.
     ///

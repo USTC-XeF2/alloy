@@ -171,6 +171,14 @@ pub async fn ws_connect(
     // Initial connection
     let conn_info = ConnectionInfo::new("websocket").with_metadata("url", &config.url);
 
+    // Get bot ID from handler
+    let bot_id = handler
+        .get_bot_id(conn_info)
+        .ok_or_else(|| TransportError::ConnectionFailed {
+            url: config.url.clone(),
+            reason: "Failed to extract bot ID from connection metadata".to_string(),
+        })?;
+
     let (ws_stream, _response) =
         connect_async(&config.url)
             .await
@@ -178,9 +186,6 @@ pub async fn ws_connect(
                 url: config.url.clone(),
                 reason: format!("WebSocket connection failed: {}", e),
             })?;
-
-    // Get bot ID from handler
-    let bot_id = handler.get_bot_id(conn_info)?;
 
     info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 

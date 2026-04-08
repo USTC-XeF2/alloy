@@ -30,15 +30,15 @@ pub async fn http_start_client(
         .build()
         .map_err(|e| TransportError::Io(e.to_string()))?;
 
-    let base_url = Url::parse(&config.base_url)
-        .map_err(|e| TransportError::Io(format!("Invalid base URL: {}", e)))?;
+    let base_url =
+        Url::parse(&config.base_url).map_err(|e| TransportError::Serialization(e.to_string()))?;
 
     let post_json: PostJsonFn = Arc::new(move |endpoint: &str, body| {
         let client = client.clone();
         let url = base_url.join(endpoint);
         let token = config.access_token.clone();
         async move {
-            let url = url.map_err(|e| TransportError::Io(format!("Invalid URL: {}", e)))?;
+            let url = url.map_err(|e| TransportError::Serialization(e.to_string()))?;
             let mut req = client.post(url).json(&body);
             if let Some(t) = &token {
                 req = req.bearer_auth(t);
@@ -58,7 +58,7 @@ pub async fn http_start_client(
             }
             resp.json()
                 .await
-                .map_err(|e| TransportError::Io(e.to_string()))
+                .map_err(|e| TransportError::Serialization(e.to_string()))
         }
         .boxed()
     });

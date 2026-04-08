@@ -49,8 +49,7 @@ use crate::model::api::{
 use crate::model::message::OneBotMessage;
 use crate::model::types::Status;
 use alloy_core::{
-    ApiError, ApiResult, Bot, ConnectionHandle, PostJsonFn, Scene, Sendable, Sender,
-    TransportError, impl_api,
+    ApiError, ApiResult, Bot, ConnectionHandle, PostJsonFn, Scene, Sendable, Sender, impl_api,
 };
 
 // =============================================================================
@@ -117,17 +116,13 @@ impl ApiCallStrategy {
                 if let Err(e) = message_tx.send(request_bytes).await {
                     // Remove the pending entry so it doesn't dangle.
                     pending_calls.lock().remove(&echo);
-                    return Err(TransportError::SendFailed(e.to_string()).into());
+                    return Err(ApiError::Other(format!("WebSocket send failed: {e}")));
                 }
 
                 // Await the response with a timeout.
                 match timeout(*api_timeout, rx).await {
                     Ok(Ok(response)) => Ok(response),
-                    Ok(Err(_)) => {
-                        // Channel closed — transport was shut down.
-                        Err(ApiError::NotConnected)
-                    }
-                    Err(_) => {
+                    _ => {
                         // Timed out — remove the pending entry.
                         pending_calls.lock().remove(&echo);
                         Err(ApiError::Timeout)
@@ -142,9 +137,7 @@ impl ApiCallStrategy {
 
                 debug!(action = %action, "Calling OneBot API via HTTP");
 
-                let response_json = (post_json)("", body)
-                    .await
-                    .map_err(|e| ApiError::Other(format!("HTTP request failed: {e}")))?;
+                let response_json = (post_json)("", body).await?;
 
                 Ok(response_json)
             }
@@ -266,7 +259,7 @@ impl Bot for OneBotBot {
             _ => None,
         }
         .map(|id| id.to_string())
-        .ok_or_else(|| ApiError::Other("unsupported scene for OneBotBot".into()))
+        .ok_or_else(|| ApiError::Other("unsupported scene for OneBot".into()))
     }
 
     async fn on_disconnect(&self) {

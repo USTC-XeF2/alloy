@@ -24,6 +24,7 @@ use alloy_macros::register_capability;
 async fn run_sse_loop(
     bot_id: String,
     config: SseClientConfig,
+    builder: ClientBuilder,
     handler: Arc<dyn ConnectionHandler>,
     shutdown_token: CancellationToken,
 ) {
@@ -31,44 +32,7 @@ async fn run_sse_loop(
 
     let mut retry_count = 0u32;
 
-    // ── Build eventsource client ─────────────────────────────────────────────
-    let builder = match ClientBuilder::for_url(&config.url) {
-        Ok(b) => b,
-        Err(e) => {
-            warn!(bot_id = %bot_id, error = %e, "Invalid SSE URL");
-            handler.on_disconnect(&bot_id).await;
-            return;
-        }
-    };
-
-    let builder = if let Some(token) = &config.access_token {
-        match builder.header("Authorization", &format!("Bearer {token}")) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(bot_id = %bot_id, error = %e, "Failed to set Authorization header");
-                handler.on_disconnect(&bot_id).await;
-                return;
-            }
-        }
-    } else {
-        builder
-    };
-
-    let mut reconnect_opts =
-        ReconnectOptions::reconnect(config.auto_reconnect).retry_initial(false);
-
-    if let Some(delay) = config.initial_delay {
-        reconnect_opts = reconnect_opts.delay(delay);
-    }
-    if let Some(delay) = config.max_delay {
-        reconnect_opts = reconnect_opts.delay_max(delay);
-    }
-    if let Some(m) = config.backoff_multiplier {
-        reconnect_opts = reconnect_opts.backoff_factor(m as u32);
-    }
-    let reconnect_opts = reconnect_opts.build();
-
-    let client = builder.reconnect(reconnect_opts).build();
+    let client = builder.build();
     let mut stream = client.stream();
 
     // ── Event loop ──────────────────────────────────────────────────────────
@@ -143,10 +107,31 @@ pub async fn sse_start_client(
     config: SseClientConfig,
     handler: Arc<dyn ConnectionHandler>,
 ) -> TransportResult<()> {
-    // Validate URL early.
-    if config.url.is_empty() {
-        return Err(TransportError::Io("SSE URL must not be empty".into()));
+    let builder = ClientBuilder::for_url(&config.url)
+        .map_err(|e| TransportError::Serialization(e.to_string()))?;
+
+    let builder = if let Some(token) = &config.access_token {
+        builder
+            .header("Authorization", &format!("Bearer {token}"))
+            .map_err(|e| TransportError::Serialization(e.to_string()))?
+    } else {
+        builder
+    };
+
+    let mut reconnect_opts =
+        ReconnectOptions::reconnect(config.auto_reconnect).retry_initial(false);
+
+    if let Some(delay) = config.initial_delay {
+        reconnect_opts = reconnect_opts.delay(delay);
     }
+    if let Some(delay) = config.max_delay {
+        reconnect_opts = reconnect_opts.delay_max(delay);
+    }
+    if let Some(m) = config.backoff_multiplier {
+        reconnect_opts = reconnect_opts.backoff_factor(m as u32);
+    }
+    let reconnect_opts = reconnect_opts.build();
+    let builder = builder.reconnect(reconnect_opts);
 
     // Register the bot (SSE is receive-only, no Sender needed).
     let shutdown_token = handler.register_connection(&config.bot_id, None);
@@ -155,6 +140,7 @@ pub async fn sse_start_client(
     tokio::spawn(run_sse_loop(
         config.bot_id.clone(),
         config,
+        builder,
         handler,
         shutdown_token,
     ));
