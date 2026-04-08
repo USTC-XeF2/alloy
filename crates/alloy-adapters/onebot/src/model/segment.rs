@@ -254,106 +254,6 @@ impl Segment {
         Segment::Dice(DiceData {})
     }
 
-    /// Creates a shake (legacy poke) segment.
-    pub fn shake() -> Self {
-        Segment::Shake(ShakeData {})
-    }
-
-    // --------------------------------
-    // Poke
-    // --------------------------------
-
-    /// Creates a poke segment.
-    pub fn poke(poke_type: impl Into<String>, id: impl Into<String>) -> Self {
-        Segment::Poke(PokeData {
-            poke_type: poke_type.into(),
-            id: id.into(),
-            name: None,
-        })
-    }
-
-    // --------------------------------
-    // Share
-    // --------------------------------
-
-    /// Creates a link share segment.
-    pub fn share(url: impl Into<String>, title: impl Into<String>) -> Self {
-        Segment::Share(ShareData {
-            url: url.into(),
-            title: title.into(),
-            content: None,
-            image: None,
-        })
-    }
-
-    // --------------------------------
-    // Contact
-    // --------------------------------
-
-    /// Creates a friend recommendation segment.
-    pub fn contact_qq(id: i64) -> Self {
-        Segment::Contact(ContactData {
-            contact_type: "qq".to_string(),
-            id: id.to_string(),
-        })
-    }
-
-    /// Creates a group recommendation segment.
-    pub fn contact_group(id: i64) -> Self {
-        Segment::Contact(ContactData {
-            contact_type: "group".to_string(),
-            id: id.to_string(),
-        })
-    }
-
-    // --------------------------------
-    // Location
-    // --------------------------------
-
-    /// Creates a location segment.
-    pub fn location(lat: f64, lon: f64) -> Self {
-        Segment::Location(LocationData {
-            lat: lat.to_string(),
-            lon: lon.to_string(),
-            title: None,
-            content: None,
-        })
-    }
-
-    // --------------------------------
-    // Music
-    // --------------------------------
-
-    /// Creates a music share segment (QQ Music, NetEase, etc.).
-    pub fn music(music_type: impl Into<String>, id: impl Into<String>) -> Self {
-        Segment::Music(MusicData {
-            music_type: music_type.into(),
-            id: Some(id.into()),
-            url: None,
-            audio: None,
-            title: None,
-            content: None,
-            image: None,
-        })
-    }
-
-    /// Creates a custom music share segment.
-    pub fn music_custom(
-        url: impl Into<String>,
-        audio: impl Into<String>,
-        title: impl Into<String>,
-    ) -> Self {
-        Segment::Music(MusicData {
-            music_type: "custom".to_string(),
-            id: None,
-            url: Some(url.into()),
-            audio: Some(audio.into()),
-            title: Some(title.into()),
-            content: None,
-            image: None,
-        })
-    }
-
     // --------------------------------
     // Reply
     // --------------------------------
@@ -514,7 +414,7 @@ pub struct ShakeData {}
 /// Poke segment data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PokeData {
-    /// Poke type. See Mirai's PokeMessage.
+    /// Poke type.
     #[serde(rename = "type")]
     pub poke_type: String,
     /// Poke ID.
@@ -539,12 +439,28 @@ pub struct ShareData {
     pub image: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContactType {
+    QQ,
+    Group,
+}
+
+impl std::fmt::Display for ContactType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ContactType::QQ => write!(f, "qq"),
+            ContactType::Group => write!(f, "group"),
+        }
+    }
+}
+
 /// Contact recommendation segment data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContactData {
-    /// Contact type: "qq" or "group".
+    /// Contact type.
     #[serde(rename = "type")]
-    pub contact_type: String,
+    pub contact_type: ContactType,
     /// QQ number or group ID.
     pub id: String,
 }

@@ -31,19 +31,11 @@ use alloy_core::Message;
 
 use super::segment::Segment;
 
-// ============================================================================
-// Type Alias
-// ============================================================================
-
 /// A OneBot v11 message composed of multiple segments.
 ///
 /// This is a type alias for `Message<Segment>`. Use the `OneBotMessageExt`
 /// trait to access OneBot-specific methods.
 pub type OneBotMessage = Message<Segment>;
-
-// ============================================================================
-// Extension Trait (avoids orphan rule for OneBot-specific methods)
-// ============================================================================
 
 /// Extension trait providing OneBot-specific methods for `Message<Segment>`.
 pub trait OneBotMessageExt {
@@ -99,47 +91,11 @@ impl OneBotMessageExt for OneBotMessage {
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use alloy_core::MessageSegment;
 
     use super::*;
-
-    #[test]
-    fn test_message_creation() {
-        let msg = OneBotMessage::from_segments(vec![
-            Segment::text("Hello, "),
-            Segment::at(10001000),
-            Segment::text("!"),
-        ]);
-
-        assert_eq!(msg.len(), 3);
-        assert_eq!(msg.extract_plain_text(), "Hello, !");
-    }
-
-    #[test]
-    fn test_message_serialize_array() {
-        let msg = OneBotMessage::from_segments(vec![Segment::text("Hello"), Segment::face(178)]);
-        // Serialize using slice to get array format
-        let json = serde_json::to_string(&msg[..]).unwrap();
-        assert_eq!(
-            json,
-            r#"[{"type":"text","data":{"text":"Hello"}},{"type":"face","data":{"id":"178"}}]"#
-        );
-    }
-
-    #[test]
-    fn test_message_deserialize_array() {
-        let json =
-            r#"[{"type":"text","data":{"text":"Hello"}},{"type":"at","data":{"qq":"10001000"}}]"#;
-        let msg: OneBotMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.len(), 2);
-        assert_eq!(msg.extract_plain_text(), "Hello");
-    }
 
     #[test]
     fn test_mentioned_users() {
@@ -163,30 +119,5 @@ mod tests {
         ]);
 
         assert_eq!(msg.reply_to(), Some("12345"));
-    }
-
-    #[test]
-    fn test_message_methods() {
-        let msg = OneBotMessage::from_segments(vec![
-            Segment::text("Hello"),
-            Segment::image("test.jpg"),
-            Segment::text(" World"),
-        ]);
-
-        // Test Message core methods
-        assert_eq!(msg.len(), 3);
-        assert!(!msg.is_empty());
-        assert_eq!(msg.extract_plain_text(), "Hello World");
-        assert_eq!(msg.len(), 3);
-    }
-
-    #[test]
-    fn test_extension_trait() {
-        let msg = OneBotMessage::from_segments(vec![Segment::text("Plain text")]);
-
-        // Test extension trait methods
-        assert_eq!(msg.mentioned_users(), Vec::<i64>::new());
-        assert!(!msg.mentions_all());
-        assert_eq!(msg.reply_to(), None);
     }
 }

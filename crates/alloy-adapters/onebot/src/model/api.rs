@@ -2,41 +2,51 @@
 //!
 //! This module defines the structures for making API calls to the OneBot implementation.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::message::OneBotMessage;
-use super::types::Sender;
+use super::types::{GroupRole, Sender, Sex};
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageType {
+    Private,
+    Group,
+}
 
 /// Response from get_msg API.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GetMsgResponse {
     pub time: i32,
-    pub message_type: String,
+    pub message_type: MessageType,
     pub message_id: i32,
     pub real_id: i32,
     pub sender: Sender,
-    #[cfg_attr(feature = "cqcode", serde(with = "super::cqcode::serde_message"))]
+    #[cfg_attr(
+        feature = "cqcode",
+        serde(deserialize_with = "super::cqcode::deserialize")
+    )]
     pub message: OneBotMessage,
 }
 
 /// Login info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct LoginInfo {
     pub user_id: i64,
     pub nickname: String,
 }
 
 /// Stranger info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct StrangerInfo {
     pub user_id: i64,
     pub nickname: String,
-    pub sex: String,
+    pub sex: Sex,
     pub age: i32,
 }
 
 /// Friend info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FriendInfo {
     pub user_id: i64,
     pub nickname: String,
@@ -44,7 +54,7 @@ pub struct FriendInfo {
 }
 
 /// Group info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GroupInfo {
     pub group_id: i64,
     pub group_name: String,
@@ -53,20 +63,20 @@ pub struct GroupInfo {
 }
 
 /// Group member info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GroupMemberInfo {
     pub group_id: i64,
     pub user_id: i64,
     pub nickname: String,
     pub card: String,
-    pub sex: String,
+    pub sex: Sex,
     pub age: i32,
     #[serde(default)]
     pub area: String,
     pub join_time: i32,
     pub last_sent_time: i32,
     pub level: String,
-    pub role: String,
+    pub role: GroupRole,
     pub unfriendly: bool,
     #[serde(default)]
     pub title: String,
@@ -76,14 +86,14 @@ pub struct GroupMemberInfo {
 }
 
 /// Credentials.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Credentials {
     pub cookies: String,
     pub csrf_token: i32,
 }
 
 /// Version info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct VersionInfo {
     pub app_name: String,
     pub app_version: String,

@@ -1,46 +1,29 @@
 use std::fmt::Write;
 
 use alloy_core::{Message, MessageSegment};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer};
+use serde_json::{Map, Value};
 
-use super::segment::{
-    AtData, ContactData, DiceData, FaceData, ForwardData, ImageData, JsonData, LocationData,
-    MusicData, NodeData, PokeData, RecordData, ReplyData, RpsData, Segment, ShakeData, ShareData,
-    VideoData, XmlData,
-};
+use super::segment::Segment;
 
-/// Serde helper module for OneBot message serialization with CQ string compatibility.
-///
-/// Use with `#[serde(with = "crate::cqcode::serde_message")]` on message fields.
-pub(crate) mod serde_message {
-    use super::{Deserialize, Deserializer, Message, Segment, Serialize, Serializer};
-
-    pub fn serialize<S>(msg: &Message<Segment>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // Always serialize as array format (serialize the slice, not the struct)
-        msg[..].serialize(serializer)
+/// Custom deserializer for `Message<Segment>` that supports both array and string formats.
+pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Message<Segment>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Support both array and string formats
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MessageFormat {
+        Array(Vec<Segment>),
+        String(String),
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Message<Segment>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Support both array and string formats
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum MessageFormat {
-            Array(Vec<Segment>),
-            String(String),
-        }
-
-        match MessageFormat::deserialize(deserializer)? {
-            MessageFormat::Array(segments) => Ok(Message::from_segments(segments)),
-            MessageFormat::String(cq_string) => {
-                let segments = super::parse_cq_string(&cq_string);
-                Ok(Message::from_segments(segments))
-            }
+    match MessageFormat::deserialize(deserializer)? {
+        MessageFormat::Array(segments) => Ok(Message::from_segments(segments)),
+        MessageFormat::String(cq_string) => {
+            let segments = parse_cq_string(&cq_string);
+            Ok(Message::from_segments(segments))
         }
     }
 }
@@ -72,7 +55,7 @@ pub fn parse_cq_string(input: &str) -> Vec<Segment> {
             let func_name: String = chars[func_start..pos].iter().collect();
 
             // Parse parameters
-            let mut params: Vec<(String, String)> = Vec::new();
+            let mut params = Map::new();
             while pos < len && chars[pos] == ',' {
                 pos += 1; // Skip ,
 
@@ -93,7 +76,9 @@ pub fn parse_cq_string(input: &str) -> Vec<Segment> {
                     }
                     let param_value: String = chars[value_start..pos].iter().collect();
                     let param_value = unescape_cq_value(&param_value);
-                    params.push((param_name, param_value));
+                    params
+                        .entry(param_name)
+                        .or_insert_with(|| Value::String(param_value));
                 }
             }
 
@@ -103,7 +88,11 @@ pub fn parse_cq_string(input: &str) -> Vec<Segment> {
             }
 
             // Create segment from parsed CQ code
-            if let Some(segment) = cq_to_segment(&func_name, &params) {
+            let mut raw_segment = Map::new();
+            raw_segment.insert("type".to_string(), Value::String(func_name));
+            raw_segment.insert("data".to_string(), Value::Object(params));
+
+            if let Ok(segment) = serde_json::from_value(Value::Object(raw_segment)) {
                 segments.push(segment);
             } else {
                 // Unknown CQ code, treat as text
@@ -127,244 +116,42 @@ pub fn parse_cq_string(input: &str) -> Vec<Segment> {
     segments
 }
 
-/// Converts a parsed CQ code into a segment.
-fn cq_to_segment(func: &str, params: &[(String, String)]) -> Option<Segment> {
-    let get = |key: &str| -> Option<&str> {
-        params
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
-    };
-
-    match func {
-        "face" => Some(Segment::Face(FaceData {
-            id: get("id")?.to_string(),
-        })),
-        "image" => Some(Segment::Image(ImageData {
-            file: get("file")?.to_string(),
-            image_type: get("type").map(ToString::to_string),
-            url: get("url").map(ToString::to_string),
-            cache: get("cache").map(ToString::to_string),
-            proxy: get("proxy").map(ToString::to_string),
-            timeout: get("timeout").map(ToString::to_string),
-        })),
-        "record" => Some(Segment::Record(RecordData {
-            file: get("file")?.to_string(),
-            magic: get("magic").map(ToString::to_string),
-            url: get("url").map(ToString::to_string),
-            cache: get("cache").map(ToString::to_string),
-            proxy: get("proxy").map(ToString::to_string),
-            timeout: get("timeout").map(ToString::to_string),
-        })),
-        "video" => Some(Segment::Video(VideoData {
-            file: get("file")?.to_string(),
-            url: get("url").map(ToString::to_string),
-            cache: get("cache").map(ToString::to_string),
-            proxy: get("proxy").map(ToString::to_string),
-            timeout: get("timeout").map(ToString::to_string),
-        })),
-        "at" => Some(Segment::At(AtData {
-            qq: get("qq")?.to_string(),
-        })),
-        "rps" => Some(Segment::Rps(RpsData {})),
-        "dice" => Some(Segment::Dice(DiceData {})),
-        "shake" => Some(Segment::Shake(ShakeData {})),
-        "poke" => Some(Segment::Poke(PokeData {
-            poke_type: get("type")?.to_string(),
-            id: get("id")?.to_string(),
-            name: get("name").map(ToString::to_string),
-        })),
-        "share" => Some(Segment::Share(ShareData {
-            url: get("url")?.to_string(),
-            title: get("title")?.to_string(),
-            content: get("content").map(ToString::to_string),
-            image: get("image").map(ToString::to_string),
-        })),
-        "contact" => Some(Segment::Contact(ContactData {
-            contact_type: get("type")?.to_string(),
-            id: get("id")?.to_string(),
-        })),
-        "location" => Some(Segment::Location(LocationData {
-            lat: get("lat")?.to_string(),
-            lon: get("lon")?.to_string(),
-            title: get("title").map(ToString::to_string),
-            content: get("content").map(ToString::to_string),
-        })),
-        "music" => Some(Segment::Music(MusicData {
-            music_type: get("type")?.to_string(),
-            id: get("id").map(ToString::to_string),
-            url: get("url").map(ToString::to_string),
-            audio: get("audio").map(ToString::to_string),
-            title: get("title").map(ToString::to_string),
-            content: get("content").map(ToString::to_string),
-            image: get("image").map(ToString::to_string),
-        })),
-        "reply" => Some(Segment::Reply(ReplyData {
-            id: get("id")?.to_string(),
-        })),
-        "forward" => Some(Segment::Forward(ForwardData {
-            id: get("id")?.to_string(),
-        })),
-        "node" => Some(Segment::Node(NodeData {
-            id: get("id").map(ToString::to_string),
-            user_id: get("user_id").map(ToString::to_string),
-            nickname: get("nickname").map(ToString::to_string),
-            content: get("content").map(ToString::to_string),
-        })),
-        "xml" => Some(Segment::Xml(XmlData {
-            data: get("data")?.to_string(),
-        })),
-        "json" => Some(Segment::Json(JsonData {
-            data: get("data")?.to_string(),
-        })),
-        _ => None,
-    }
-}
-
 impl Segment {
     /// Converts this segment to a CQ code string.
     ///
     /// Text segments are returned as plain text (with escaping).
     /// Other segments are formatted as `[CQ:type,key=value,...]`.
     pub fn to_cq_code(&self) -> String {
-        match self {
-            Segment::Text(data) => escape_cq_text(&data.text),
-            Segment::Face(data) => format!("[CQ:face,id={}]", data.id),
-            Segment::Image(data) => {
-                let mut cq = format!("[CQ:image,file={}", escape_cq_value(&data.file));
-                if let Some(ref t) = data.image_type {
-                    write!(cq, ",type={}", escape_cq_value(t)).unwrap();
-                }
-                if let Some(ref c) = data.cache {
-                    write!(cq, ",cache={c}").unwrap();
-                }
-                if let Some(ref p) = data.proxy {
-                    write!(cq, ",proxy={p}").unwrap();
-                }
-                if let Some(ref t) = data.timeout {
-                    write!(cq, ",timeout={t}").unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Record(data) => {
-                let mut cq = format!("[CQ:record,file={}", escape_cq_value(&data.file));
-                if let Some(ref m) = data.magic {
-                    write!(cq, ",magic={m}").unwrap();
-                }
-                if let Some(ref c) = data.cache {
-                    write!(cq, ",cache={c}").unwrap();
-                }
-                if let Some(ref p) = data.proxy {
-                    write!(cq, ",proxy={p}").unwrap();
-                }
-                if let Some(ref t) = data.timeout {
-                    write!(cq, ",timeout={t}").unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Video(data) => {
-                let mut cq = format!("[CQ:video,file={}", escape_cq_value(&data.file));
-                if let Some(ref c) = data.cache {
-                    write!(cq, ",cache={c}").unwrap();
-                }
-                if let Some(ref p) = data.proxy {
-                    write!(cq, ",proxy={p}").unwrap();
-                }
-                if let Some(ref t) = data.timeout {
-                    write!(cq, ",timeout={t}").unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::At(data) => format!("[CQ:at,qq={}]", data.qq),
-            Segment::Rps(_) => "[CQ:rps]".to_string(),
-            Segment::Dice(_) => "[CQ:dice]".to_string(),
-            Segment::Shake(_) => "[CQ:shake]".to_string(),
-            Segment::Poke(data) => {
-                format!("[CQ:poke,type={},id={}]", data.poke_type, data.id)
-            }
-            Segment::Share(data) => {
-                let mut cq = format!(
-                    "[CQ:share,url={},title={}",
-                    escape_cq_value(&data.url),
-                    escape_cq_value(&data.title)
-                );
-                if let Some(ref c) = data.content {
-                    write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                }
-                if let Some(ref i) = data.image {
-                    write!(cq, ",image={}", escape_cq_value(i)).unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Contact(data) => {
-                format!("[CQ:contact,type={},id={}]", data.contact_type, data.id)
-            }
-            Segment::Location(data) => {
-                let mut cq = format!("[CQ:location,lat={},lon={}", data.lat, data.lon);
-                if let Some(ref t) = data.title {
-                    write!(cq, ",title={}", escape_cq_value(t)).unwrap();
-                }
-                if let Some(ref c) = data.content {
-                    write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                }
-                cq.push(']');
-                cq
-            }
-            Segment::Music(data) => {
-                if data.music_type == "custom" {
-                    let mut cq = "[CQ:music,type=custom".to_string();
-                    if let Some(ref u) = data.url {
-                        write!(cq, ",url={}", escape_cq_value(u)).unwrap();
-                    }
-                    if let Some(ref a) = data.audio {
-                        write!(cq, ",audio={}", escape_cq_value(a)).unwrap();
-                    }
-                    if let Some(ref t) = data.title {
-                        write!(cq, ",title={}", escape_cq_value(t)).unwrap();
-                    }
-                    if let Some(ref c) = data.content {
-                        write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                    }
-                    if let Some(ref i) = data.image {
-                        write!(cq, ",image={}", escape_cq_value(i)).unwrap();
-                    }
-                    cq.push(']');
-                    cq
-                } else {
-                    format!(
-                        "[CQ:music,type={},id={}]",
-                        data.music_type,
-                        data.id.as_deref().unwrap_or("")
-                    )
-                }
-            }
-            Segment::Reply(data) => format!("[CQ:reply,id={}]", data.id),
-            Segment::Forward(data) => format!("[CQ:forward,id={}]", data.id),
-            Segment::Node(data) => {
-                if let Some(ref id) = data.id {
-                    format!("[CQ:node,id={id}]")
-                } else {
-                    let mut cq = "[CQ:node".to_string();
-                    if let Some(ref u) = data.user_id {
-                        write!(cq, ",user_id={u}").unwrap();
-                    }
-                    if let Some(ref n) = data.nickname {
-                        write!(cq, ",nickname={}", escape_cq_value(n)).unwrap();
-                    }
-                    if let Some(ref c) = data.content {
-                        write!(cq, ",content={}", escape_cq_value(c)).unwrap();
-                    }
-                    cq.push(']');
-                    cq
-                }
-            }
-            Segment::Xml(data) => format!("[CQ:xml,data={}]", escape_cq_value(&data.data)),
-            Segment::Json(data) => format!("[CQ:json,data={}]", escape_cq_value(&data.data)),
+        let Ok(Value::Object(obj)) = serde_json::to_value(self) else {
+            return String::new();
+        };
+
+        let Some(cq_type) = obj.get("type").and_then(Value::as_str) else {
+            return String::new();
+        };
+
+        let Some(data) = obj.get("data").and_then(Value::as_object) else {
+            return String::new();
+        };
+
+        if cq_type == "text" {
+            return data
+                .get("text")
+                .and_then(Value::as_str)
+                .map(escape_cq_text)
+                .unwrap_or_default();
         }
+
+        let mut cq = format!("[CQ:{cq_type}");
+        for (key, value) in data {
+            let encoded = match value {
+                Value::String(s) => escape_cq_value(s),
+                _ => escape_cq_value(&value.to_string()),
+            };
+            write!(cq, ",{key}={encoded}").unwrap();
+        }
+        cq.push(']');
+        cq
     }
 }
 
@@ -411,8 +198,7 @@ mod tests {
     #[test]
     fn test_message_deserialize_string() {
         let json = r#""Hello [CQ:face,id=178] World""#;
-        let msg =
-            serde_message::deserialize(&mut serde_json::Deserializer::from_str(json)).unwrap();
+        let msg = deserialize(&mut serde_json::Deserializer::from_str(json)).unwrap();
         assert_eq!(msg.len(), 3);
         assert_eq!(msg.extract_plain_text(), "Hello  World");
     }

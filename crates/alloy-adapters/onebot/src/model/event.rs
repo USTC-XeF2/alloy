@@ -8,11 +8,69 @@ use crate::model::message::OneBotMessage;
 use crate::model::types::{PrivateSender, Sender, Status};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrivateMessageType {
+    Friend,
+    Group,
+    Other,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupMessageType {
+    Normal,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct UploadedFile {
     pub id: String,
     pub name: String,
     pub size: i64,
     pub busid: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminSetType {
+    Set,
+    Unset,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupDecreaseType {
+    Leave,
+    Kick,
+    KickMe,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupIncreaseType {
+    Approve,
+    Invite,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupBanType {
+    Ban,
+    LiftBan,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupRequestType {
+    Add,
+    Invite,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleType {
+    Enable,
+    Disable,
+    Connect,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -34,28 +92,31 @@ pub enum EventData {
     Message {
         message_id: i32,
         #[event_field(message)]
-        #[cfg_attr(feature = "cqcode", serde(with = "super::cqcode::serde_message"))]
+        #[cfg_attr(
+            feature = "cqcode",
+            serde(deserialize_with = "super::cqcode::deserialize")
+        )]
         message: OneBotMessage,
         raw_message: String,
         font: i32,
 
         #[event_data]
         #[serde(flatten)]
-        message_type: MessageType,
+        message_type: MessageEventType,
     },
 
     #[event_view(name = NoticeEvent, id = "notice", type = Notice)]
     Notice {
         #[event_data]
         #[serde(flatten)]
-        notice_type: NoticeType,
+        notice_type: NoticeEventType,
     },
 
     #[event_view(name = RequestEvent, id = "request", type = Request)]
     Request {
         #[event_data]
         #[serde(flatten)]
-        request_type: RequestType,
+        request_type: RequestEventType,
     },
 
     #[event_view(name = MetaEvent, id = "meta_event", type = Meta)]
@@ -70,8 +131,8 @@ impl MessageEvent {
     /// Get the sender information for this message event.
     pub fn sender(&self) -> &PrivateSender {
         match &self.message_type {
-            MessageType::Private { sender, .. } => sender,
-            MessageType::Group { sender, .. } => sender,
+            MessageEventType::Private { sender, .. } => sender,
+            MessageEventType::Group { sender, .. } => sender,
         }
     }
 }
@@ -79,10 +140,10 @@ impl MessageEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[event_data(parent = MessageEvent)]
 #[serde(tag = "message_type", rename_all = "snake_case")]
-pub enum MessageType {
+pub enum MessageEventType {
     #[event_view(name = PrivateMessageEvent, id = "private", scene = Private)]
     Private {
-        sub_type: String,
+        sub_type: PrivateMessageType,
         #[event_field(user_id)]
         user_id: i64,
         sender: PrivateSender,
@@ -90,7 +151,7 @@ pub enum MessageType {
 
     #[event_view(name = GroupMessageEvent, id = "group", scene = Group)]
     Group {
-        sub_type: String,
+        sub_type: GroupMessageType,
         #[event_field(group_id)]
         group_id: i64,
         #[event_field(user_id)]
@@ -102,7 +163,7 @@ pub enum MessageType {
 #[derive(Debug, Clone, Deserialize)]
 #[event_data(parent = NoticeEvent)]
 #[serde(tag = "notice_type", rename_all = "snake_case")]
-pub enum NoticeType {
+pub enum NoticeEventType {
     #[event_view(name = GroupUploadEvent, id = "group_upload", scene = Group)]
     GroupUpload {
         #[event_field(group_id)]
@@ -114,7 +175,7 @@ pub enum NoticeType {
 
     #[event_view(name = GroupAdminEvent, id = "group_admin", scene = Group)]
     GroupAdmin {
-        sub_type: String,
+        sub_type: AdminSetType,
         #[event_field(group_id)]
         group_id: i64,
         #[event_field(user_id)]
@@ -123,7 +184,7 @@ pub enum NoticeType {
 
     #[event_view(name = GroupDecreaseEvent, id = "group_decrease", scene = Group)]
     GroupDecrease {
-        sub_type: String,
+        sub_type: GroupDecreaseType,
         #[event_field(group_id)]
         group_id: i64,
         operator_id: i64,
@@ -133,7 +194,7 @@ pub enum NoticeType {
 
     #[event_view(name = GroupIncreaseEvent, id = "group_increase", scene = Group)]
     GroupIncrease {
-        sub_type: String,
+        sub_type: GroupIncreaseType,
         #[event_field(group_id)]
         group_id: i64,
         operator_id: i64,
@@ -143,7 +204,7 @@ pub enum NoticeType {
 
     #[event_view(name = GroupBanEvent, id = "group_ban", scene = Group)]
     GroupBan {
-        sub_type: String,
+        sub_type: GroupBanType,
         #[event_field(group_id)]
         group_id: i64,
         operator_id: i64,
@@ -237,7 +298,7 @@ fn get_poke_scene(data: &NotifyType) -> Option<Scene> {
 #[derive(Debug, Clone, Deserialize)]
 #[event_data(parent = RequestEvent)]
 #[serde(tag = "request_type", rename_all = "snake_case")]
-pub enum RequestType {
+pub enum RequestEventType {
     #[event_view(name = FriendRequestEvent, id = "friend")]
     Friend {
         user_id: i64,
@@ -247,7 +308,7 @@ pub enum RequestType {
 
     #[event_view(name = GroupRequestEvent, id = "group")]
     Group {
-        sub_type: String,
+        sub_type: GroupRequestType,
         group_id: i64,
         user_id: i64,
         comment: String,
@@ -260,7 +321,7 @@ pub enum RequestType {
 #[serde(tag = "meta_event_type", rename_all = "snake_case")]
 pub enum MetaEventType {
     #[event_view(name = LifecycleEvent, id = "lifecycle")]
-    Lifecycle { sub_type: String },
+    Lifecycle { sub_type: LifecycleType },
 
     #[event_view(name = HeartbeatEvent, id = "heartbeat")]
     Heartbeat { status: Status, interval: i64 },
