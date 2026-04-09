@@ -99,7 +99,7 @@ impl State {
 #[cfg(feature = "command")]
 pub(crate) struct CommandContext {
     pub config: crate::command::CommandConfig,
-    pub help_provider: RwLock<HashMap<String, Arc<dyn crate::command::HelpProvider>>>,
+    pub help_provider: Mutex<HashMap<String, Arc<dyn crate::command::HelpProvider>>>,
 }
 
 // =============================================================================

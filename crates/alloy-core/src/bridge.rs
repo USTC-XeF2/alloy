@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
@@ -80,7 +80,7 @@ type BotEntry<B> = (Arc<B>, ConnectionHandle);
 pub struct AdapterBridge<A: Adapter, D: Dispatcher> {
     adapter: A,
     /// Active bots and their connection handles, keyed by bot ID.
-    entries: RwLock<HashMap<String, BotEntry<A::Bot>>>,
+    entries: Mutex<HashMap<String, BotEntry<A::Bot>>>,
     /// Event dispatcher — distributes parsed events to handlers.
     event_dispatcher: Arc<D>,
     /// Available transport capabilities.
@@ -94,7 +94,7 @@ impl<A: Adapter, D: Dispatcher> AdapterBridge<A, D> {
     pub fn new(adapter: A, event_dispatcher: Arc<D>, transport: TransportContext) -> Self {
         Self {
             adapter,
-            entries: RwLock::new(HashMap::new()),
+            entries: Mutex::new(HashMap::new()),
             event_dispatcher,
             transport,
             listeners: Mutex::new(Vec::new()),
@@ -117,7 +117,7 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
     /// Returns a list of all active bot instances.
     fn bots(&self) -> Vec<Arc<dyn Bot>> {
         self.entries
-            .read()
+            .lock()
             .values()
             .map(|(bot, _)| bot.clone() as Arc<dyn Bot>)
             .collect()
@@ -135,7 +135,7 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
     }
 
     fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> CancellationToken {
-        let mut entries = self.entries.write();
+        let mut entries = self.entries.lock();
         if let Some((_, handle)) = entries.get_mut(bot_id) {
             // Bot already exists: upgrade sender if currently receive-only.
             if handle.sender.is_none() {
@@ -162,7 +162,7 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
     }
 
     async fn on_message(&self, bot_id: &str, data: &[u8]) {
-        let Some((bot, _)) = self.entries.read().get(bot_id).cloned() else {
+        let Some((bot, _)) = self.entries.lock().get(bot_id).cloned() else {
             return;
         };
 
@@ -201,7 +201,7 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
     }
 
     async fn on_disconnect(&self, bot_id: &str) {
-        let entry = self.entries.write().remove(bot_id);
+        let entry = self.entries.lock().remove(bot_id);
         if let Some((bot, _handle)) = entry {
             bot.on_disconnect().await;
             info!(bot_id = %bot_id, "Connection closed");

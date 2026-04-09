@@ -38,7 +38,7 @@ impl PluginLoadContext {
         F: crate::handler::FromCtxFn<T, Response = crate::command::CommandMap>,
         T: Send + Sync + 'static,
     {
-        self.command.help_provider.write().insert(
+        self.command.help_provider.lock().insert(
             self.plugin.name().to_string(),
             Arc::new((provider, PhantomData)),
         );

@@ -75,7 +75,7 @@ impl FromCtxFn<()> for HelpCommandHandler {
         let providers = ctx
             .command()
             .help_provider
-            .read()
+            .lock()
             .values()
             .cloned()
             .collect::<Vec<_>>();

@@ -239,7 +239,7 @@ impl PluginManager {
             #[cfg(feature = "command")]
             command_context: Arc::new(crate::context::CommandContext {
                 config: command_config,
-                help_provider: RwLock::new(HashMap::new()),
+                help_provider: parking_lot::Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -400,15 +400,13 @@ impl PluginManager {
         }
 
         // ── 2. Initialise services in parallel ───────────────────────────
-        let all_services = future::join_all(plugin.service_entries().iter().map(|entry| {
+        let all_services = future::join_all(plugin.service_entries().iter().map(async |entry| {
             let id = entry.id.to_string();
-            let ctx = ctx.clone();
-            async move {
-                match tokio::spawn((entry.factory)(ctx)).await {
-                    Ok(Ok(arc)) => Ok((entry.type_id, (id, arc))),
-                    Ok(Err(e)) => Err((id, e)),
-                    Err(panic) => Err((id, panic.to_string())),
-                }
+
+            match tokio::spawn((entry.factory)(ctx.clone())).await {
+                Ok(Ok(arc)) => Ok((entry.type_id, (id, arc))),
+                Ok(Err(e)) => Err((id, e)),
+                Err(panic) => Err((id, panic.to_string())),
             }
         }))
         .await;
@@ -500,7 +498,7 @@ impl PluginManager {
         }
 
         #[cfg(feature = "command")]
-        self.command_context.help_provider.write().remove(name);
+        self.command_context.help_provider.lock().remove(name);
 
         // Mark as Registered.
         if self.set_plugin_state(name, PluginLoadState::Registered) {

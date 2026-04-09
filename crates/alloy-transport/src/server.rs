@@ -32,7 +32,7 @@ use axum::{
     http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
 };
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -65,20 +65,20 @@ use {
 struct SharedState {
     /// HTTP route table: path → connection handler.
     #[cfg(feature = "http-server")]
-    http_routes: RwLock<HashMap<String, Arc<dyn ConnectionHandler>>>,
+    http_routes: Mutex<HashMap<String, Arc<dyn ConnectionHandler>>>,
 
     /// WebSocket route table: path → connection handler.
     #[cfg(feature = "ws-server")]
-    ws_routes: RwLock<HashMap<String, Arc<dyn ConnectionHandler>>>,
+    ws_routes: Mutex<HashMap<String, Arc<dyn ConnectionHandler>>>,
 }
 
 impl SharedState {
     fn new() -> Self {
         Self {
             #[cfg(feature = "http-server")]
-            http_routes: RwLock::new(HashMap::new()),
+            http_routes: Mutex::new(HashMap::new()),
             #[cfg(feature = "ws-server")]
-            ws_routes: RwLock::new(HashMap::new()),
+            ws_routes: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -218,7 +218,7 @@ async fn http_dispatch(
     body: Bytes,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let handler = state.http_routes.read().get(&path).cloned();
+    let handler = state.http_routes.lock().get(&path).cloned();
 
     match handler {
         Some(h) => handle_http_request(h, addr, headers, body).await,
@@ -246,7 +246,7 @@ async fn ws_dispatch(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let handler = state.ws_routes.read().get(&path).cloned();
+    let handler = state.ws_routes.lock().get(&path).cloned();
 
     match handler {
         Some(h) => {
@@ -262,7 +262,7 @@ async fn ws_dispatch(
                 .collect();
 
             debug!(remote_addr = %addr, path = %path, "New WebSocket connection request");
-            ws.on_upgrade(move |socket| async move {
+            ws.on_upgrade(async move |socket| {
                 handle_ws_connection(h, addr, metadata, socket).await;
             })
             .into_response()
@@ -307,7 +307,7 @@ pub async fn http_listen(
     entry
         .state
         .http_routes
-        .write()
+        .lock()
         .insert(path.clone(), handler.clone());
     info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
 
@@ -317,7 +317,7 @@ pub async fn http_listen(
 
     tokio::spawn(async move {
         token_clone.cancelled().await;
-        entry.state.http_routes.write().remove(&path);
+        entry.state.http_routes.lock().remove(&path);
         info!(path = %path, "Unregistered HTTP route");
     });
 
@@ -393,7 +393,7 @@ pub async fn ws_listen(
     entry
         .state
         .ws_routes
-        .write()
+        .lock()
         .insert(path.clone(), handler.clone());
     info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
 
@@ -403,7 +403,7 @@ pub async fn ws_listen(
 
     tokio::spawn(async move {
         token_clone.cancelled().await;
-        entry.state.ws_routes.write().remove(&path);
+        entry.state.ws_routes.lock().remove(&path);
         info!(path = %path, "Unregistered WebSocket route");
     });
 
