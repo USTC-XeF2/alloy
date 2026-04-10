@@ -73,7 +73,7 @@ pub struct AlloyRuntime {
     /// Transport context.
     transport_context: TransportContext,
     /// Adapter bridges, created eagerly on registration.
-    bridges: Arc<Mutex<HashMap<String, Arc<dyn BridgeRuntime>>>>,
+    bridges: Arc<Mutex<HashMap<&'static str, Arc<dyn BridgeRuntime>>>>,
     /// Whether the runtime is running.
     running: AtomicBool,
 }
@@ -227,7 +227,7 @@ impl AlloyRuntime {
             .lock()
             .iter()
             .map(|(name, bridge)| {
-                let name = name.clone();
+                let name = *name;
                 let bridge = bridge.clone();
                 async move {
                     if let Err(e) = bridge.on_start().await {
@@ -272,7 +272,7 @@ impl AlloyRuntime {
             .lock()
             .iter()
             .map(|(name, bridge)| {
-                let name = name.clone();
+                let name = *name;
                 let bridge = bridge.clone();
                 async move {
                     if let Err(e) = bridge.on_shutdown().await {

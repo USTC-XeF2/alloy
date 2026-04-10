@@ -106,7 +106,8 @@ async fn run_sse_loop(
 pub async fn sse_start_client(
     config: SseClientConfig,
     handler: Arc<dyn ConnectionHandler>,
-) -> TransportResult<()> {
+    bot_id: String,
+) -> TransportResult<String> {
     let builder = ClientBuilder::for_url(&config.url)
         .map_err(|e| TransportError::Serialization(e.to_string()))?;
 
@@ -134,16 +135,16 @@ pub async fn sse_start_client(
     let builder = builder.reconnect(reconnect_opts);
 
     // Register the bot (SSE is receive-only, no Sender needed).
-    let shutdown_token = handler.register_connection(&config.bot_id, None);
+    let shutdown_token = handler.register_connection(&bot_id, None);
 
     // Spawn the persistent SSE loop.
     tokio::spawn(run_sse_loop(
-        config.bot_id.clone(),
+        bot_id.clone(),
         config,
         builder,
         handler,
         shutdown_token,
     ));
 
-    Ok(())
+    Ok(bot_id)
 }

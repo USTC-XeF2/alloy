@@ -21,22 +21,19 @@ pub type PostJsonFn =
     Arc<dyn Fn(&str, Value) -> BoxFuture<'static, TransportResult<Value>> + Send + Sync>;
 
 /// Information about a connection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConnectionInfo {
     /// Remote address (if available).
     pub remote_addr: Option<String>,
-    /// Connection protocol (ws, http, etc.).
-    pub protocol: String,
     /// Additional metadata.
     pub metadata: HashMap<String, String>,
 }
 
 impl ConnectionInfo {
     /// Creates new connection info.
-    pub fn new(protocol: impl Into<String>) -> Self {
+    pub fn new() -> Self {
         Self {
             remote_addr: None,
-            protocol: protocol.into(),
             metadata: HashMap::new(),
         }
     }

@@ -27,45 +27,50 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::WsConnectFn),
             quote!(
                 config: ::alloy_core::WsClientConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
+                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::ServerBotIdFn
             ),
-            quote!(config, handler),
+            quote!(config, handler, resolve_bot_id),
         ),
         "ws_server" => (
             quote!(::alloy_core::WS_LISTEN_REGISTRY),
             quote!(::alloy_core::WsListenFn),
             quote!(
                 config: ::alloy_core::WsServerConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
+                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::ServerBotIdFn
             ),
-            quote!(config, handler),
+            quote!(config, handler, resolve_bot_id),
         ),
         "http_client" => (
             quote!(::alloy_core::HTTP_START_CLIENT_REGISTRY),
             quote!(::alloy_core::HttpStartClientFn),
             quote!(
                 config: ::alloy_core::HttpClientConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
+                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::ClientBotIdFn
             ),
-            quote!(config, handler),
+            quote!(config, handler, resolve_bot_id),
         ),
         "http_server" => (
             quote!(::alloy_core::HTTP_LISTEN_REGISTRY),
             quote!(::alloy_core::HttpListenFn),
             quote!(
                 config: ::alloy_core::HttpServerConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
+                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::ServerBotIdFn
             ),
-            quote!(config, handler),
+            quote!(config, handler, resolve_bot_id),
         ),
         "sse_client" => (
             quote!(::alloy_core::SSE_CLIENT_REGISTRY),
             quote!(::alloy_core::SseClientFn),
             quote!(
                 config: ::alloy_core::SseClientConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>
+                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                bot_id: String
             ),
-            quote!(config, handler),
+            quote!(config, handler, bot_id),
         ),
         other => {
             return syn::Error::new(

@@ -137,8 +137,6 @@ impl HttpServerConfig {
 /// Configuration for HTTP client connections.
 #[derive(Debug, Clone)]
 pub struct HttpClientConfig {
-    /// The bot ID this client is for.
-    pub bot_id: String,
     /// Base URL for API endpoints.
     pub base_url: String,
     /// Optional access token for authentication (used as Bearer token).
@@ -149,9 +147,8 @@ pub struct HttpClientConfig {
 
 impl HttpClientConfig {
     /// Creates a new HTTP client config.
-    pub fn new(bot_id: impl Into<String>, base_url: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>) -> Self {
         Self {
-            bot_id: bot_id.into(),
             base_url: base_url.into(),
             access_token: None,
             timeout: None,
@@ -178,8 +175,6 @@ impl HttpClientConfig {
 /// Configuration for SSE (Server-Sent Events) client connections.
 #[derive(Debug, Clone)]
 pub struct SseClientConfig {
-    /// The bot ID this client is for.
-    pub bot_id: String,
     /// Full URL of the SSE endpoint.
     pub url: String,
     /// Optional access token for authentication (used as Bearer token).
@@ -198,9 +193,8 @@ pub struct SseClientConfig {
 
 impl SseClientConfig {
     /// Creates a new SSE client config.
-    pub fn new(bot_id: impl Into<String>, url: impl Into<String>) -> Self {
+    pub fn new(url: impl Into<String>) -> Self {
         Self {
-            bot_id: bot_id.into(),
             url: url.into(),
             access_token: None,
             auto_reconnect: true,

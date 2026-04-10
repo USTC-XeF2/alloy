@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use serde_json::json;
 use tracing::{trace, warn};
 
 use crate::bot::OneBotBot;
@@ -12,7 +13,8 @@ use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
 use alloy_core::{
     Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    HttpClientConfig, HttpServerConfig, TransportContext, WsClientConfig, WsServerConfig,
+    HttpClientConfig, HttpServerConfig, PostJsonFn, TransportContext, WsClientConfig,
+    WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -33,10 +35,6 @@ impl Adapter for OneBotAdapter {
 
     fn from_config(config: Self::Config) -> Self {
         Self { config }
-    }
-
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String> {
-        conn_info.metadata.get("x-self-id").cloned()
     }
 
     fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> Self::Bot {
@@ -93,7 +91,8 @@ impl Adapter for OneBotAdapter {
                         if let Some(t) = &ws_config.access_token {
                             config = config.with_token(t);
                         }
-                        ws_server(config, connection_handler.clone()).await?;
+                        ws_server(config, connection_handler.clone(), Arc::new(resolve_bot_id))
+                            .await?;
                     } else {
                         warn!(
                             "WebSocket server capability not available, skipping ws-server config"
@@ -107,7 +106,8 @@ impl Adapter for OneBotAdapter {
                         if let Some(t) = ws_config.access_token.as_ref().filter(|t| !t.is_empty()) {
                             config = config.with_token(t);
                         }
-                        ws_client(config, connection_handler.clone()).await?;
+                        ws_client(config, connection_handler.clone(), Arc::new(resolve_bot_id))
+                            .await?;
                     } else {
                         warn!(
                             "WebSocket client capability not available, skipping ws-client config"
@@ -125,7 +125,8 @@ impl Adapter for OneBotAdapter {
                         if let Some(s) = &http_config.secret {
                             config = config.with_secret(s);
                         }
-                        http_server(config, connection_handler.clone()).await?;
+                        http_server(config, connection_handler.clone(), Arc::new(resolve_bot_id))
+                            .await?;
                     } else {
                         warn!("HTTP server capability not available, skipping http-server config");
                     }
@@ -133,13 +134,17 @@ impl Adapter for OneBotAdapter {
 
                 ConnectionConfig::HttpClient(http_config) => {
                     if let Some(http_client) = transport.http_client() {
-                        let mut client_config =
-                            HttpClientConfig::new(&http_config.bot_id, &http_config.api_url);
+                        let mut client_config = HttpClientConfig::new(&http_config.api_url);
                         if let Some(token) = http_config.access_token.as_ref() {
                             client_config = client_config.with_token(token);
                         }
 
-                        http_client(client_config, connection_handler.clone()).await?;
+                        http_client(
+                            client_config,
+                            connection_handler.clone(),
+                            Arc::new(|post_json| Box::pin(get_client_bot_id(post_json))),
+                        )
+                        .await?;
                     } else {
                         warn!("HTTP client capability not available, skipping http-client config");
                     }
@@ -149,4 +154,25 @@ impl Adapter for OneBotAdapter {
 
         Ok(())
     }
+}
+
+fn resolve_bot_id(conn_info: ConnectionInfo) -> Option<String> {
+    conn_info.metadata.get("x-self-id").cloned()
+}
+
+async fn get_client_bot_id(post_json: PostJsonFn) -> Option<String> {
+    let resp = post_json(
+        "",
+        json!({
+            "action": "get_login_info",
+            "params": {}
+        }),
+    )
+    .await
+    .ok()?;
+
+    resp.get("data")?
+        .get("user_id")?
+        .as_i64()
+        .map(|n| n.to_string())
 }

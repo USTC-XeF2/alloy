@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::bot::Bot;
 use crate::error::AdapterResult;
 use crate::event::BoxedEvent;
-use crate::transport::{ConnectionHandle, ConnectionHandler, ConnectionInfo, TransportContext};
+use crate::transport::{ConnectionHandle, ConnectionHandler, TransportContext};
 
 // =============================================================================
 // Adapter Trait
@@ -19,7 +19,7 @@ use crate::transport::{ConnectionHandle, ConnectionHandler, ConnectionInfo, Tran
 /// The core adapter trait.
 ///
 /// An adapter provides the protocol-specific logic:
-/// - **Protocol hooks**: Bot ID extraction, bot creation, message parsing
+/// - **Protocol hooks**: Bot creation, message parsing
 ///   — these are called internally by [`AdapterBridge`] via [`TransportCallback`].
 /// - **Lifecycle**: `on_start` / `on_shutdown`
 ///   — `on_start` receives transport capabilities and connection handler,
@@ -37,16 +37,10 @@ pub trait Adapter: Send + Sync + 'static {
     /// Creates an adapter instance from its deserialized configuration.
     fn from_config(config: Self::Config) -> Self;
 
-    /// Extract a bot ID from connection metadata.
-    ///
-    /// Called when a new transport connection is established.
-    /// Return the unique bot identifier derived from protocol-specific
-    /// metadata (e.g., headers, query params).
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String>;
-
     /// Create a bot instance for a new connection.
     ///
-    /// Called after [`get_bot_id`](Self::get_bot_id) succeeds.
+    /// Called when transport layer resolves a bot ID and creates/registers
+    /// a new connection handle.
     fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> Self::Bot;
 
     /// Parse an incoming message into an event.

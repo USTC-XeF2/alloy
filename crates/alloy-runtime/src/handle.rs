@@ -16,7 +16,7 @@ use alloy_framework::{
 ///
 /// This handle is cloneable and can be injected into handlers via `FromContext`.
 #[derive(Clone)]
-pub struct BotHandle(pub(crate) Arc<Mutex<HashMap<String, Arc<dyn BridgeRuntime>>>>);
+pub struct BotHandle(pub(crate) Arc<Mutex<HashMap<&'static str, Arc<dyn BridgeRuntime>>>>);
 
 impl BotHandle {
     /// Gets a boxed bot instance by its ID across all adapters.

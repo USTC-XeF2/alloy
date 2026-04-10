@@ -7,7 +7,8 @@ use reqwest::ClientBuilder;
 use url::Url;
 
 use alloy_core::{
-    ConnectionHandler, HttpClientConfig, PostJsonFn, Sender, TransportError, TransportResult,
+    ClientBotIdFn, ConnectionHandler, HttpClientConfig, PostJsonFn, Sender, TransportError,
+    TransportResult,
 };
 use alloy_macros::register_capability;
 
@@ -21,7 +22,8 @@ use alloy_macros::register_capability;
 pub async fn http_start_client(
     config: HttpClientConfig,
     handler: Arc<dyn ConnectionHandler>,
-) -> TransportResult<()> {
+    resolve_bot_id: ClientBotIdFn,
+) -> TransportResult<String> {
     let mut builder = ClientBuilder::new();
     if let Some(timeout) = config.timeout {
         builder = builder.timeout(timeout);
@@ -63,7 +65,14 @@ pub async fn http_start_client(
         .boxed()
     });
 
-    handler.register_connection(&config.bot_id, Some(Sender::HttpClient { post_json }));
+    let Some(bot_id) = resolve_bot_id(post_json.clone()).await else {
+        return Err(TransportError::ConnectionFailed {
+            url: config.base_url.clone(),
+            reason: "Failed to resolve bot ID from HTTP client post_json callback".to_string(),
+        });
+    };
 
-    Ok(())
+    handler.register_connection(&bot_id, Some(Sender::HttpClient { post_json }));
+
+    Ok(bot_id)
 }

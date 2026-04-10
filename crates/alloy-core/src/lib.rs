@@ -54,9 +54,9 @@ pub use message::{
     Message, ReceiveMessageSegment, RichText, RichTextSegment, SendMessageSegment, Sendable,
 };
 pub use transport::{
-    ConnectionHandle, ConnectionHandler, ConnectionInfo, HTTP_LISTEN_REGISTRY,
+    ClientBotIdFn, ConnectionHandle, ConnectionHandler, ConnectionInfo, HTTP_LISTEN_REGISTRY,
     HTTP_START_CLIENT_REGISTRY, HttpClientConfig, HttpListenFn, HttpServerConfig,
-    HttpStartClientFn, ListenerHandle, PostJsonFn, SSE_CLIENT_REGISTRY, Sender, SseClientConfig,
-    SseClientFn, TransportContext, WS_CONNECT_REGISTRY, WS_LISTEN_REGISTRY, WsClientConfig,
-    WsConnectFn, WsListenFn, WsServerConfig,
+    HttpStartClientFn, ListenerHandle, PostJsonFn, SSE_CLIENT_REGISTRY, Sender, ServerBotIdFn,
+    SseClientConfig, SseClientFn, TransportContext, WS_CONNECT_REGISTRY, WS_LISTEN_REGISTRY,
+    WsClientConfig, WsConnectFn, WsListenFn, WsServerConfig,
 };

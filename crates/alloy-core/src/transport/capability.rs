@@ -7,7 +7,7 @@
 //!
 //! Each capability is a plain function pointer (`fn(Args...) -> BoxFuture`).
 //! Because they carry no captured state, all parameters are passed explicitly.
-//! Adapters call them via `ctx.ws_client()(url, handler, config).await`.
+//! Adapters call them via `ctx.ws_client()(config, handler, resolve_bot_id).await`.
 //!
 //! # Dynamic Bot Management
 //!
@@ -26,7 +26,7 @@ use tracing::warn;
 use super::config::{
     HttpClientConfig, HttpServerConfig, SseClientConfig, WsClientConfig, WsServerConfig,
 };
-use super::connection::{ConnectionInfo, ListenerHandle, Sender};
+use super::connection::{ConnectionInfo, ListenerHandle, PostJsonFn, Sender};
 use crate::error::TransportResult;
 
 // =============================================================================
@@ -41,9 +41,6 @@ use crate::error::TransportResult;
 /// [`AdapterBridge`](crate::adapter::AdapterBridge) is the built-in implementation.
 #[async_trait]
 pub trait ConnectionHandler: Send + Sync {
-    /// Extract a bot ID from connection metadata when a new connection arrives.
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String>;
-
     /// Idempotently registers a bot and its optional send-capable connection sender.
     ///
     /// ## Behaviour
@@ -75,35 +72,59 @@ pub trait ConnectionHandler: Send + Sync {
 // Capability Function Types
 // =============================================================================
 
+/// Synchronous bot-id resolver used by server transports.
+pub type ServerBotIdFn = Arc<dyn Fn(ConnectionInfo) -> Option<String> + Send + Sync>;
+
+/// Asynchronous bot-id resolver used by client transports.
+pub type ClientBotIdFn =
+    Arc<dyn Fn(PostJsonFn) -> BoxFuture<'static, Option<String>> + Send + Sync>;
+
 /// Function pointer that starts a WebSocket server listener.
 ///
-/// Parameters: `(config, handler)` — config contains bind address, port, and path.
-pub type WsListenFn =
-    fn(WsServerConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler, resolve_bot_id)` — config contains bind address,
+/// port, and path.
+pub type WsListenFn = fn(
+    WsServerConfig,
+    Arc<dyn ConnectionHandler>,
+    ServerBotIdFn,
+) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that opens a WebSocket client connection.
 ///
-/// Parameters: `(config, handler)`.
-pub type WsConnectFn =
-    fn(WsClientConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler, resolve_bot_id)`.
+pub type WsConnectFn = fn(
+    WsClientConfig,
+    Arc<dyn ConnectionHandler>,
+    ServerBotIdFn,
+) -> BoxFuture<'static, TransportResult<String>>;
 
 /// Function pointer that starts an HTTP server listener.
 ///
-/// Parameters: `(config, handler)` — config contains bind address, port, and path.
-pub type HttpListenFn =
-    fn(HttpServerConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler, resolve_bot_id)` — config contains bind address,
+/// port, and path.
+pub type HttpListenFn = fn(
+    HttpServerConfig,
+    Arc<dyn ConnectionHandler>,
+    ServerBotIdFn,
+) -> BoxFuture<'static, TransportResult<()>>;
 
 /// Function pointer that registers an HTTP outbound API-client bot.
 ///
-/// Parameters: `(config, handler)` — config contains bot_id and connection settings.
-pub type HttpStartClientFn =
-    fn(HttpClientConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler, resolve_bot_id)` — config contains connection settings.
+pub type HttpStartClientFn = fn(
+    HttpClientConfig,
+    Arc<dyn ConnectionHandler>,
+    ClientBotIdFn,
+) -> BoxFuture<'static, TransportResult<String>>;
 
 /// Function pointer that opens a persistent SSE client connection.
 ///
-/// Parameters: `(config, handler)` — config contains bot_id and connection settings.
-pub type SseClientFn =
-    fn(SseClientConfig, Arc<dyn ConnectionHandler>) -> BoxFuture<'static, TransportResult<()>>;
+/// Parameters: `(config, handler, bot_id)` — config contains connection settings.
+pub type SseClientFn = fn(
+    SseClientConfig,
+    Arc<dyn ConnectionHandler>,
+    String,
+) -> BoxFuture<'static, TransportResult<String>>;
 
 // =============================================================================
 // Capability Registries (linkme distributed slices)
@@ -139,7 +160,7 @@ pub static SSE_CLIENT_REGISTRY: [SseClientFn];
 /// Context for adapter initialization.
 ///
 /// Provides access to available transport capabilities.
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TransportContext {
     ws_server: Option<WsListenFn>,
     ws_client: Option<WsConnectFn>,

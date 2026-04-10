@@ -6,7 +6,7 @@
 //!
 //! | Trait | Caller | Methods |
 //! |---|---|---|
-//! | [`ConnectionHandler`](crate::transport::ConnectionHandler) | transport layer | `get_bot_id`, `register_connection`, `on_message`, `on_disconnect`, `add_listener` |
+//! | [`ConnectionHandler`](crate::transport::ConnectionHandler) | transport layer | `register_connection`, `on_message`, `on_disconnect`, `add_listener` |
 //! | [`Adapter`](crate::adapter::Adapter) lifecycle hooks | adapter implementation | `on_start`, `on_shutdown` |
 //! | (direct methods) | runtime | `on_start`, `on_shutdown`, `bots` |
 //!
@@ -33,7 +33,7 @@ use crate::bot::{Bot, BoxedBot};
 use crate::error::AdapterResult;
 use crate::event::{BoxedEvent, EventType};
 use crate::transport::{
-    ConnectionHandle, ConnectionHandler, ConnectionInfo, ListenerHandle, Sender, TransportContext,
+    ConnectionHandle, ConnectionHandler, ListenerHandle, Sender, TransportContext,
 };
 
 #[async_trait]
@@ -130,21 +130,17 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
 
 #[async_trait]
 impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
-    fn get_bot_id(&self, conn_info: ConnectionInfo) -> Option<String> {
-        self.adapter.get_bot_id(conn_info)
-    }
-
     fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> CancellationToken {
         let mut entries = self.entries.lock();
         if let Some((_, handle)) = entries.get_mut(bot_id) {
-            // Bot already exists: upgrade sender if currently receive-only.
-            if handle.sender.is_none() {
-                if let Some(new_sender) = sender {
+            if let Some(new_sender) = sender {
+                // Bot already exists: upgrade sender if currently receive-only.
+                if handle.sender.is_none() {
                     debug!(bot_id = %bot_id, "Bot upgraded to send-capable connection");
                     handle.sender = Some(new_sender);
+                } else {
+                    warn!(bot_id = %bot_id, "Bot already has send capability, keeping existing sender");
                 }
-            } else {
-                warn!(bot_id = %bot_id, "Bot already has send capability, keeping existing sender");
             }
             handle.shutdown_token.clone()
         } else {

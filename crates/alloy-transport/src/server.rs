@@ -37,7 +37,9 @@ use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use alloy_core::{ConnectionHandler, ConnectionInfo, ListenerHandle, TransportResult};
+use alloy_core::{
+    ConnectionHandler, ConnectionInfo, ListenerHandle, ServerBotIdFn, TransportResult,
+};
 use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
@@ -56,20 +58,16 @@ use {
     tokio::sync::mpsc,
 };
 
-// ─── Shared runtime state (one per bound address) ───────────────────────────────
+type RouteHandler = (Arc<dyn ConnectionHandler>, ServerBotIdFn);
 
-/// Runtime state shared between the axum handler and the registration helpers.
-///
-/// Fields are conditionally compiled so that, for example, a build with only
-/// `ws-server` enabled never allocates or references the `http_routes` map.
 struct SharedState {
     /// HTTP route table: path → connection handler.
     #[cfg(feature = "http-server")]
-    http_routes: Mutex<HashMap<String, Arc<dyn ConnectionHandler>>>,
+    http_routes: Mutex<HashMap<String, RouteHandler>>,
 
     /// WebSocket route table: path → connection handler.
     #[cfg(feature = "ws-server")]
-    ws_routes: Mutex<HashMap<String, Arc<dyn ConnectionHandler>>>,
+    ws_routes: Mutex<HashMap<String, RouteHandler>>,
 }
 
 impl SharedState {
@@ -218,10 +216,12 @@ async fn http_dispatch(
     body: Bytes,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let handler = state.http_routes.lock().get(&path).cloned();
+    let entry = state.http_routes.lock().get(&path).cloned();
 
-    match handler {
-        Some(h) => handle_http_request(h, addr, headers, body).await,
+    match entry {
+        Some((handler, resolve_bot_id)) => {
+            handle_http_request(handler, resolve_bot_id, addr, headers, body).await
+        }
         None => (
             StatusCode::NOT_FOUND,
             format!("No HTTP handler for path: {path}"),
@@ -246,10 +246,10 @@ async fn ws_dispatch(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let path = uri.path().to_string();
-    let handler = state.ws_routes.lock().get(&path).cloned();
+    let entry = state.ws_routes.lock().get(&path).cloned();
 
-    match handler {
-        Some(h) => {
+    match entry {
+        Some((handler, resolve_bot_id)) => {
             // Collect headers as a plain map (lowercase keys) before the move.
             let metadata: HashMap<String, String> = headers
                 .iter()
@@ -263,7 +263,7 @@ async fn ws_dispatch(
 
             debug!(remote_addr = %addr, path = %path, "New WebSocket connection request");
             ws.on_upgrade(async move |socket| {
-                handle_ws_connection(h, addr, metadata, socket).await;
+                handle_ws_connection(handler, resolve_bot_id, addr, metadata, socket).await;
             })
             .into_response()
         }
@@ -294,6 +294,7 @@ async fn ws_dispatch(
 pub async fn http_listen(
     config: alloy_core::HttpServerConfig,
     handler: Arc<dyn ConnectionHandler>,
+    resolve_bot_id: ServerBotIdFn,
 ) -> TransportResult<()> {
     let path = if config.path.starts_with('/') {
         config.path.clone()
@@ -308,7 +309,7 @@ pub async fn http_listen(
         .state
         .http_routes
         .lock()
-        .insert(path.clone(), handler.clone());
+        .insert(path.clone(), (handler.clone(), resolve_bot_id));
     info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
 
     let handle_id = format!("http-server-{}{}", entry.actual_addr, path);
@@ -327,33 +328,31 @@ pub async fn http_listen(
 
 /// Handles a single HTTP POST request from a bot.
 ///
-/// Extracts the bot ID, idempotently creates the bot, then forwards the body
+/// Resolves the bot ID, idempotently creates the bot, then forwards the body
 /// to [`ConnectionHandler::on_message`].
 #[cfg(feature = "http-server")]
 async fn handle_http_request(
     handler: Arc<dyn ConnectionHandler>,
+    resolve_bot_id: ServerBotIdFn,
     addr: SocketAddr,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     // Build connection info from request headers.
-    let mut conn_info = ConnectionInfo::new("http").with_remote_addr(addr.to_string());
+    let mut conn_info = ConnectionInfo::new().with_remote_addr(addr.to_string());
     for (name, value) in &headers {
         if let Ok(v) = value.to_str() {
             conn_info = conn_info.with_metadata(name.as_str().to_lowercase(), v.to_string());
         }
     }
 
-    // Ask the adapter to identify which bot this request belongs to.
-    let bot_id = match handler.get_bot_id(conn_info) {
-        Some(id) => id,
-        None => {
-            error!(
-                remote_addr = %addr,
-                "Failed to extract bot ID from HTTP request metadata, cannot process request",
-            );
-            return (StatusCode::BAD_REQUEST, "Failed to extract bot ID").into_response();
-        }
+    // Resolve which bot this request belongs to.
+    let Some(bot_id) = resolve_bot_id(conn_info) else {
+        error!(
+            remote_addr = %addr,
+            "Failed to extract bot ID from HTTP request metadata, cannot process request",
+        );
+        return (StatusCode::BAD_REQUEST, "Failed to extract bot ID").into_response();
     };
 
     // First request from this bot → register it (idempotent; no send capability for HTTP server).
@@ -380,6 +379,7 @@ async fn handle_http_request(
 pub async fn ws_listen(
     config: alloy_core::WsServerConfig,
     handler: Arc<dyn ConnectionHandler>,
+    resolve_bot_id: ServerBotIdFn,
 ) -> TransportResult<()> {
     let path = if config.path.starts_with('/') {
         config.path.clone()
@@ -394,7 +394,7 @@ pub async fn ws_listen(
         .state
         .ws_routes
         .lock()
-        .insert(path.clone(), handler.clone());
+        .insert(path.clone(), (handler.clone(), resolve_bot_id));
     info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
 
     let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
@@ -413,11 +413,12 @@ pub async fn ws_listen(
 
 /// Handles a single WebSocket connection for a bot.
 ///
-/// Extracts the bot ID, registers the bot idempotently, then drives the
+/// Resolves the bot ID, registers the bot idempotently, then drives the
 /// send/receive loop until the connection closes.
 #[cfg(feature = "ws-server")]
 async fn handle_ws_connection(
     handler: Arc<dyn ConnectionHandler>,
+    resolve_bot_id: ServerBotIdFn,
     addr: SocketAddr,
     headers: HashMap<String, String>,
     socket: WebSocket,
@@ -425,13 +426,13 @@ async fn handle_ws_connection(
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     // Build connection info from the HTTP upgrade headers.
-    let mut conn_info = ConnectionInfo::new("websocket").with_remote_addr(addr.to_string());
+    let mut conn_info = ConnectionInfo::new().with_remote_addr(addr.to_string());
     for (key, value) in &headers {
         conn_info = conn_info.with_metadata(key.clone(), value.clone());
     }
 
-    // Let the adapter identify which bot this connection belongs to.
-    let Some(bot_id) = handler.get_bot_id(conn_info) else {
+    // Resolve which bot this connection belongs to.
+    let Some(bot_id) = resolve_bot_id(conn_info) else {
         error!(
             remote_addr = %addr,
             "Failed to extract bot ID from WebSocket connection metadata, closing connection",

@@ -2,48 +2,11 @@
 //!
 //! This module defines the configuration schema that can be loaded from
 //! the global `alloy.toml` configuration file.
-//!
-//! # Example Configuration
-//!
-//! ```toml
-//! # WebSocket client - connect to a OneBot implementation
-//! [[adapters.onebot.connections]]
-//! name = "primary"
-//! enabled = true
-//! type = "ws-client"
-//! url = "ws://127.0.0.1:6700/ws"
-//! access_token = "${BOT_TOKEN:-}"
-//!
-//! # WebSocket server - listen for incoming connections
-//! [[adapters.onebot.connections]]
-//! name = "listener"
-//! enabled = false
-//! type = "ws-server"
-//! host = "0.0.0.0"
-//! port = 8080
-//! path = "/onebot/v11/ws"
-//!
-//! # HTTP webhook (receive events)
-//! [[adapters.onebot.connections]]
-//! name = "webhook"
-//! enabled = false
-//! type = "http-server"
-//! host = "0.0.0.0"
-//! port = 9000
-//! path = "/onebot/callback"
-//!
-//! # HTTP client (send API calls)
-//! [[adapters.onebot.connections]]
-//! name = "api-client"
-//! enabled = false
-//! type = "http-client"
-//! api_url = "http://127.0.0.1:5700"
-//! ```
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// OneBot adapter configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct OneBotConfig {
     /// List of connection configurations.
@@ -53,7 +16,7 @@ pub struct OneBotConfig {
 /// Connection configuration for a single connection.
 ///
 /// Uses tagged union with `type` field to determine the variant.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ConnectionConfig {
     /// WebSocket server - listens for incoming connections.
@@ -82,156 +45,97 @@ impl ConnectionConfig {
 }
 
 /// WebSocket server configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct WsServerConfig {
-    /// Bind address (default: "0.0.0.0").
+    /// Bind address (default: "127.0.0.1").
+    #[serde(default = "default_host")]
     pub host: String,
 
-    /// Listen port (default: 8080).
+    /// Listen port.
     pub port: u16,
 
     /// WebSocket path (default: "/onebot/v11/ws").
+    #[serde(default = "default_ws_path")]
     pub path: String,
 
     /// Access token for authentication.
+    #[serde(default)]
     pub access_token: Option<String>,
 }
 
-impl Default for WsServerConfig {
-    fn default() -> Self {
-        Self {
-            host: "0.0.0.0".to_string(),
-            port: 8080,
-            path: "/onebot/v11/ws".to_string(),
-            access_token: None,
-        }
-    }
+fn default_host() -> String {
+    "127.0.0.1".into()
+}
+
+fn default_ws_path() -> String {
+    "/onebot/v11/ws".into()
 }
 
 /// WebSocket client configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct WsClientConfig {
     /// WebSocket URL to connect to.
     pub url: String,
 
     /// Access token for authentication.
+    #[serde(default)]
     pub access_token: Option<String>,
 
     /// Whether to automatically reconnect on disconnection.
+    #[serde(default = "default_auto_reconnect")]
     pub auto_reconnect: bool,
 
     /// Reconnection delay in milliseconds.
+    #[serde(default = "default_reconnect_delay_ms")]
     pub reconnect_delay_ms: u64,
 }
 
-impl Default for WsClientConfig {
-    fn default() -> Self {
-        Self {
-            url: "ws://127.0.0.1:6700/ws".to_string(),
-            access_token: None,
-            auto_reconnect: true,
-            reconnect_delay_ms: 5000,
-        }
-    }
+const fn default_auto_reconnect() -> bool {
+    true
+}
+
+const fn default_reconnect_delay_ms() -> u64 {
+    5000
 }
 
 /// HTTP server configuration (for webhooks).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct HttpServerConfig {
-    /// Bind address (default: "0.0.0.0").
+    /// Bind address (default: "127.0.0.1").
+    #[serde(default = "default_host")]
     pub host: String,
 
-    /// Listen port (default: 9000).
+    /// Listen port.
     pub port: u16,
 
-    /// Webhook path (default: "/onebot/callback").
+    /// Webhook path (default: "/onebot/v11").
+    #[serde(default = "default_webhook_path")]
     pub path: String,
 
     /// Secret for verifying webhook signatures.
+    #[serde(default)]
     pub secret: Option<String>,
 }
 
-impl Default for HttpServerConfig {
-    fn default() -> Self {
-        Self {
-            host: "0.0.0.0".to_string(),
-            port: 9000,
-            path: "/onebot/callback".to_string(),
-            secret: None,
-        }
-    }
+fn default_webhook_path() -> String {
+    "/onebot/v11".into()
 }
 
 /// HTTP client configuration (for API calls).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct HttpClientConfig {
-    /// Bot ID for this HTTP client.
-    /// Required since HTTP clients don't have incoming connections to extract ID from.
-    pub bot_id: String,
-
     /// HTTP API URL.
     pub api_url: String,
 
     /// Access token for authentication.
+    #[serde(default)]
     pub access_token: Option<String>,
 
-    /// Request timeout in milliseconds.
+    /// Request timeout in milliseconds (default: 30000).
+    #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
 }
 
-impl Default for HttpClientConfig {
-    fn default() -> Self {
-        Self {
-            bot_id: "12345678".to_string(), // Default bot ID
-            api_url: "http://127.0.0.1:5700".to_string(),
-            access_token: None,
-            timeout_ms: 30000,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_deserialize_config() {
-        let config = OneBotConfig {
-            connections: vec![
-                ConnectionConfig::WsServer(WsServerConfig {
-                    host: "0.0.0.0".to_string(),
-                    port: 8080,
-                    path: "/ws".to_string(),
-                    access_token: None,
-                }),
-                ConnectionConfig::WsClient(WsClientConfig {
-                    url: "ws://localhost:6700/ws".to_string(),
-                    access_token: Some("secret".to_string()),
-                    ..Default::default()
-                }),
-            ],
-        };
-
-        assert_eq!(config.connections.len(), 2);
-
-        match &config.connections[0] {
-            ConnectionConfig::WsServer(ws) => {
-                assert_eq!(ws.port, 8080);
-                assert_eq!(ws.path, "/ws");
-            }
-            _ => panic!("Expected WsServer"),
-        }
-
-        match &config.connections[1] {
-            ConnectionConfig::WsClient(ws) => {
-                assert_eq!(ws.url, "ws://localhost:6700/ws");
-                assert_eq!(ws.access_token, Some("secret".to_string()));
-            }
-            _ => panic!("Expected WsClient"),
-        }
-    }
+const fn default_timeout_ms() -> u64 {
+    30000
 }
