@@ -25,16 +25,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, trace, warn};
+use tokio::sync::watch;
+use tracing::{info, trace, warn};
 
 use crate::adapter::Adapter;
 use crate::bot::{Bot, BoxedBot};
 use crate::error::AdapterResult;
 use crate::event::{BoxedEvent, EventType};
-use crate::transport::{
-    ConnectionHandle, ConnectionHandler, ListenerHandle, Sender, TransportContext,
-};
+use crate::transport::{ConnectionHandler, ListenerHandle, Sender, TransportContext};
 
 #[async_trait]
 pub trait BridgeRuntime: Send + Sync {
@@ -66,7 +64,7 @@ pub trait Dispatcher: Send + Sync + 'static {
 // Adapter Bridge
 // =============================================================================
 
-type BotEntry<B> = (Arc<B>, ConnectionHandle);
+type BotEntry<B> = (Arc<B>, watch::Receiver<()>, watch::Sender<()>);
 
 /// Central bridge that wires together the runtime, the transport layer, and an adapter.
 ///
@@ -124,8 +122,7 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
             std::mem::take(&mut *entries)
         };
 
-        for (_, (bot, handle)) in entries {
-            handle.close();
+        for (_, (bot, _rx, _)) in entries {
             bot.on_disconnect().await;
         }
     }
@@ -135,7 +132,7 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
         self.entries
             .lock()
             .values()
-            .map(|(bot, _)| bot.clone() as Arc<dyn Bot>)
+            .map(|(bot, _, _)| bot.clone() as Arc<dyn Bot>)
             .collect()
     }
 }
@@ -146,35 +143,28 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
 
 #[async_trait]
 impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
-    fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> CancellationToken {
+    fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> watch::Sender<()> {
         let mut entries = self.entries.lock();
-        if let Some((_, handle)) = entries.get_mut(bot_id) {
-            if let Some(new_sender) = sender {
-                // Bot already exists: upgrade sender if currently receive-only.
-                if handle.sender.is_none() {
-                    debug!(bot_id = %bot_id, "Bot upgraded to send-capable connection");
-                    handle.sender = Some(new_sender);
-                } else {
-                    warn!(bot_id = %bot_id, "Bot already has send capability, keeping existing sender");
-                }
+        if let Some((_, _, shutdown_tx)) = entries.get_mut(bot_id) {
+            if sender.is_some() {
+                warn!(bot_id = %bot_id, "Bot already registered, ignoring new sender capability");
             }
-            handle.shutdown_token.clone()
+            shutdown_tx.clone()
         } else {
             // Bot absent — create it fresh.
-            let shutdown_token = CancellationToken::new();
-            let handle = ConnectionHandle {
-                sender,
-                shutdown_token: shutdown_token.clone(),
-            };
-            let bot = self.adapter.create_bot(bot_id, &handle);
-            entries.insert(bot_id.to_string(), (Arc::new(bot), handle));
+            let (shutdown_tx, shutdown_rx) = watch::channel(());
+            let bot = self.adapter.create_bot(bot_id, sender);
+            entries.insert(
+                bot_id.to_string(),
+                (Arc::new(bot), shutdown_rx, shutdown_tx.clone()),
+            );
             info!(bot_id = %bot_id, "Bot registered");
-            shutdown_token
+            shutdown_tx
         }
     }
 
     async fn on_message(&self, bot_id: &str, data: &[u8]) {
-        let Some((bot, _)) = self.entries.lock().get(bot_id).cloned() else {
+        let Some((bot, _, _)) = self.entries.lock().get(bot_id).cloned() else {
             return;
         };
 
@@ -214,7 +204,7 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
 
     async fn on_disconnect(&self, bot_id: &str) {
         let entry = self.entries.lock().remove(bot_id);
-        if let Some((bot, _handle)) = entry {
+        if let Some((bot, _rx, _)) = entry {
             bot.on_disconnect().await;
             info!(bot_id = %bot_id, "Connection closed");
         }

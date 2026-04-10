@@ -5,7 +5,7 @@ use std::sync::Arc;
 use eventsource_client::{Client, ClientBuilder, ReconnectOptions, SSE};
 use futures::StreamExt;
 use launchdarkly_sdk_transport::HyperTransport;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::watch;
 use tracing::{info, trace, warn};
 
 use alloy_core::{ConnectionHandler, SseClientConfig, TransportError, TransportResult};
@@ -27,7 +27,7 @@ async fn run_sse_loop(
     config: SseClientConfig,
     client: impl Client,
     handler: Arc<dyn ConnectionHandler>,
-    shutdown_token: CancellationToken,
+    shutdown_tx: watch::Sender<()>,
 ) {
     info!(bot_id = %bot_id, url = %config.url, "SSE client starting");
 
@@ -37,7 +37,7 @@ async fn run_sse_loop(
     // ── Event loop ──────────────────────────────────────────────────────────
     loop {
         tokio::select! {
-            () = shutdown_token.cancelled() => {
+            _ = shutdown_tx.closed() => {
                 info!(bot_id = %bot_id, "SSE client shutting down");
                 break;
             }

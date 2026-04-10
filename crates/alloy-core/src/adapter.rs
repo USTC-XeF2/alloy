@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::bot::Bot;
 use crate::error::AdapterResult;
 use crate::event::BoxedEvent;
-use crate::transport::{ConnectionHandle, ConnectionHandler, TransportContext};
+use crate::transport::{ConnectionHandler, Sender, TransportContext};
 
 // =============================================================================
 // Adapter Trait
@@ -40,8 +40,8 @@ pub trait Adapter: Send + Sync + 'static {
     /// Create a bot instance for a new connection.
     ///
     /// Called when transport layer resolves a bot ID and creates/registers
-    /// a new connection handle.
-    fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> Self::Bot;
+    /// a new connection.
+    fn create_bot(&self, bot_id: &str, sender: Option<Sender>) -> Self::Bot;
 
     /// Parse an incoming message into an event.
     ///

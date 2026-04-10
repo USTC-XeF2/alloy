@@ -7,8 +7,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use http::header::{AUTHORIZATION, AsHeaderName};
 use http::{HeaderMap, Method};
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::{mpsc, watch};
 
 use crate::error::TransportResult;
 
@@ -76,23 +75,17 @@ impl ConnectionInfo {
 pub struct ListenerHandle {
     /// Unique identifier for this listener.
     pub id: String,
-    /// Cancellation token for graceful shutdown.
-    shutdown_token: CancellationToken,
+    /// Cancellation receiver that, when dropped, signals shutdown.
+    _shutdown_rx: watch::Receiver<()>,
 }
 
 impl ListenerHandle {
     /// Creates a new listener handle.
-    pub fn new(id: impl Into<String>, shutdown_token: CancellationToken) -> Self {
+    pub fn new(id: impl Into<String>, shutdown_rx: watch::Receiver<()>) -> Self {
         Self {
             id: id.into(),
-            shutdown_token,
+            _shutdown_rx: shutdown_rx,
         }
-    }
-}
-
-impl Drop for ListenerHandle {
-    fn drop(&mut self) {
-        self.shutdown_token.cancel();
     }
 }
 
@@ -100,11 +93,10 @@ impl Drop for ListenerHandle {
 // Sender — transport-specific data
 // =============================================================================
 
-/// Transport-specific data carried by a [`ConnectionHandle`].
+/// Transport-specific data carried by a bot.
 ///
 /// Each variant represents a transport that has **outbound send capability**.
-/// Receive-only connections (e.g. HTTP server webhook) carry no sender and
-/// store `None` in [`ConnectionHandle::sender`].
+/// Receive-only connections (e.g. HTTP server webhook) carry no sender.
 #[derive(Clone)]
 pub enum Sender {
     /// WebSocket connection (outbound dial or inbound accept — identical after handshake).
@@ -128,36 +120,5 @@ impl std::fmt::Debug for Sender {
             Sender::Ws { .. } => write!(f, "Ws"),
             Sender::HttpClient { .. } => write!(f, "HttpClient"),
         }
-    }
-}
-
-// =============================================================================
-// ConnectionHandle
-// =============================================================================
-
-/// Handle to an active bot connection.
-///
-/// `sender` carries the optional outbound-send capability for this bot.
-/// A bot that only receives events (e.g. HTTP server webhook) will have
-/// `sender == None`; a bot with a send channel (WS / HTTP-client) will have
-/// a [`Some`] variant.
-#[derive(Debug, Clone)]
-pub struct ConnectionHandle {
-    /// Optional outbound send capability.
-    /// `None` ⇒ receive-only; `Some` ⇒ can also send API calls.
-    pub(crate) sender: Option<Sender>,
-    /// Cancellation token for graceful shutdown.
-    pub(crate) shutdown_token: CancellationToken,
-}
-
-impl ConnectionHandle {
-    /// Returns the connection sender, if any.
-    pub fn sender(&self) -> Option<&Sender> {
-        self.sender.as_ref()
-    }
-
-    /// Signals the transport loop to shut down this connection.
-    pub fn close(self) {
-        self.shutdown_token.cancel();
     }
 }

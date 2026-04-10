@@ -14,9 +14,8 @@ use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
 use alloy_core::{
-    Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    HttpClientConfig, HttpMethod, HttpServerConfig, TransportContext, WsClientConfig,
-    WsServerConfig,
+    Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandler, ConnectionInfo, HttpClientConfig,
+    HttpMethod, HttpServerConfig, Sender, TransportContext, WsClientConfig, WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -39,8 +38,8 @@ impl Adapter for OneBotAdapter {
         Self { config }
     }
 
-    fn create_bot(&self, bot_id: &str, connection: &ConnectionHandle) -> Self::Bot {
-        OneBotBot::new(bot_id, connection)
+    fn create_bot(&self, bot_id: &str, sender: Option<Sender>) -> Self::Bot {
+        OneBotBot::new(bot_id, sender)
     }
 
     async fn on_message(&self, bot: &Self::Bot, data: &[u8]) -> Option<BoxedEvent> {

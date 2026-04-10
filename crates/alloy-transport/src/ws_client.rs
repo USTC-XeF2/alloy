@@ -177,8 +177,8 @@ pub async fn ws_connect(
 
     info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 
-    // Register the bot with its send capability; get back the shutdown token.
-    let shutdown_token = handler.register_connection(&bot_id, Some(Sender::Ws { message_tx }));
+    // Register the bot with its send capability; get back the shutdown sender.
+    let shutdown_tx = handler.register_connection(&bot_id, Some(Sender::Ws { message_tx }));
 
     let mut state = ClientLoopState::new(handler, bot_id.clone(), config, ws_stream);
 
@@ -187,7 +187,7 @@ pub async fn ws_connect(
         loop {
             tokio::select! {
                 // Check for shutdown
-                _ = shutdown_token.cancelled() => {
+                _ = shutdown_tx.closed() => {
                     info!(bot_id = %state.bot_id, "WebSocket client shutting down");
                     let _ = state.ws_tx.close().await;
                     state.handler.on_disconnect(&state.bot_id).await;

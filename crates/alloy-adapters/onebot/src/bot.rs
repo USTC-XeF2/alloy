@@ -49,8 +49,7 @@ use crate::model::api::{
 use crate::model::message::OneBotMessage;
 use crate::model::types::Status;
 use alloy_core::{
-    ApiError, ApiResult, Bot, Bytes, ConnectionHandle, HttpMethod, HttpRequestFn, Scene, Sendable,
-    Sender, impl_api,
+    ApiError, ApiResult, Bot, Bytes, HttpMethod, HttpRequestFn, Scene, Sendable, Sender, impl_api,
 };
 
 // =============================================================================
@@ -72,14 +71,12 @@ enum ApiCallStrategy {
 }
 
 impl ApiCallStrategy {
-    /// Creates a new strategy from a connection handle.
-    fn new(connection: &ConnectionHandle) -> Self {
-        match connection.sender() {
-            Some(Sender::HttpClient { http_request }) => Self::HttpClient {
-                http_request: http_request.clone(),
-            },
+    /// Creates a new strategy from a sender.
+    fn new(sender: Option<Sender>) -> Self {
+        match sender {
+            Some(Sender::HttpClient { http_request }) => Self::HttpClient { http_request },
             Some(Sender::Ws { message_tx }) => Self::Ws {
-                message_tx: message_tx.clone(),
+                message_tx,
                 pending_calls: Mutex::new(HashMap::new()),
                 echo_counter: AtomicU64::new(1),
                 api_timeout: Duration::from_secs(30),
@@ -193,11 +190,11 @@ pub struct OneBotBot {
 }
 
 impl OneBotBot {
-    /// Creates a new `OneBotBot` from a connection handle.
-    pub(crate) fn new(id: &str, connection: &ConnectionHandle) -> Self {
+    /// Creates a new `OneBotBot` from an optional sender.
+    pub(crate) fn new(id: &str, sender: Option<Sender>) -> Self {
         Self {
             id: id.into(),
-            call_strategy: ApiCallStrategy::new(connection),
+            call_strategy: ApiCallStrategy::new(sender),
         }
     }
 

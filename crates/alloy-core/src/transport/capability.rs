@@ -20,7 +20,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use linkme::distributed_slice;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::watch;
 use tracing::warn;
 
 use super::config::{
@@ -45,18 +45,16 @@ pub trait ConnectionHandler: Send + Sync {
     ///
     /// ## Behaviour
     /// - **Bot absent**: creates the bot via `adapter.create_bot`, stores a new
-    ///   [`ConnectionHandle`] with `sender`, and returns a fresh [`CancellationToken`]
-    ///   bound to that handle.
-    /// - **Bot present, `sender` is `None`**: returns the existing handle's token
+    ///   [`ConnectionHandle`] with `sender`, and returns a fresh [`watch::Sender<()>`].
+    /// - **Bot present, `sender` is `None`**: returns the existing handle's sender
     ///   unchanged (no-op).
     /// - **Bot present, existing `sender` is `None`**: upgrades the handle's sender to
-    ///   the supplied `sender` and returns the existing token.
+    ///   the supplied `sender` and returns the existing sender.
     /// - **Bot present, existing `sender` is `Some`**: keeps the existing sender
-    ///   and returns the existing token (the bot already has send capability).
+    ///   and returns the existing sender (the bot already has send capability).
     ///
-    /// The returned token is the one stored in the bot's [`ConnectionHandle`].
-    /// Transport loops should listen on it for graceful shutdown.
-    fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> CancellationToken;
+    /// The returned sender is used by the transport to detect shutdown (via `closed()`).
+    fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> watch::Sender<()>;
 
     /// Process incoming data from a connection.
     async fn on_message(&self, bot_id: &str, data: &[u8]);

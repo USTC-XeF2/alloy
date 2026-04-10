@@ -28,13 +28,14 @@ use std::sync::{Arc, LazyLock, Weak};
 
 use axum::{
     Router,
+    body::Bytes,
     extract::{ConnectInfo, State},
     http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
 };
 use parking_lot::Mutex;
 use tokio::net::TcpListener;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
 use alloy_core::{
@@ -43,7 +44,7 @@ use alloy_core::{
 use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
-use axum::{body::Bytes, response::Response, routing::post};
+use axum::{response::Response, routing::post};
 
 #[cfg(feature = "ws-server")]
 use {
@@ -83,8 +84,6 @@ impl SharedState {
 
 // ─── Server lifecycle container ───────────────────────────────────────────────
 
-/// One entry per bound address in [`SERVER_REGISTRY`].
-///
 /// The server stops when the last `Arc<ServerEntry>` clone is dropped (each
 /// registered route holds one clone; deregistration drops it).
 struct ServerEntry {
@@ -92,14 +91,8 @@ struct ServerEntry {
     actual_addr: SocketAddr,
     /// Route tables and other shared axum state.
     state: Arc<SharedState>,
-    /// Cancellation token for graceful shutdown.
-    shutdown_token: CancellationToken,
-}
-
-impl Drop for ServerEntry {
-    fn drop(&mut self) {
-        self.shutdown_token.cancel();
-    }
+    /// Cancellation receiver for graceful shutdown. Dropped on drop.
+    _shutdown_rx: watch::Receiver<()>,
 }
 
 // ─── Global registry ──────────────────────────────────────────────────────────
@@ -132,12 +125,12 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
     let actual_addr = listener.local_addr()?;
 
     let router = build_router(state.clone());
-    let shutdown_token = CancellationToken::new();
+    let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     let entry = Arc::new(ServerEntry {
         actual_addr,
         state: state.clone(),
-        shutdown_token: shutdown_token.clone(),
+        _shutdown_rx: shutdown_rx,
     });
 
     // Store a weak reference so the registry does not prevent cleanup.
@@ -153,7 +146,9 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
             listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown_token.clone().cancelled_owned());
+        .with_graceful_shutdown(async move {
+            shutdown_tx.closed().await;
+        });
 
         if let Err(e) = server.await {
             error!(error = %e, "Shared server error");
@@ -298,16 +293,15 @@ pub async fn http_listen(
     info!(path = %path, addr = %entry.actual_addr, "Registered HTTP route");
 
     let handle_id = format!("http-server-{}{}", entry.actual_addr, path);
-    let shutdown_token = CancellationToken::new();
-    let token_clone = shutdown_token.clone();
+    let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     tokio::spawn(async move {
-        token_clone.cancelled().await;
+        shutdown_tx.closed().await;
         entry.state.http_routes.lock().remove(&path);
         info!(path = %path, "Unregistered HTTP route");
     });
 
-    handler.add_listener(ListenerHandle::new(handle_id, shutdown_token));
+    handler.add_listener(ListenerHandle::new(handle_id, shutdown_rx));
     Ok(())
 }
 
@@ -379,16 +373,15 @@ pub async fn ws_listen(
     info!(path = %path, addr = %entry.actual_addr, "Registered WebSocket route");
 
     let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
-    let shutdown_token = CancellationToken::new();
-    let token_clone = shutdown_token.clone();
+    let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     tokio::spawn(async move {
-        token_clone.cancelled().await;
+        shutdown_tx.closed().await;
         entry.state.ws_routes.lock().remove(&path);
         info!(path = %path, "Unregistered WebSocket route");
     });
 
-    handler.add_listener(ListenerHandle::new(handle_id, shutdown_token));
+    handler.add_listener(ListenerHandle::new(handle_id, shutdown_rx));
     Ok(())
 }
 
@@ -445,8 +438,8 @@ async fn handle_ws_connection(
     let bot_id_recv = bot_id.clone();
     loop {
         tokio::select! {
-            // Graceful shutdown: bridge/adapter cancelled this connection's token.
-            () = shutdown_token.cancelled() => {
+            // Graceful shutdown: bridge/adapter dropped the receiver.
+            _ = shutdown_token.closed() => {
                 info!(bot_id = %bot_id_recv, "WebSocket connection shutting down");
                 break;
             }

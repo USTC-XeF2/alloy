@@ -12,4 +12,4 @@ pub use capability::{ClientBotIdFn, ConnectionHandler, ServerBotIdFn, TransportC
 pub use config::{
     HttpClientConfig, HttpServerConfig, SseClientConfig, WsClientConfig, WsServerConfig,
 };
-pub use connection::{ConnectionHandle, ConnectionInfo, HttpRequestFn, ListenerHandle, Sender};
+pub use connection::{ConnectionInfo, HttpRequestFn, ListenerHandle, Sender};

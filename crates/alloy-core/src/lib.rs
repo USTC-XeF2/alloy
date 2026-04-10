@@ -57,7 +57,7 @@ pub use message::{
     Message, ReceiveMessageSegment, RichText, RichTextSegment, SendMessageSegment, Sendable,
 };
 pub use transport::{
-    ClientBotIdFn, ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpClientConfig,
-    HttpRequestFn, HttpServerConfig, ListenerHandle, Sender, ServerBotIdFn, SseClientConfig,
-    TransportContext, WsClientConfig, WsServerConfig,
+    ClientBotIdFn, ConnectionHandler, ConnectionInfo, HttpClientConfig, HttpRequestFn,
+    HttpServerConfig, ListenerHandle, Sender, ServerBotIdFn, SseClientConfig, TransportContext,
+    WsClientConfig, WsServerConfig,
 };

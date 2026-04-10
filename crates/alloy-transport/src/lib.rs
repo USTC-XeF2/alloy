@@ -36,11 +36,11 @@
 //!
 //! | Function | Feature | Request Type | Response Type |
 //! |----------|---------|--------------|---------------|
-//! | `ws_connect()` | `ws-client` | `(config, handler)` | `ConnectionHandle` |
-//! | `ws_listen()` | `ws-server` | `(addr, path, handler)` | `ListenerHandle` |
-//! | `http_start_client()` | `http-client` | `(bot_id, config, handler)` | `ConnectionHandle` |
-//! | `http_listen()` | `http-server` | `(addr, path, handler)` | `ListenerHandle` |
-//! | `sse_start_client()` | `sse-client` | `(bot_id, config, handler)` | `ConnectionHandle` |
+//! | `ws_connect()` | `ws-client` | `(config, handler, bot_id)` | `TransportResult<String>` |
+//! | `ws_listen()` | `ws-server` | `(config, handler, resolve_bot_id)` | `TransportResult<()>` |
+//! | `http_start_client()` | `http-client` | `(config, handler, resolve_bot_id)` | `TransportResult<String>` |
+//! | `http_listen()` | `http-server` | `(config, handler, resolve_bot_id)` | `TransportResult<()>` |
+//! | `sse_start_client()` | `sse-client` | `(config, handler, bot_id)` | `TransportResult<String>` |
 //!
 //! All capabilities are automatically discovered via `linkme::distributed_slice` registration
 //! and collected into a [`TransportContext`] at startup.
