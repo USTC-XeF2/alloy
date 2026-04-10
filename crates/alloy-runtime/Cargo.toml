@@ -16,6 +16,7 @@ command = ["alloy-framework/command"]
 # Config format features
 toml-config = ["figment/toml"]
 yaml-config = ["figment/yaml"]
+dotenv-config = ["dep:dotenvy"]
 
 # Logging features
 json-log = ["tracing-subscriber/json"]
@@ -23,6 +24,7 @@ json-log = ["tracing-subscriber/json"]
 [dependencies]
 alloy-core = { workspace = true }
 alloy-framework = { workspace = true }
+dotenvy = { version = "0.15.7", optional = true }
 figment = { version = "0.10.19", features = ["env"] }
 futures = { workspace = true }
 parking_lot = { workspace = true }

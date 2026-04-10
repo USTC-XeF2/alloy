@@ -15,7 +15,7 @@ alloy-runtime = { workspace = true, optional = true }
 alloy-transport = { workspace = true }
 
 [features]
-default = ["command", "runtime", "toml-config"]
+default = ["command", "runtime", "toml-config", "dotenv-config"]
 
 # Structured command support
 command = ["alloy-framework/command", "alloy-runtime?/command"]
@@ -26,6 +26,7 @@ runtime = ["dep:alloy-runtime"]
 # Config format features
 toml-config = ["alloy-runtime/toml-config"]
 yaml-config = ["alloy-runtime/yaml-config"]
+dotenv-config = ["alloy-runtime/dotenv-config"]
 
 # Logging features
 json-log = ["alloy-runtime/json-log"]

@@ -15,7 +15,7 @@
 //! # Configuration Priority (lowest to highest)
 //!
 //! 1. Built-in defaults
-//! 2. Profile-specific config file (`alloy.{profile}.toml`)
+//! 2. Profile-specific config file (`alloy-{profile}.toml`)
 //! 3. Main config file (`alloy.toml`)
 //! 4. Environment variables (`ALLOY_*`)
 //! 5. Programmatic overrides
@@ -75,11 +75,11 @@ pub enum Profile {
 }
 
 impl Profile {
-    /// Returns the profile name as a string.
-    pub fn as_str(&self) -> &str {
+    /// Returns a string suffix for file names.
+    pub fn as_suffix(&self) -> &str {
         match self {
-            Self::Development => "development",
-            Self::Production => "production",
+            Self::Development => "dev",
+            Self::Production => "prod",
             Self::Custom(name) => name,
         }
     }
@@ -98,7 +98,11 @@ impl Profile {
 
 impl std::fmt::Display for Profile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        match self {
+            Self::Development => write!(f, "development"),
+            Self::Production => write!(f, "production"),
+            Self::Custom(name) => write!(f, "{}", name),
+        }
     }
 }
 
@@ -234,7 +238,14 @@ impl ConfigLoader {
 
         // Load environment variables
         if self.load_env {
-            trace!("Loading environment variables with ALLOY_ prefix");
+            #[cfg(feature = "dotenv-config")]
+            {
+                trace!("Loading .env file");
+                dotenvy::dotenv_override().ok();
+                dotenvy::from_filename_override(format!(".env.{}", self.profile.as_suffix())).ok();
+            }
+
+            trace!("Loading environment variables");
             figment = figment.merge(Env::prefixed("ALLOY_").split("__"));
         }
 
@@ -254,8 +265,8 @@ impl ConfigLoader {
         let mut found = false;
         for search_path in &self.search_paths {
             for ext in exts {
-                // Profile-specific: e.g. alloy.production.toml
-                let profile_name = format!("alloy.{}.{}", self.profile.as_str(), ext);
+                // Profile-specific: e.g. alloy-production.toml
+                let profile_name = format!("alloy-{}.{}", self.profile.as_suffix(), ext);
                 let profile_path = search_path.join(&profile_name);
                 if profile_path.exists() {
                     debug!(path = %profile_path.display(), "Loading profile-specific config");
