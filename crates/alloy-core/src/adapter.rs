@@ -78,9 +78,4 @@ pub trait Adapter: Send + Sync + 'static {
         transport: TransportContext,
         connection_handler: Arc<dyn ConnectionHandler>,
     ) -> impl Future<Output = AdapterResult<()>> + Send;
-
-    /// Called when the adapter is shutting down.
-    fn on_shutdown(&self) -> impl Future<Output = AdapterResult<()>> + Send {
-        async { Ok(()) }
-    }
 }

@@ -41,8 +41,8 @@ pub trait BridgeRuntime: Send + Sync {
     /// Starts the adapter (delegates to [`Adapter::on_start`]).
     async fn on_start(self: Arc<Self>) -> AdapterResult<()>;
 
-    /// Shuts down the adapter (delegates to [`Adapter::on_shutdown`]).
-    async fn on_shutdown(self: Arc<Self>) -> AdapterResult<()>;
+    /// Shuts down the adapter.
+    async fn on_shutdown(&self);
 
     /// Returns a list of all active bot instances.
     fn bots(&self) -> Vec<Arc<dyn Bot>>;
@@ -109,9 +109,25 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
         self.adapter.on_start(self.transport, self.clone()).await
     }
 
-    /// Shuts down the adapter (delegates to [`Adapter::on_shutdown`]).
-    async fn on_shutdown(self: Arc<Self>) -> AdapterResult<()> {
-        self.adapter.on_shutdown().await
+    /// Shuts down the adapter.
+    async fn on_shutdown(&self) {
+        // Stop accepting new connections before tearing down active ones.
+        let listeners = {
+            let mut listeners = self.listeners.lock();
+            std::mem::take(&mut *listeners)
+        };
+        drop(listeners);
+
+        // Cancel all active connection loops and notify bots.
+        let entries = {
+            let mut entries = self.entries.lock();
+            std::mem::take(&mut *entries)
+        };
+
+        for (_, (bot, handle)) in entries {
+            handle.close();
+            bot.on_disconnect().await;
+        }
     }
 
     /// Returns a list of all active bot instances.

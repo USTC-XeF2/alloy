@@ -74,11 +74,6 @@ impl ListenerHandle {
             shutdown_token,
         }
     }
-
-    /// Stops the listener.
-    pub fn stop(self) {
-        self.shutdown_token.cancel();
-    }
 }
 
 impl Drop for ListenerHandle {

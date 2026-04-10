@@ -270,15 +270,10 @@ impl AlloyRuntime {
         let futures = self
             .bridges
             .lock()
-            .iter()
-            .map(|(name, bridge)| {
-                let name = *name;
+            .values()
+            .map(|bridge| {
                 let bridge = bridge.clone();
-                async move {
-                    if let Err(e) = bridge.on_shutdown().await {
-                        error!(adapter = %name, error = %e, "Error during adapter shutdown");
-                    }
-                }
+                async move { bridge.on_shutdown().await }
             })
             .collect::<Vec<_>>();
         future::join_all(futures).await;
