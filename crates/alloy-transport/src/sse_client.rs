@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use eventsource_client::{Client, ClientBuilder, ReconnectOptions, SSE};
 use futures::StreamExt;
+use launchdarkly_sdk_transport::HyperTransport;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, trace, warn};
 
@@ -24,15 +25,13 @@ use alloy_macros::register_capability;
 async fn run_sse_loop(
     bot_id: String,
     config: SseClientConfig,
-    builder: ClientBuilder,
+    client: impl Client,
     handler: Arc<dyn ConnectionHandler>,
     shutdown_token: CancellationToken,
 ) {
     info!(bot_id = %bot_id, url = %config.url, "SSE client starting");
 
     let mut retry_count = 0u32;
-
-    let client = builder.build();
     let mut stream = client.stream();
 
     // ── Event loop ──────────────────────────────────────────────────────────
@@ -134,6 +133,9 @@ pub async fn sse_start_client(
     let reconnect_opts = reconnect_opts.build();
     let builder = builder.reconnect(reconnect_opts);
 
+    let transport = HyperTransport::builder().build_http()?;
+    let client = builder.build_with_transport(transport);
+
     // Register the bot (SSE is receive-only, no Sender needed).
     let shutdown_token = handler.register_connection(&bot_id, None);
 
@@ -141,7 +143,7 @@ pub async fn sse_start_client(
     tokio::spawn(run_sse_loop(
         bot_id.clone(),
         config,
-        builder,
+        client,
         handler,
         shutdown_token,
     ));

@@ -1,6 +1,7 @@
 //! Connection handling and lifecycle types.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -21,33 +22,43 @@ pub type PostJsonFn =
     Arc<dyn Fn(&str, Value) -> BoxFuture<'static, TransportResult<Value>> + Send + Sync>;
 
 /// Information about a connection.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ConnectionInfo {
-    /// Remote address (if available).
-    pub remote_addr: Option<String>,
-    /// Additional metadata.
-    pub metadata: HashMap<String, String>,
+    /// Remote address.
+    pub remote_addr: SocketAddr,
+    /// Headers.
+    pub headers: HashMap<String, String>,
+    /// Request body.
+    pub body: Option<Vec<u8>>,
 }
 
 impl ConnectionInfo {
-    /// Creates new connection info.
-    pub fn new() -> Self {
+    pub fn new(remote_addr: SocketAddr) -> Self {
         Self {
-            remote_addr: None,
-            metadata: HashMap::new(),
+            remote_addr,
+            headers: HashMap::new(),
+            body: None,
         }
     }
 
-    /// Sets the remote address.
-    pub fn with_remote_addr(mut self, addr: impl Into<String>) -> Self {
-        self.remote_addr = Some(addr.into());
+    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
         self
     }
 
-    /// Adds metadata.
-    pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.metadata.insert(key.into(), value.into());
+    pub fn with_body(mut self, body: Vec<u8>) -> Self {
+        self.body = Some(body);
         self
+    }
+
+    pub fn check_authorization(&self, expected_token: &str) -> bool {
+        if let Some(auth_header) = self.headers.get("authorization")
+            && let Some(token) = auth_header.to_lowercase().strip_prefix("bearer ")
+        {
+            token == expected_token
+        } else {
+            false
+        }
     }
 }
 

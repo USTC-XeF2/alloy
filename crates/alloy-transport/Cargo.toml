@@ -13,7 +13,7 @@ default = []
 # Transport types
 http-client = ["dep:reqwest", "dep:url"]
 http-server = ["dep:axum"]
-sse-client = ["dep:eventsource-client"]
+sse-client = ["dep:eventsource-client", "dep:launchdarkly-sdk-transport"]
 ws-client = ["dep:tokio-tungstenite"]
 ws-server = ["dep:axum", "axum/ws"]
 
@@ -30,7 +30,8 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 axum = { version = "0.8.8", optional = true }
-eventsource-client = { version = "0.16.2", optional = true }
+eventsource-client = { version = "0.17.1", optional = true }
+launchdarkly-sdk-transport = { version = "0.1.1", optional = true }
 reqwest = { version = "0.13.2", features = ["json"], optional = true }
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-native-roots"], optional = true }
 url = { version = "2.5.8", optional = true }

@@ -11,10 +11,7 @@ use tokio_tungstenite::tungstenite::{Error, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{error, info, trace, warn};
 
-use alloy_core::{
-    ConnectionHandler, ConnectionInfo, Sender, ServerBotIdFn, TransportError, TransportResult,
-    WsClientConfig,
-};
+use alloy_core::{ConnectionHandler, Sender, TransportError, TransportResult, WsClientConfig};
 use alloy_macros::register_capability;
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -165,17 +162,10 @@ impl ClientLoopState {
 pub async fn ws_connect(
     config: WsClientConfig,
     handler: Arc<dyn ConnectionHandler>,
-    resolve_bot_id: ServerBotIdFn,
+    bot_id: String,
 ) -> TransportResult<String> {
     // Create channels
     let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
-
-    // Build connection metadata and resolve bot ID from it.
-    let conn_info = ConnectionInfo::new().with_metadata("url", &config.url);
-    let bot_id = resolve_bot_id(conn_info).ok_or_else(|| TransportError::ConnectionFailed {
-        url: config.url.clone(),
-        reason: "Failed to resolve bot ID from ws-client connection info".to_string(),
-    })?;
 
     let (ws_stream, _response) =
         connect_async(&config.url)

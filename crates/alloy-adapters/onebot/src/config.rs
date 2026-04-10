@@ -32,18 +32,6 @@ pub enum ConnectionConfig {
     HttpClient(HttpClientConfig),
 }
 
-impl ConnectionConfig {
-    /// Returns the access token if configured.
-    pub fn access_token(&self) -> Option<&str> {
-        match self {
-            ConnectionConfig::WsServer(c) => c.access_token.as_deref(),
-            ConnectionConfig::WsClient(c) => c.access_token.as_deref(),
-            ConnectionConfig::HttpServer(c) => c.secret.as_deref(),
-            ConnectionConfig::HttpClient(c) => c.access_token.as_deref(),
-        }
-    }
-}
-
 /// WebSocket server configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsServerConfig {
@@ -51,11 +39,12 @@ pub struct WsServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// Listen port.
+    /// Listen port (default: 8080).
+    #[serde(default = "default_port")]
     pub port: u16,
 
-    /// WebSocket path (default: "/onebot/v11/ws").
-    #[serde(default = "default_ws_path")]
+    /// WebSocket path (default: "/").
+    #[serde(default = "default_path")]
     pub path: String,
 
     /// Access token for authentication.
@@ -67,8 +56,12 @@ fn default_host() -> String {
     "127.0.0.1".into()
 }
 
-fn default_ws_path() -> String {
-    "/onebot/v11/ws".into()
+fn default_port() -> u16 {
+    8080
+}
+
+fn default_path() -> String {
+    "/".into()
 }
 
 /// WebSocket client configuration.
@@ -76,6 +69,9 @@ fn default_ws_path() -> String {
 pub struct WsClientConfig {
     /// WebSocket URL to connect to.
     pub url: String,
+
+    /// Bot ID to use for this connection.
+    pub bot_id: String,
 
     /// Access token for authentication.
     #[serde(default)]
@@ -105,20 +101,17 @@ pub struct HttpServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// Listen port.
+    /// Listen port (default: 8080).
+    #[serde(default = "default_port")]
     pub port: u16,
 
-    /// Webhook path (default: "/onebot/v11").
-    #[serde(default = "default_webhook_path")]
+    /// Webhook path (default: "/").
+    #[serde(default = "default_path")]
     pub path: String,
 
     /// Secret for verifying webhook signatures.
     #[serde(default)]
     pub secret: Option<String>,
-}
-
-fn default_webhook_path() -> String {
-    "/onebot/v11".into()
 }
 
 /// HTTP client configuration (for API calls).

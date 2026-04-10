@@ -14,8 +14,12 @@ cqcode = []
 alloy-core = { workspace = true }
 alloy-macros = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
+hex = "0.4.3"
+hmac = "0.12.1"
 parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha1 = "0.10.6"
 tokio = { workspace = true, features = ["sync", "time"] }
 tracing = { workspace = true }

@@ -89,7 +89,7 @@ impl SharedState {
 /// registered route holds one clone; deregistration drops it).
 struct ServerEntry {
     /// The actual bind address resolved by the OS (includes ephemeral port).
-    actual_addr: String,
+    actual_addr: SocketAddr,
     /// Route tables and other shared axum state.
     state: Arc<SharedState>,
     /// Cancellation token for graceful shutdown.
@@ -130,13 +130,12 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
     let state = Arc::new(SharedState::new());
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
-    let actual_addr_str = actual_addr.to_string();
 
     let router = build_router(state.clone());
     let shutdown_token = CancellationToken::new();
 
     let entry = Arc::new(ServerEntry {
-        actual_addr: actual_addr_str.clone(),
+        actual_addr,
         state: state.clone(),
         shutdown_token: shutdown_token.clone(),
     });
@@ -153,17 +152,14 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
         let server = axum::serve(
             listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
-        );
-        tokio::select! {
-            result = server => {
-                if let Err(e) = result {
-                    error!(error = %e, "Shared server error");
-                }
-            }
-            () = shutdown_token.cancelled() => {
-                info!(addr = %actual_addr, "Shared server shutting down");
-            }
+        )
+        .with_graceful_shutdown(shutdown_token.clone().cancelled_owned());
+
+        if let Err(e) = server.await {
+            error!(error = %e, "Shared server error");
         }
+
+        debug!(addr = %actual_addr, "Shared server shutting down");
     });
 
     Ok(entry)
@@ -215,8 +211,8 @@ async fn http_dispatch(
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
-    let path = uri.path().to_string();
-    let entry = state.http_routes.lock().get(&path).cloned();
+    let path = uri.path();
+    let entry = state.http_routes.lock().get(path).cloned();
 
     match entry {
         Some((handler, resolve_bot_id)) => {
@@ -245,25 +241,14 @@ async fn ws_dispatch(
     uri: Uri,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let path = uri.path().to_string();
-    let entry = state.ws_routes.lock().get(&path).cloned();
+    let path = uri.path();
+    let entry = state.ws_routes.lock().get(path).cloned();
 
     match entry {
         Some((handler, resolve_bot_id)) => {
-            // Collect headers as a plain map (lowercase keys) before the move.
-            let metadata: HashMap<String, String> = headers
-                .iter()
-                .filter_map(|(name, value)| {
-                    value
-                        .to_str()
-                        .ok()
-                        .map(|v| (name.as_str().to_lowercase(), v.to_string()))
-                })
-                .collect();
-
             debug!(remote_addr = %addr, path = %path, "New WebSocket connection request");
             ws.on_upgrade(async move |socket| {
-                handle_ws_connection(handler, resolve_bot_id, addr, metadata, socket).await;
+                handle_ws_connection(handler, resolve_bot_id, addr, headers, socket).await;
             })
             .into_response()
         }
@@ -338,17 +323,13 @@ async fn handle_http_request(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    // Build connection info from request headers.
-    let mut conn_info = ConnectionInfo::new().with_remote_addr(addr.to_string());
-    for (name, value) in &headers {
-        if let Ok(v) = value.to_str() {
-            conn_info = conn_info.with_metadata(name.as_str().to_lowercase(), v.to_string());
-        }
-    }
-
     // Resolve which bot this request belongs to.
-    let Some(bot_id) = resolve_bot_id(conn_info) else {
-        error!(
+    let Some(bot_id) = resolve_bot_id(
+        ConnectionInfo::new(addr)
+            .with_headers(header_to_map(&headers))
+            .with_body(body.to_vec()),
+    ) else {
+        warn!(
             remote_addr = %addr,
             "Failed to extract bot ID from HTTP request metadata, cannot process request",
         );
@@ -420,20 +401,16 @@ async fn handle_ws_connection(
     handler: Arc<dyn ConnectionHandler>,
     resolve_bot_id: ServerBotIdFn,
     addr: SocketAddr,
-    headers: HashMap<String, String>,
+    headers: HeaderMap,
     socket: WebSocket,
 ) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Build connection info from the HTTP upgrade headers.
-    let mut conn_info = ConnectionInfo::new().with_remote_addr(addr.to_string());
-    for (key, value) in &headers {
-        conn_info = conn_info.with_metadata(key.clone(), value.clone());
-    }
-
     // Resolve which bot this connection belongs to.
-    let Some(bot_id) = resolve_bot_id(conn_info) else {
-        error!(
+    let Some(bot_id) =
+        resolve_bot_id(ConnectionInfo::new(addr).with_headers(header_to_map(&headers)))
+    else {
+        warn!(
             remote_addr = %addr,
             "Failed to extract bot ID from WebSocket connection metadata, closing connection",
         );
@@ -508,4 +485,16 @@ async fn handle_ws_connection(
     // ── Cleanup ───────────────────────────────────────────────────────────────
     send_task.abort();
     handler.on_disconnect(&bot_id).await;
+}
+
+fn header_to_map(headers: &HeaderMap) -> HashMap<String, String> {
+    headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.as_str().to_lowercase(), v.to_string()))
+        })
+        .collect()
 }

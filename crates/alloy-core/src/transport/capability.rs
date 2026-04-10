@@ -95,7 +95,7 @@ pub type WsListenFn = fn(
 pub type WsConnectFn = fn(
     WsClientConfig,
     Arc<dyn ConnectionHandler>,
-    ServerBotIdFn,
+    String,
 ) -> BoxFuture<'static, TransportResult<String>>;
 
 /// Function pointer that starts an HTTP server listener.

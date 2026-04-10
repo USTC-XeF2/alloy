@@ -2,21 +2,15 @@
 
 use std::time::Duration;
 
-// =============================================================================
-// WebSocket Server Config
-// =============================================================================
-
 /// Configuration for WebSocket server listeners.
 #[derive(Debug, Clone)]
 pub struct WsServerConfig {
-    /// Bind address (e.g., "0.0.0.0").
+    /// Bind address.
     pub bind_addr: String,
     /// Listen port.
     pub port: u16,
-    /// WebSocket path (e.g., "/ws").
+    /// WebSocket path.
     pub path: String,
-    /// Optional access token for authentication.
-    pub access_token: Option<String>,
 }
 
 impl WsServerConfig {
@@ -26,20 +20,9 @@ impl WsServerConfig {
             bind_addr: bind_addr.into(),
             port,
             path: path.into(),
-            access_token: None,
         }
     }
-
-    /// Sets the access token.
-    pub fn with_token(mut self, token: impl Into<String>) -> Self {
-        self.access_token = Some(token.into());
-        self
-    }
 }
-
-// =============================================================================
-// WebSocket Client Config
-// =============================================================================
 
 /// Configuration for WebSocket client connections.
 #[derive(Debug, Clone)]
@@ -95,21 +78,15 @@ impl WsClientConfig {
     }
 }
 
-// =============================================================================
-// HTTP Server Config
-// =============================================================================
-
 /// Configuration for HTTP server listeners.
 #[derive(Debug, Clone)]
 pub struct HttpServerConfig {
-    /// Bind address (e.g., "0.0.0.0").
+    /// Bind address.
     pub bind_addr: String,
     /// Listen port.
     pub port: u16,
-    /// HTTP path for the listener (e.g., "/webhook").
+    /// HTTP path for the listener.
     pub path: String,
-    /// Optional secret for webhook signature verification.
-    pub secret: Option<String>,
 }
 
 impl HttpServerConfig {
@@ -119,20 +96,9 @@ impl HttpServerConfig {
             bind_addr: bind_addr.into(),
             port,
             path: path.into(),
-            secret: None,
         }
     }
-
-    /// Sets the secret for webhook signature verification.
-    pub fn with_secret(mut self, secret: impl Into<String>) -> Self {
-        self.secret = Some(secret.into());
-        self
-    }
 }
-
-// =============================================================================
-// HTTP Client Config
-// =============================================================================
 
 /// Configuration for HTTP client connections.
 #[derive(Debug, Clone)]
@@ -167,10 +133,6 @@ impl HttpClientConfig {
         self
     }
 }
-
-// =============================================================================
-// SSE Client Config
-// =============================================================================
 
 /// Configuration for SSE (Server-Sent Events) client connections.
 #[derive(Debug, Clone)]

@@ -5,7 +5,10 @@
 
 use std::sync::Arc;
 
+use futures::future;
+use hmac::{Hmac, Mac};
 use serde_json::json;
+use sha1::Sha1;
 use tracing::{trace, warn};
 
 use crate::bot::OneBotBot;
@@ -13,8 +16,7 @@ use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
 use alloy_core::{
     Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    HttpClientConfig, HttpServerConfig, PostJsonFn, TransportContext, WsClientConfig,
-    WsServerConfig,
+    HttpClientConfig, HttpServerConfig, TransportContext, WsClientConfig, WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -75,104 +77,132 @@ impl Adapter for OneBotAdapter {
     async fn on_start(
         &self,
         transport: TransportContext,
-        connection_handler: Arc<dyn ConnectionHandler>,
+        handler: Arc<dyn ConnectionHandler>,
     ) -> AdapterResult<()> {
         if self.config.connections.is_empty() {
             warn!("No connections in OneBot adapter configuration");
             return Ok(());
         }
 
-        for conn_config in &self.config.connections {
-            match conn_config {
-                ConnectionConfig::WsServer(ws_config) => {
-                    if let Some(ws_server) = transport.ws_server() {
-                        let mut config =
-                            WsServerConfig::new(&ws_config.host, ws_config.port, &ws_config.path);
-                        if let Some(t) = &ws_config.access_token {
-                            config = config.with_token(t);
-                        }
-                        ws_server(config, connection_handler.clone(), Arc::new(resolve_bot_id))
-                            .await?;
-                    } else {
-                        warn!(
-                            "WebSocket server capability not available, skipping ws-server config"
-                        );
-                    }
-                }
-
-                ConnectionConfig::WsClient(ws_config) => {
-                    if let Some(ws_client) = transport.ws_client() {
-                        let mut config = WsClientConfig::new(&ws_config.url);
-                        if let Some(t) = ws_config.access_token.as_ref().filter(|t| !t.is_empty()) {
-                            config = config.with_token(t);
-                        }
-                        ws_client(config, connection_handler.clone(), Arc::new(resolve_bot_id))
-                            .await?;
-                    } else {
-                        warn!(
-                            "WebSocket client capability not available, skipping ws-client config"
-                        );
-                    }
-                }
-
-                ConnectionConfig::HttpServer(http_config) => {
-                    if let Some(http_server) = transport.http_server() {
-                        let mut config = HttpServerConfig::new(
-                            &http_config.host,
-                            http_config.port,
-                            &http_config.path,
-                        );
-                        if let Some(s) = &http_config.secret {
-                            config = config.with_secret(s);
-                        }
-                        http_server(config, connection_handler.clone(), Arc::new(resolve_bot_id))
-                            .await?;
-                    } else {
-                        warn!("HTTP server capability not available, skipping http-server config");
-                    }
-                }
-
-                ConnectionConfig::HttpClient(http_config) => {
-                    if let Some(http_client) = transport.http_client() {
-                        let mut client_config = HttpClientConfig::new(&http_config.api_url);
-                        if let Some(token) = http_config.access_token.as_ref() {
-                            client_config = client_config.with_token(token);
-                        }
-
-                        http_client(
-                            client_config,
-                            connection_handler.clone(),
-                            Arc::new(|post_json| Box::pin(get_client_bot_id(post_json))),
-                        )
-                        .await?;
-                    } else {
-                        warn!("HTTP client capability not available, skipping http-client config");
-                    }
-                }
-            }
-        }
+        future::join_all(
+            self.config
+                .connections
+                .iter()
+                .map(|config| setup_connection(config, &transport, &handler)),
+        )
+        .await;
 
         Ok(())
     }
 }
 
-fn resolve_bot_id(conn_info: ConnectionInfo) -> Option<String> {
-    conn_info.metadata.get("x-self-id").cloned()
+async fn setup_connection(
+    conn_config: &ConnectionConfig,
+    transport: &TransportContext,
+    handler: &Arc<dyn ConnectionHandler>,
+) {
+    macro_rules! try_start {
+        ($capability:ident, $config:expr, $resolve_fn:expr) => {
+            if let Some(cap_fn) = transport.$capability() {
+                if let Err(e) = cap_fn($config, handler.clone(), $resolve_fn).await {
+                    warn!(error = %e, capability = stringify!($capability), "Failed to start connection");
+                }
+            } else {
+                warn!(capability = stringify!($capability), "Capability not available");
+            }
+        }
+    }
+
+    match conn_config {
+        ConnectionConfig::WsServer(config) => try_start!(
+            ws_server,
+            WsServerConfig::new(&config.host, config.port, &config.path),
+            {
+                let access_token = config.access_token.clone();
+                Arc::new(move |conn_info| {
+                    if let Some(token) = &access_token
+                        && !conn_info.check_authorization(token)
+                    {
+                        return None;
+                    }
+                    resolve_bot_id(conn_info)
+                })
+            }
+        ),
+
+        ConnectionConfig::WsClient(config) => try_start!(
+            ws_client,
+            {
+                let mut client_config = WsClientConfig::new(&config.url);
+                if let Some(t) = config.access_token.as_ref().filter(|t| !t.is_empty()) {
+                    client_config = client_config.with_token(t);
+                }
+                client_config
+            },
+            config.bot_id.clone()
+        ),
+
+        ConnectionConfig::HttpServer(config) => try_start!(
+            http_server,
+            HttpServerConfig::new(&config.host, config.port, &config.path),
+            if let Some(secret) = &config.secret {
+                let Ok(mac) = Hmac::<Sha1>::new_from_slice(secret.as_bytes()) else {
+                    warn!("Failed to create HMAC instance for HTTP server authentication");
+                    return;
+                };
+
+                Arc::new(move |conn_info| {
+                    let signature = conn_info.headers.get("x-signature");
+                    let body = conn_info.body.as_deref().unwrap_or_default();
+
+                    if let Some(sig_bytes) =
+                        signature.and_then(|s| hex::decode(s.trim_start_matches("sha1=")).ok())
+                    {
+                        let mut mac_clone = mac.clone();
+                        mac_clone.update(body);
+                        if mac_clone.verify_slice(&sig_bytes).is_err() {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+
+                    resolve_bot_id(conn_info)
+                })
+            } else {
+                Arc::new(resolve_bot_id)
+            }
+        ),
+
+        ConnectionConfig::HttpClient(config) => try_start!(
+            http_client,
+            {
+                let mut client_config = HttpClientConfig::new(&config.api_url);
+                if let Some(token) = config.access_token.as_ref().filter(|t| !t.is_empty()) {
+                    client_config = client_config.with_token(token);
+                }
+                client_config
+            },
+            Arc::new(|post_json| Box::pin(async move {
+                let resp = post_json(
+                    "",
+                    json!({
+                        "action": "get_login_info",
+                        "params": {}
+                    }),
+                )
+                .await
+                .ok()?;
+
+                resp.get("data")?
+                    .get("user_id")?
+                    .as_i64()
+                    .map(|n| n.to_string())
+            }))
+        ),
+    }
 }
 
-async fn get_client_bot_id(post_json: PostJsonFn) -> Option<String> {
-    let resp = post_json(
-        "",
-        json!({
-            "action": "get_login_info",
-            "params": {}
-        }),
-    )
-    .await
-    .ok()?;
-
-    resp.get("data")?
-        .get("user_id")?
-        .as_i64()
-        .map(|n| n.to_string())
+fn resolve_bot_id(conn_info: ConnectionInfo) -> Option<String> {
+    conn_info.headers.get("x-self-id").cloned()
 }

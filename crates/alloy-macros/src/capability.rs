@@ -28,9 +28,9 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(
                 config: ::alloy_core::WsClientConfig,
                 handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
-                resolve_bot_id: ::alloy_core::ServerBotIdFn
+                bot_id: String
             ),
-            quote!(config, handler, resolve_bot_id),
+            quote!(config, handler, bot_id),
         ),
         "ws_server" => (
             quote!(::alloy_core::WS_LISTEN_REGISTRY),
