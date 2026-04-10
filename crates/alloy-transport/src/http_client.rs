@@ -7,14 +7,14 @@ use reqwest::ClientBuilder;
 use url::Url;
 
 use alloy_core::{
-    ClientBotIdFn, ConnectionHandler, HttpClientConfig, PostJsonFn, Sender, TransportError,
+    ClientBotIdFn, ConnectionHandler, HttpClientConfig, HttpRequestFn, Sender, TransportError,
     TransportResult,
 };
 use alloy_macros::register_capability;
 
 /// Registers an HTTP outbound API-client bot.
 ///
-/// Builds a shared `reqwest` client, constructs a type-erased [`PostJsonFn`]
+/// Builds a shared `reqwest` client, constructs a type-erased [`HttpRequestFn`]
 /// closure, and registers the bot via [`ConnectionHandler::register_connection`].
 ///
 /// This function is registered as the `HttpStartClientFn` capability.
@@ -35,13 +35,13 @@ pub async fn http_start_client(
     let base_url =
         Url::parse(&config.base_url).map_err(|e| TransportError::Serialization(e.to_string()))?;
 
-    let post_json: PostJsonFn = Arc::new(move |endpoint: &str, body| {
+    let http_request: HttpRequestFn = Arc::new(move |method, endpoint, body| {
         let client = client.clone();
         let url = base_url.join(endpoint);
         let token = config.access_token.clone();
         async move {
             let url = url.map_err(|e| TransportError::Serialization(e.to_string()))?;
-            let mut req = client.post(url).json(&body);
+            let mut req = client.request(method, url).body(body);
             if let Some(t) = &token {
                 req = req.bearer_auth(t);
             }
@@ -58,21 +58,21 @@ pub async fn http_start_client(
                     text
                 )));
             }
-            resp.json()
+            resp.bytes()
                 .await
-                .map_err(|e| TransportError::Serialization(e.to_string()))
+                .map_err(|e| TransportError::Io(e.to_string()))
         }
         .boxed()
     });
 
-    let Some(bot_id) = resolve_bot_id(post_json.clone()).await else {
+    let Some(bot_id) = resolve_bot_id(http_request.clone()).await else {
         return Err(TransportError::ConnectionFailed {
             url: config.base_url.clone(),
-            reason: "Failed to resolve bot ID from HTTP client post_json callback".to_string(),
+            reason: "Failed to resolve bot ID from HTTP client http_request callback".to_string(),
         });
     };
 
-    handler.register_connection(&bot_id, Some(Sender::HttpClient { post_json }));
+    handler.register_connection(&bot_id, Some(Sender::HttpClient { http_request }));
 
     Ok(bot_id)
 }

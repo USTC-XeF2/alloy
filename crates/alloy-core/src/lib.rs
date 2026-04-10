@@ -42,6 +42,9 @@ pub mod transport;
 // dependency when using `register_capability`.
 pub use linkme;
 
+pub use bytes::Bytes;
+pub use http::Method as HttpMethod;
+
 // Re-export core types for public API
 pub use adapter::Adapter;
 pub use bot::{Bot, BoxedBot};
@@ -54,9 +57,7 @@ pub use message::{
     Message, ReceiveMessageSegment, RichText, RichTextSegment, SendMessageSegment, Sendable,
 };
 pub use transport::{
-    ClientBotIdFn, ConnectionHandle, ConnectionHandler, ConnectionInfo, HTTP_LISTEN_REGISTRY,
-    HTTP_START_CLIENT_REGISTRY, HttpClientConfig, HttpListenFn, HttpServerConfig,
-    HttpStartClientFn, ListenerHandle, PostJsonFn, SSE_CLIENT_REGISTRY, Sender, ServerBotIdFn,
-    SseClientConfig, SseClientFn, TransportContext, WS_CONNECT_REGISTRY, WS_LISTEN_REGISTRY,
-    WsClientConfig, WsConnectFn, WsListenFn, WsServerConfig,
+    ClientBotIdFn, ConnectionHandle, ConnectionHandler, ConnectionInfo, HttpClientConfig,
+    HttpRequestFn, HttpServerConfig, ListenerHandle, Sender, ServerBotIdFn, SseClientConfig,
+    TransportContext, WsClientConfig, WsServerConfig,
 };

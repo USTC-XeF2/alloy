@@ -49,7 +49,8 @@ use crate::model::api::{
 use crate::model::message::OneBotMessage;
 use crate::model::types::Status;
 use alloy_core::{
-    ApiError, ApiResult, Bot, ConnectionHandle, PostJsonFn, Scene, Sendable, Sender, impl_api,
+    ApiError, ApiResult, Bot, Bytes, ConnectionHandle, HttpMethod, HttpRequestFn, Scene, Sendable,
+    Sender, impl_api,
 };
 
 // =============================================================================
@@ -59,13 +60,13 @@ use alloy_core::{
 enum ApiCallStrategy {
     /// WebSocket caller with echo-based async routing
     Ws {
-        message_tx: mpsc::Sender<Vec<u8>>,
+        message_tx: mpsc::Sender<Bytes>,
         pending_calls: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
         echo_counter: AtomicU64,
         api_timeout: Duration,
     },
-    /// HTTP client caller with POST function
-    HttpClient { post_json: PostJsonFn },
+    /// HTTP client caller with direct request/response
+    HttpClient { http_request: HttpRequestFn },
     /// Disabled caller for receive-only connections
     Disabled,
 }
@@ -74,8 +75,8 @@ impl ApiCallStrategy {
     /// Creates a new strategy from a connection handle.
     fn new(connection: &ConnectionHandle) -> Self {
         match connection.sender() {
-            Some(Sender::HttpClient { post_json }) => Self::HttpClient {
-                post_json: post_json.clone(),
+            Some(Sender::HttpClient { http_request }) => Self::HttpClient {
+                http_request: http_request.clone(),
             },
             Some(Sender::Ws { message_tx }) => Self::Ws {
                 message_tx: message_tx.clone(),
@@ -113,7 +114,7 @@ impl ApiCallStrategy {
                 debug!(action = %action, echo = %echo, "Calling OneBot API via WebSocket");
 
                 let request_bytes = serde_json::to_vec(&request)?;
-                if let Err(e) = message_tx.send(request_bytes).await {
+                if let Err(e) = message_tx.send(request_bytes.into()).await {
                     // Remove the pending entry so it doesn't dangle.
                     pending_calls.lock().remove(&echo);
                     return Err(ApiError::Other(format!("WebSocket send failed: {e}")));
@@ -129,17 +130,17 @@ impl ApiCallStrategy {
                     }
                 }
             }
-            Self::HttpClient { post_json } => {
-                let body = json!({
+            Self::HttpClient { http_request } => {
+                let body = serde_json::to_vec(&json!({
                     "action": action,
                     "params": params,
-                });
+                }))?;
 
                 debug!(action = %action, "Calling OneBot API via HTTP");
 
-                let response_json = (post_json)("", body).await?;
+                let resp = (http_request)(HttpMethod::POST, "", body.into()).await?;
 
-                Ok(response_json)
+                Ok(serde_json::from_slice(&resp)?)
             }
             Self::Disabled => Err(ApiError::NotSupported),
         }

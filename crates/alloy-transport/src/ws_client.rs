@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
@@ -53,8 +54,7 @@ impl ClientLoopState {
     }
 
     /// Handles incoming message and resets retry counters on success.
-    async fn handle_message_received(&mut self, message_type: &str, data: &[u8]) {
-        trace!(bot_id = %self.bot_id, len = data.len(), message_type = message_type, "Received");
+    async fn handle_message_received(&mut self, data: &[u8]) {
         self.handler.on_message(&self.bot_id, data).await;
         self.retry_count = 0;
         self.current_delay = Duration::from_secs(1);
@@ -121,11 +121,11 @@ impl ClientLoopState {
     async fn handle_message(&mut self, msg: Option<Result<Message, Error>>) -> bool {
         match msg {
             Some(Ok(Message::Text(text))) => {
-                self.handle_message_received("text", text.as_bytes()).await;
+                self.handle_message_received(text.as_bytes()).await;
                 true
             }
             Some(Ok(Message::Binary(data))) => {
-                self.handle_message_received("binary", &data).await;
+                self.handle_message_received(&data).await;
                 true
             }
             Some(Ok(Message::Ping(_))) => {
@@ -165,7 +165,7 @@ pub async fn ws_connect(
     bot_id: String,
 ) -> TransportResult<String> {
     // Create channels
-    let (message_tx, mut message_rx) = mpsc::channel::<Vec<u8>>(256);
+    let (message_tx, mut message_rx) = mpsc::channel::<Bytes>(256);
 
     let (ws_stream, _response) =
         connect_async(&config.url)
@@ -178,12 +178,7 @@ pub async fn ws_connect(
     info!(bot_id = %bot_id, url = %config.url, "WebSocket client connected");
 
     // Register the bot with its send capability; get back the shutdown token.
-    let shutdown_token = handler.register_connection(
-        &bot_id,
-        Some(Sender::Ws {
-            message_tx: message_tx.clone(),
-        }),
-    );
+    let shutdown_token = handler.register_connection(&bot_id, Some(Sender::Ws { message_tx }));
 
     let mut state = ClientLoopState::new(handler, bot_id.clone(), config, ws_stream);
 
@@ -201,7 +196,7 @@ pub async fn ws_connect(
 
                 // Receive messages to send
                 Some(data) = message_rx.recv() => {
-                    let msg = Message::Text(String::from_utf8_lossy(&data).to_string().into());
+                    let msg = Message::Binary(data);
                     if let Err(e) = state.ws_tx.send(msg).await {
                         warn!(bot_id = %state.bot_id, error = %e, "Failed to send message");
                     }

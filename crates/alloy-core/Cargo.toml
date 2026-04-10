@@ -9,9 +9,11 @@ license = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true }
+bytes = { workspace = true }
 derive_more = { workspace = true, features = ["as_ref", "deref", "deref_mut", "from", "into", "into_iterator"] }
 downcast-rs = "2.0.2"
 futures = { workspace = true }
+http = "1.4.0"
 linkme = "0.3.35"
 parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

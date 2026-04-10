@@ -1,25 +1,24 @@
 //! Connection handling and lifecycle types.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use futures::future::BoxFuture;
-use serde_json::Value;
+use http::header::{AUTHORIZATION, AsHeaderName};
+use http::{HeaderMap, Method};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::TransportResult;
 
-/// Type-erased async function that performs an HTTP POST and returns JSON.
+/// Type-erased async function that performs an HTTP request and returns raw bytes.
 ///
-/// Type-erased async POST function for making JSON API calls.
-///
-/// The base URL and authentication (e.g. Bearer token) are captured when the
-/// closure is constructed by the transport layer. Callers supply the endpoint
-/// (relative path) and request body.
-pub type PostJsonFn =
-    Arc<dyn Fn(&str, Value) -> BoxFuture<'static, TransportResult<Value>> + Send + Sync>;
+/// The full URL and authentication (e.g. Bearer token) are captured when the
+/// closure is constructed by the transport layer. Callers supply the HTTP method,
+/// endpoint (relative path), and request body.
+pub type HttpRequestFn =
+    Arc<dyn Fn(Method, &str, Bytes) -> BoxFuture<'static, TransportResult<Bytes>> + Send + Sync>;
 
 /// Information about a connection.
 #[derive(Debug, Clone)]
@@ -27,32 +26,36 @@ pub struct ConnectionInfo {
     /// Remote address.
     pub remote_addr: SocketAddr,
     /// Headers.
-    pub headers: HashMap<String, String>,
+    pub headers: HeaderMap,
     /// Request body.
-    pub body: Option<Vec<u8>>,
+    pub body: Option<Bytes>,
 }
 
 impl ConnectionInfo {
     pub fn new(remote_addr: SocketAddr) -> Self {
         Self {
             remote_addr,
-            headers: HashMap::new(),
+            headers: HeaderMap::new(),
             body: None,
         }
     }
 
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+    pub fn with_headers(mut self, headers: HeaderMap) -> Self {
         self.headers = headers;
         self
     }
 
-    pub fn with_body(mut self, body: Vec<u8>) -> Self {
+    pub fn with_body(mut self, body: Bytes) -> Self {
         self.body = Some(body);
         self
     }
 
+    pub fn get_header(&self, name: impl AsHeaderName) -> Option<&str> {
+        self.headers.get(name).and_then(|h| h.to_str().ok())
+    }
+
     pub fn check_authorization(&self, expected_token: &str) -> bool {
-        if let Some(auth_header) = self.headers.get("authorization")
+        if let Some(auth_header) = self.get_header(AUTHORIZATION)
             && let Some(token) = auth_header.to_lowercase().strip_prefix("bearer ")
         {
             token == expected_token
@@ -107,16 +110,15 @@ pub enum Sender {
     /// WebSocket connection (outbound dial or inbound accept — identical after handshake).
     Ws {
         /// Channel to the WS write loop; send serialised frames here.
-        message_tx: mpsc::Sender<Vec<u8>>,
+        message_tx: mpsc::Sender<Bytes>,
     },
     /// HTTP outbound API client.
     ///
-    /// All connection parameters (URL, auth) are baked into `post_json` at
-    /// construction time.  The adapter only needs to call `post_json(body)`.
+    /// All connection parameters (URL, auth) are baked into `http_request` at
+    /// construction time.  The adapter only needs to call `http_request(method, endpoint, body)`.
     HttpClient {
-        /// Type-erased async POST function provided by the transport layer.
-        /// URL and authentication are captured inside the closure.
-        post_json: PostJsonFn,
+        /// Type-erased async HTTP request function.
+        http_request: HttpRequestFn,
     },
 }
 

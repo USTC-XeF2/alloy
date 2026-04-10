@@ -326,8 +326,8 @@ async fn handle_http_request(
     // Resolve which bot this request belongs to.
     let Some(bot_id) = resolve_bot_id(
         ConnectionInfo::new(addr)
-            .with_headers(header_to_map(&headers))
-            .with_body(body.to_vec()),
+            .with_headers(headers)
+            .with_body(body.clone()),
     ) else {
         warn!(
             remote_addr = %addr,
@@ -407,9 +407,7 @@ async fn handle_ws_connection(
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     // Resolve which bot this connection belongs to.
-    let Some(bot_id) =
-        resolve_bot_id(ConnectionInfo::new(addr).with_headers(header_to_map(&headers)))
-    else {
+    let Some(bot_id) = resolve_bot_id(ConnectionInfo::new(addr).with_headers(headers)) else {
         warn!(
             remote_addr = %addr,
             "Failed to extract bot ID from WebSocket connection metadata, closing connection",
@@ -421,7 +419,7 @@ async fn handle_ws_connection(
     info!(bot_id = %bot_id, remote_addr = %addr, "WebSocket connection established");
 
     // Per-connection outgoing channel: adapter writes here → forwarded to ws_tx.
-    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
+    let (tx, mut rx) = mpsc::channel::<Bytes>(256);
 
     // Register the bot (or update its sender to Ws if it was previously receive-only).
     // The returned token drives graceful shutdown for this connection.
@@ -436,8 +434,7 @@ async fn handle_ws_connection(
     let bot_id_send = bot_id.clone();
     let send_task = tokio::spawn(async move {
         while let Some(data) = rx.recv().await {
-            let text = String::from_utf8_lossy(&data).to_string();
-            if ws_tx.send(Message::Text(text.into())).await.is_err() {
+            if ws_tx.send(Message::Binary(data)).await.is_err() {
                 warn!(bot_id = %bot_id_send, "Failed to send message, connection closed");
                 break;
             }
@@ -485,16 +482,4 @@ async fn handle_ws_connection(
     // ── Cleanup ───────────────────────────────────────────────────────────────
     send_task.abort();
     handler.on_disconnect(&bot_id).await;
-}
-
-fn header_to_map(headers: &HeaderMap) -> HashMap<String, String> {
-    headers
-        .iter()
-        .filter_map(|(name, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|v| (name.as_str().to_lowercase(), v.to_string()))
-        })
-        .collect()
 }

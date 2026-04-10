@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use futures::future;
 use hmac::{Hmac, Mac};
-use serde_json::json;
 use sha1::Sha1;
 use tracing::{trace, warn};
 
@@ -16,7 +15,8 @@ use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
 use alloy_core::{
     Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandle, ConnectionHandler, ConnectionInfo,
-    HttpClientConfig, HttpServerConfig, TransportContext, WsClientConfig, WsServerConfig,
+    HttpClientConfig, HttpMethod, HttpServerConfig, TransportContext, WsClientConfig,
+    WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -46,17 +46,8 @@ impl Adapter for OneBotAdapter {
     async fn on_message(&self, bot: &Self::Bot, data: &[u8]) -> Option<BoxedEvent> {
         let bot_id = bot.id();
 
-        // Parse the message as JSON first
-        let raw = match str::from_utf8(data) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(bot_id = %bot_id, error = %e, "Invalid UTF-8 in message");
-                return None;
-            }
-        };
-
         // Try to parse as JSON to check if it's an API response
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw)
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(data)
             && value.get("echo").is_some()
         {
             bot.handle_response(&value);
@@ -65,10 +56,10 @@ impl Adapter for OneBotAdapter {
         }
 
         // Parse as event
-        match serde_json::from_str::<OneBotEvent>(raw) {
+        match serde_json::from_slice::<OneBotEvent>(data) {
             Ok(e) => Some(Arc::new(e)),
             Err(e) => {
-                warn!(bot_id = %bot_id, error = %e, raw_data = %raw, "Failed to parse event raw data");
+                warn!(bot_id = %bot_id, error = %e, "Failed to parse event raw data");
                 None
             }
         }
@@ -152,7 +143,7 @@ async fn setup_connection(
                 };
 
                 Arc::new(move |conn_info| {
-                    let signature = conn_info.headers.get("x-signature");
+                    let signature = conn_info.get_header("x-signature");
                     let body = conn_info.body.as_deref().unwrap_or_default();
 
                     if let Some(sig_bytes) =
@@ -183,18 +174,18 @@ async fn setup_connection(
                 }
                 client_config
             },
-            Arc::new(|post_json| Box::pin(async move {
-                let resp = post_json(
+            Arc::new(|request| Box::pin(async move {
+                let resp = request(
+                    HttpMethod::POST,
                     "",
-                    json!({
-                        "action": "get_login_info",
-                        "params": {}
-                    }),
+                    r#"{"action": "get_login_info"}"#.into(),
                 )
                 .await
                 .ok()?;
 
-                resp.get("data")?
+                serde_json::from_slice::<serde_json::Value>(&resp)
+                    .ok()?
+                    .get("data")?
                     .get("user_id")?
                     .as_i64()
                     .map(|n| n.to_string())
@@ -204,5 +195,5 @@ async fn setup_connection(
 }
 
 fn resolve_bot_id(conn_info: ConnectionInfo) -> Option<String> {
-    conn_info.headers.get("x-self-id").cloned()
+    conn_info.get_header("x-self-id").map(|s| s.to_string())
 }

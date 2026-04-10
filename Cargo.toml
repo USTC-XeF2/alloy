@@ -27,6 +27,7 @@ alloy-runtime = { path = "crates/alloy-runtime" }
 alloy-transport = { path = "crates/alloy-transport" }
 
 async-trait = "0.1.89"
+bytes = "1.11.1"
 derive_more = "2.1.1"
 futures = "0.3.32"
 parking_lot = "0.12.5"

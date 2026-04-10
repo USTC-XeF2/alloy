@@ -26,7 +26,7 @@ use tracing::warn;
 use super::config::{
     HttpClientConfig, HttpServerConfig, SseClientConfig, WsClientConfig, WsServerConfig,
 };
-use super::connection::{ConnectionInfo, ListenerHandle, PostJsonFn, Sender};
+use super::connection::{ConnectionInfo, HttpRequestFn, ListenerHandle, Sender};
 use crate::error::TransportResult;
 
 // =============================================================================
@@ -77,7 +77,7 @@ pub type ServerBotIdFn = Arc<dyn Fn(ConnectionInfo) -> Option<String> + Send + S
 
 /// Asynchronous bot-id resolver used by client transports.
 pub type ClientBotIdFn =
-    Arc<dyn Fn(PostJsonFn) -> BoxFuture<'static, Option<String>> + Send + Sync>;
+    Arc<dyn Fn(HttpRequestFn) -> BoxFuture<'static, Option<String>> + Send + Sync>;
 
 /// Function pointer that starts a WebSocket server listener.
 ///
