@@ -14,7 +14,7 @@ default = []
 http-client = ["dep:reqwest", "dep:url"]
 http-server = ["dep:axum"]
 sse-client = ["dep:eventsource-client", "dep:launchdarkly-sdk-transport"]
-ws-client = ["dep:bytes", "dep:tokio-tungstenite"]
+ws-client = ["dep:backon", "dep:bytes", "dep:tokio-tungstenite"]
 ws-server = ["dep:axum", "axum/ws"]
 
 # Convenience feature groups
@@ -29,6 +29,7 @@ tokio = { workspace = true, features = ["macros", "time"] }
 tracing = { workspace = true }
 
 axum = { version = "0.8.8", optional = true }
+backon = { version = "1.6.0", default-features = false, features = ["std", "tokio-sleep"], optional = true }
 bytes = { workspace = true, optional = true }
 eventsource-client = { version = "0.17.1", optional = true }
 launchdarkly-sdk-transport = { version = "0.1.1", optional = true }
