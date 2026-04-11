@@ -438,7 +438,7 @@ async fn handle_ws_connection(
     loop {
         tokio::select! {
             // Graceful shutdown: bridge/adapter dropped the receiver.
-            _ = shutdown_token.closed() => {
+            () = shutdown_token.closed() => {
                 info!(bot_id = %bot_id_recv, "WebSocket connection shutting down");
                 break;
             }

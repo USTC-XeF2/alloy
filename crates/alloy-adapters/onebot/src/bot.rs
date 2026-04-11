@@ -134,13 +134,12 @@ impl ApiCallStrategy {
                 }
 
                 // Await the response with a timeout.
-                match timeout(*api_timeout, rx).await {
-                    Ok(Ok(data)) => Ok(serde_json::from_slice(&data)?),
-                    _ => {
-                        // Timed out — remove the pending entry.
-                        pending_calls.lock().remove(&echo);
-                        Err(ApiError::Timeout)
-                    }
+                if let Ok(Ok(data)) = timeout(*api_timeout, rx).await {
+                    Ok(serde_json::from_slice(&data)?)
+                } else {
+                    // Timed out — remove the pending entry.
+                    pending_calls.lock().remove(&echo);
+                    Err(ApiError::Timeout)
                 }
             }
             Self::HttpClient { http_request } => {
@@ -166,10 +165,9 @@ impl ApiCallStrategy {
             let mut pending = pending_calls.lock();
             if let Some(tx) = pending.remove(&echo) {
                 return tx.send(data);
-            } else {
-                // Echo arrived but no waiter — was probably already timed out.
-                warn!(echo = %echo, "Received WS API response for unknown echo (timed out?)");
             }
+            // Echo arrived but no waiter — was probably already timed out.
+            warn!(echo = %echo, "Received WS API response for unknown echo (timed out?)");
         }
 
         Err(data)

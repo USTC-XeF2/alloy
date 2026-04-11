@@ -1,6 +1,4 @@
 use std::any::TypeId;
-use std::borrow::Cow;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -40,7 +38,7 @@ impl PluginLoadContext {
     {
         self.command.help_provider.lock().insert(
             self.plugin.name().to_string(),
-            Arc::new((provider, PhantomData)),
+            Arc::new((provider, std::marker::PhantomData)),
         );
     }
 }
@@ -183,7 +181,7 @@ type BoxedHandlerService = BoxCloneSyncService<HandlerContext, (), BoxError>;
 /// for state that changes across events.
 #[derive(Debug)]
 pub struct Plugin {
-    name: Cow<'static, str>,
+    name: &'static str,
     /// All dependencies declared in `depends_on: [...]`, with `required` flag indicating
     /// whether each is mandatory (`true` for marked with `!`) or optional (`false`).
     depends_on: Vec<DependsOnEntry>,
@@ -211,8 +209,8 @@ pub struct Plugin {
 
 impl Plugin {
     /// Returns the plugin's display name.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> &'static str {
+        self.name
     }
 
     /// Returns the plugin's metadata.
@@ -294,7 +292,7 @@ impl Plugin {
         metadata: PluginMetadata,
     ) -> Self {
         Plugin {
-            name: Cow::Borrowed(name),
+            name,
             depends_on,
             handlers,
             service_entries,

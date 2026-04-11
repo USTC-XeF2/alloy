@@ -194,5 +194,5 @@ async fn setup_connection(
 }
 
 fn resolve_bot_id(conn_info: ConnectionInfo) -> Option<String> {
-    conn_info.get_header("x-self-id").map(|s| s.to_string())
+    conn_info.get_header("x-self-id").map(ToString::to_string)
 }

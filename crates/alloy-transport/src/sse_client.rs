@@ -38,7 +38,7 @@ async fn run_sse_loop(
     // ── Event loop ──────────────────────────────────────────────────────────
     loop {
         tokio::select! {
-            _ = shutdown_tx.closed() => {
+            () = shutdown_tx.closed() => {
                 info!(bot_id = %bot_id, "SSE client shutting down");
                 break;
             }
@@ -63,8 +63,6 @@ async fn run_sse_loop(
                                 break;
                             }
                         }
-
-                        continue;
                     }
                     Some(Ok(sse)) => {
                         if let SSE::Event(ev) = sse {

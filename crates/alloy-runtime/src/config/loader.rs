@@ -101,7 +101,7 @@ impl std::fmt::Display for Profile {
         match self {
             Self::Development => write!(f, "development"),
             Self::Production => write!(f, "production"),
-            Self::Custom(name) => write!(f, "{}", name),
+            Self::Custom(name) => write!(f, "{name}"),
         }
     }
 }
@@ -217,11 +217,11 @@ impl ConfigLoader {
             if path.exists() {
                 info!(path = %path.display(), "Loading configuration file");
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                figment = match ext {
+                match ext {
                     #[cfg(feature = "toml-config")]
-                    "toml" => figment.merge(Toml::file(path)),
+                    "toml" => figment = figment.merge(Toml::file(path)),
                     #[cfg(feature = "yaml-config")]
-                    "yaml" | "yml" => figment.merge(Yaml::file(path)),
+                    "yaml" | "yml" => figment = figment.merge(Yaml::file(path)),
                     _ => {
                         return Err(ConfigError::ParseError(format!(
                             "Unsupported or disabled configuration file format: .{ext}"

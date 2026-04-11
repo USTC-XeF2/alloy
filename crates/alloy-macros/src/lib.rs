@@ -1,4 +1,5 @@
 //! Procedural macros for the Alloy bot framework.
+#![allow(clippy::too_many_lines)]
 
 mod api;
 mod capability;

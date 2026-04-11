@@ -79,7 +79,7 @@ pub async fn ws_connect(
                 loop {
                     tokio::select! {
                         // Check for shutdown
-                        _ = shutdown_tx.closed() => {
+                        () = shutdown_tx.closed() => {
                             info!(bot_id = %bot_id_cloned, "WebSocket client shutting down");
                             let _ = ws_tx.close().await;
                             break 'connection_loop;
@@ -109,7 +109,7 @@ pub async fn ws_connect(
                                 Some(Ok(Message::Pong(_))) => {
                                     trace!(bot_id = %bot_id_cloned, "Received pong");
                                 }
-                                Some(Ok(Message::Close(_))) | Some(Ok(Message::Frame(_))) => {
+                                Some(Ok(Message::Close(_) | Message::Frame(_))) => {
                                     info!(bot_id = %bot_id_cloned, "Server closed connection");
                                     break;
                                 }
