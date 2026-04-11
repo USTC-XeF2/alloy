@@ -46,6 +46,8 @@ pub enum RichTextSegment {
     At(String),
     /// A segment representing an @all mention.
     AtAll,
+    /// A segment representing a quote reply. The string is the quoted message ID.
+    Reply(String),
 }
 
 // ============================================================================
@@ -91,6 +93,7 @@ impl ReceiveMessageSegment for RichTextSegment {
             RichTextSegment::Image(_) => "image",
             RichTextSegment::At(_) => "at",
             RichTextSegment::AtAll => "at_all",
+            RichTextSegment::Reply(_) => "reply",
         }
     }
 
@@ -125,6 +128,7 @@ impl Display for RichTextSegment {
             RichTextSegment::Image(r) => write!(f, "[Image: {r}]"),
             RichTextSegment::At(id) => write!(f, "@{id}"),
             RichTextSegment::AtAll => write!(f, "@all"),
+            RichTextSegment::Reply(id) => write!(f, "[Reply to {id}]"),
         }
     }
 }
@@ -250,19 +254,24 @@ impl<S> FromIterator<S> for Message<S> {
 pub type RichText = Message<RichTextSegment>;
 
 impl RichText {
-    /// Adds a text segment.
     pub fn text(self, text: impl Into<String>) -> Self {
         self.with(RichTextSegment::Text(text.into()))
     }
 
-    /// Adds an at-mention segment.
+    pub fn image(self, reference: impl Into<String>) -> Self {
+        self.with(RichTextSegment::Image(reference.into()))
+    }
+
     pub fn at(self, id: impl Into<String>) -> Self {
         self.with(RichTextSegment::At(id.into()))
     }
 
-    /// Adds an image segment.
-    pub fn image(self, reference: impl Into<String>) -> Self {
-        self.with(RichTextSegment::Image(reference.into()))
+    pub fn at_all(self) -> Self {
+        self.with(RichTextSegment::AtAll)
+    }
+
+    pub fn reply(self, message_id: impl Into<String>) -> Self {
+        self.with(RichTextSegment::Reply(message_id.into()))
     }
 }
 

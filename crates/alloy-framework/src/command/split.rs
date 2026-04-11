@@ -96,6 +96,7 @@ pub fn rich_text_shell_split(segments: &[RichTextSegment]) -> (Vec<String>, Hand
                 registry.ats.insert(placeholder.clone(), id);
                 args.push(placeholder);
             }
+            RichTextSegment::Reply(_) => {}
         }
     }
 

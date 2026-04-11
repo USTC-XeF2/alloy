@@ -133,6 +133,7 @@ impl ReceiveMessageSegment for Segment {
             } else {
                 RichTextSegment::At(data.qq.clone())
             }),
+            Segment::Reply(data) => Some(RichTextSegment::Reply(data.id.clone())),
             _ => None,
         }
     }
@@ -149,6 +150,7 @@ impl SendMessageSegment for Segment {
             RichTextSegment::Image(r) => Some(Segment::image(r)),
             RichTextSegment::At(id) => Some(Segment::At(AtData { qq: id.clone() })),
             RichTextSegment::AtAll => Some(Segment::at_all()),
+            RichTextSegment::Reply(id) => Some(Segment::reply(id)),
         }
     }
 }
