@@ -1,7 +1,9 @@
 [package]
 name = "alloy-adapter-onebot"
 version = { workspace = true }
+description = "OneBot adapter for the Alloy bot framework"
 edition = { workspace = true }
+rust-version = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }

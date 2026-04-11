@@ -3,6 +3,7 @@ name = "alloy-framework"
 version = { workspace = true }
 description = "High-level framework components for the Alloy bot framework"
 edition = { workspace = true }
+rust-version = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }

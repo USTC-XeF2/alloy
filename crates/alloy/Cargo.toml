@@ -3,6 +3,7 @@ name = "alloy"
 version = { workspace = true }
 description = "A high-performance, highly decoupled, and type-safe bot framework for Rust"
 edition = { workspace = true }
+rust-version = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }

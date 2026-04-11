@@ -3,8 +3,9 @@ name = "alloy-plugin-storage"
 version = "0.1.0"
 edition = "2024"
 authors = ["XeF2 <contact@xef2.top>"]
-license = "MPL-2.0"
+license = "MIT"
 description = "A file-storage plugin for the Alloy bot framework"
+publish = false
 
 [dependencies]
 alloy = { path = "../../crates/alloy", default-features = false }
