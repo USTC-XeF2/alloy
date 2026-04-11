@@ -44,10 +44,9 @@ use tokio::time::timeout;
 use tracing::{debug, warn};
 
 use crate::model::message::OneBotMessage;
-use alloy_core::{
-    ApiError, ApiExecutor, ApiPayload, ApiResult, Bot, Bytes, HttpMethod, HttpRequestFn, Scene,
-    Sendable, Sender,
-};
+use alloy_core::error::{ApiError, ApiResult};
+use alloy_core::transport::{HttpRequestFn, Sender};
+use alloy_core::{ApiExecutor, ApiPayload, Bot, Bytes, HttpMethod, Scene, Sendable};
 
 #[derive(Debug, Deserialize)]
 struct WsApiResponse {

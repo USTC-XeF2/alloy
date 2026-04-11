@@ -38,9 +38,8 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
-use alloy_core::{
-    ConnectionHandler, ConnectionInfo, ListenerHandle, ServerBotIdFn, TransportResult,
-};
+use alloy_core::error::TransportResult;
+use alloy_core::transport::{ConnectionHandler, ConnectionInfo, ListenerHandle, ServerBotIdFn};
 use alloy_macros::register_capability;
 
 #[cfg(feature = "http-server")]
@@ -272,7 +271,7 @@ async fn ws_dispatch(
 #[cfg(feature = "http-server")]
 #[register_capability(http_server)]
 pub async fn http_listen(
-    config: alloy_core::HttpServerConfig,
+    config: alloy_core::transport::HttpServerConfig,
     handler: Arc<dyn ConnectionHandler>,
     resolve_bot_id: ServerBotIdFn,
 ) -> TransportResult<()> {
@@ -352,7 +351,7 @@ async fn handle_http_request(
 #[cfg(feature = "ws-server")]
 #[register_capability(ws_server)]
 pub async fn ws_listen(
-    config: alloy_core::WsServerConfig,
+    config: alloy_core::transport::WsServerConfig,
     handler: Arc<dyn ConnectionHandler>,
     resolve_bot_id: ServerBotIdFn,
 ) -> TransportResult<()> {
@@ -418,7 +417,7 @@ async fn handle_ws_connection(
     // The returned token drives graceful shutdown for this connection.
     let shutdown_token = handler.register_connection(
         &bot_id,
-        Some(alloy_core::Sender::Ws {
+        Some(alloy_core::transport::Sender::Ws {
             message_tx: tx.clone(),
         }),
     );

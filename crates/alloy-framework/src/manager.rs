@@ -45,7 +45,8 @@ use tracing::{error, info, warn};
 use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
 use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
-use alloy_core::{BoxedBot, BoxedEvent, Dispatcher};
+use alloy_core::bridge::Dispatcher;
+use alloy_core::{BoxedBot, BoxedEvent};
 
 // =============================================================================
 // Topological sort utility

@@ -95,7 +95,7 @@ pub mod prelude {
     };
 
     // Bot types - for interacting with bots in handlers
-    pub use alloy_core::{Bot as __Bot, BoxedBot};
+    pub use alloy_core::{ApiExecutor, ApiPayload, Bot as __Bot, BoxedBot};
 
     // Core traits for custom implementations
     pub use alloy_core::{

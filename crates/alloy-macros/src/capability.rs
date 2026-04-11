@@ -26,8 +26,8 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::transport::capability::WS_CONNECT_REGISTRY),
             quote!(::alloy_core::transport::capability::WsConnectFn),
             quote!(
-                config: ::alloy_core::WsClientConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                config: ::alloy_core::transport::WsClientConfig,
+                handler: ::std::sync::Arc<dyn ::alloy_core::transport::ConnectionHandler>,
                 bot_id: String
             ),
             quote!(config, handler, bot_id),
@@ -36,9 +36,9 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::transport::capability::WS_LISTEN_REGISTRY),
             quote!(::alloy_core::transport::capability::WsListenFn),
             quote!(
-                config: ::alloy_core::WsServerConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
-                resolve_bot_id: ::alloy_core::ServerBotIdFn
+                config: ::alloy_core::transport::WsServerConfig,
+                handler: ::std::sync::Arc<dyn ::alloy_core::transport::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::transport::ServerBotIdFn
             ),
             quote!(config, handler, resolve_bot_id),
         ),
@@ -46,9 +46,9 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::transport::capability::HTTP_START_CLIENT_REGISTRY),
             quote!(::alloy_core::transport::capability::HttpStartClientFn),
             quote!(
-                config: ::alloy_core::HttpClientConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
-                resolve_bot_id: ::alloy_core::ClientBotIdFn
+                config: ::alloy_core::transport::HttpClientConfig,
+                handler: ::std::sync::Arc<dyn ::alloy_core::transport::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::transport::ClientBotIdFn
             ),
             quote!(config, handler, resolve_bot_id),
         ),
@@ -56,9 +56,9 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::transport::capability::HTTP_LISTEN_REGISTRY),
             quote!(::alloy_core::transport::capability::HttpListenFn),
             quote!(
-                config: ::alloy_core::HttpServerConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
-                resolve_bot_id: ::alloy_core::ServerBotIdFn
+                config: ::alloy_core::transport::HttpServerConfig,
+                handler: ::std::sync::Arc<dyn ::alloy_core::transport::ConnectionHandler>,
+                resolve_bot_id: ::alloy_core::transport::ServerBotIdFn
             ),
             quote!(config, handler, resolve_bot_id),
         ),
@@ -66,8 +66,8 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
             quote!(::alloy_core::transport::capability::SSE_CLIENT_REGISTRY),
             quote!(::alloy_core::transport::capability::SseClientFn),
             quote!(
-                config: ::alloy_core::SseClientConfig,
-                handler: ::std::sync::Arc<dyn ::alloy_core::ConnectionHandler>,
+                config: ::alloy_core::transport::SseClientConfig,
+                handler: ::std::sync::Arc<dyn ::alloy_core::transport::ConnectionHandler>,
                 bot_id: String
             ),
             quote!(config, handler, bot_id),

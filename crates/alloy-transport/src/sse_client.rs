@@ -8,7 +8,8 @@ use launchdarkly_sdk_transport::HyperTransport;
 use tokio::sync::watch;
 use tracing::{info, trace, warn};
 
-use alloy_core::{ConnectionHandler, SseClientConfig, TransportError, TransportResult};
+use alloy_core::error::{TransportError, TransportResult};
+use alloy_core::transport::{ConnectionHandler, SseClientConfig};
 use alloy_macros::register_capability;
 
 // =============================================================================

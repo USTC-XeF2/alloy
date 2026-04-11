@@ -11,7 +11,8 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, trace, warn};
 
-use alloy_core::{ConnectionHandler, Sender, TransportResult, WsClientConfig};
+use alloy_core::error::TransportResult;
+use alloy_core::transport::{ConnectionHandler, Sender, WsClientConfig};
 use alloy_macros::register_capability;
 
 /// Builds a `backon::ExponentialBuilder` from a `WsClientConfig`.

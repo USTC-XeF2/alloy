@@ -31,7 +31,9 @@ use crate::config::{AlloyConfig, ConfigLoader};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::handle::BotHandle;
 use crate::logging;
-use alloy_core::{Adapter, AdapterBridge, BridgeRuntime, TransportContext};
+use alloy_core::adapter::Adapter;
+use alloy_core::bridge::{AdapterBridge, BridgeRuntime};
+use alloy_core::transport::TransportContext;
 use alloy_framework::{context::PluginContext, manager::PluginManager, plugin::PluginDescriptor};
 
 /// The main Alloy runtime that orchestrates adapters, transports, and plugins.
@@ -120,7 +122,7 @@ impl AlloyRuntime {
 
         // Create transport context by collecting all capabilities registered via
         // `#[register_capability(...)]` across linked crates.
-        let transport_ctx = alloy_core::TransportContext::collect_all();
+        let transport_ctx = TransportContext::collect_all();
 
         info!("Runtime initialized from configuration");
 

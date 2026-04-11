@@ -13,11 +13,13 @@ use tracing::{trace, warn};
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
-use alloy_core::{
-    Adapter, AdapterResult, Bot, BoxedEvent, Bytes, ConnectionHandler, ConnectionInfo,
-    HttpClientConfig, HttpMethod, HttpServerConfig, Sender, TransportContext, WsClientConfig,
-    WsServerConfig,
+use alloy_core::adapter::Adapter;
+use alloy_core::error::AdapterResult;
+use alloy_core::transport::{
+    ConnectionHandler, ConnectionInfo, HttpClientConfig, HttpServerConfig, Sender,
+    TransportContext, WsClientConfig, WsServerConfig,
 };
+use alloy_core::{Bot, BoxedEvent, Bytes, HttpMethod};
 
 /// The OneBot v11 adapter.
 ///

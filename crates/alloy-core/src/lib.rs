@@ -46,18 +46,8 @@ pub use bytes::Bytes;
 pub use http::Method as HttpMethod;
 
 // Re-export core types for public API
-pub use adapter::Adapter;
 pub use bot::{ApiExecutor, ApiPayload, Bot, BoxedBot};
-pub use bridge::{AdapterBridge, BridgeRuntime, Dispatcher};
-pub use error::{
-    AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,
-};
 pub use event::{BoxedEvent, EventRoot, EventType, EventView, Scene};
 pub use message::{
     Message, ReceiveMessageSegment, RichText, RichTextSegment, SendMessageSegment, Sendable,
-};
-pub use transport::{
-    ClientBotIdFn, ConnectionHandler, ConnectionInfo, HttpClientConfig, HttpRequestFn,
-    HttpServerConfig, ListenerHandle, Sender, ServerBotIdFn, SseClientConfig, TransportContext,
-    WsClientConfig, WsServerConfig,
 };

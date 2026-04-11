@@ -6,9 +6,9 @@ use futures::FutureExt;
 use reqwest::ClientBuilder;
 use url::Url;
 
-use alloy_core::{
-    ClientBotIdFn, ConnectionHandler, HttpClientConfig, HttpRequestFn, Sender, TransportError,
-    TransportResult,
+use alloy_core::error::{TransportError, TransportResult};
+use alloy_core::transport::{
+    ClientBotIdFn, ConnectionHandler, HttpClientConfig, HttpRequestFn, Sender,
 };
 use alloy_macros::register_capability;
 

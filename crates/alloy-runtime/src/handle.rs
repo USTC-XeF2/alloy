@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use alloy_core::{Bot, BoxedBot, BridgeRuntime};
+use alloy_core::bridge::BridgeRuntime;
+use alloy_core::{Bot, BoxedBot};
 use alloy_framework::{
     context::HandlerContext,
     error::{ExtractError, ExtractResult},
