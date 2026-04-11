@@ -47,7 +47,7 @@ pub use http::Method as HttpMethod;
 
 // Re-export core types for public API
 pub use adapter::Adapter;
-pub use bot::{Bot, BoxedBot};
+pub use bot::{ApiExecutor, ApiPayload, Bot, BoxedBot};
 pub use bridge::{AdapterBridge, BridgeRuntime, Dispatcher};
 pub use error::{
     AdapterError, AdapterResult, ApiError, ApiResult, TransportError, TransportResult,

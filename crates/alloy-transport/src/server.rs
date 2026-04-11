@@ -334,7 +334,7 @@ async fn handle_http_request(
     handler.register_connection(&bot_id, None);
 
     debug!(bot_id = %bot_id, len = body.len(), "Received HTTP POST");
-    handler.on_message(&bot_id, &body).await;
+    handler.on_message(&bot_id, body).await;
 
     (StatusCode::OK, "ok").into_response()
 }
@@ -447,11 +447,11 @@ async fn handle_ws_connection(
                 match result {
                     Some(Ok(Message::Text(text))) => {
                         debug!(bot_id = %bot_id_recv, len = text.len(), "Received text message");
-                        handler.on_message(&bot_id_recv, text.as_bytes()).await;
+                        handler.on_message(&bot_id_recv, text.into()).await;
                     }
                     Some(Ok(Message::Binary(data))) => {
                         debug!(bot_id = %bot_id_recv, len = data.len(), "Received binary message");
-                        handler.on_message(&bot_id_recv, &data).await;
+                        handler.on_message(&bot_id_recv, data).await;
                     }
                     Some(Ok(Message::Ping(_))) => {
                         debug!(bot_id = %bot_id_recv, "Received ping");

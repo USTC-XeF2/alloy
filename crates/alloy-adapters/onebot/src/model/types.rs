@@ -3,7 +3,7 @@
 //! This module defines shared types used across the OneBot v11 protocol,
 //! such as sender information.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +61,13 @@ impl std::ops::Deref for Sender {
     fn deref(&self) -> &Self::Target {
         &self.base
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupRequestType {
+    Add,
+    Invite,
 }
 
 /// Status info.

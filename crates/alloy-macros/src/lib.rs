@@ -1,11 +1,21 @@
 //! Procedural macros for the Alloy bot framework.
 
+mod api;
 mod capability;
 mod event;
 mod plugin;
 
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
+
+/// Derives `ApiPayload` metadata and typed request builders for API structs.
+#[proc_macro_attribute]
+pub fn api_payload(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match api::expand_api_payload(attr.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
 
 /// EventView root macro.
 #[proc_macro_attribute]

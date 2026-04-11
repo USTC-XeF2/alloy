@@ -73,7 +73,7 @@ async fn run_sse_loop(
                                 len = ev.data.len(),
                                 "SSE event received"
                             );
-                            handler.on_message(&bot_id, ev.data.as_bytes()).await;
+                            handler.on_message(&bot_id, ev.data.into()).await;
                         }
                         retry_count = 0;
                     }

@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+use bytes::Bytes;
+
 use crate::bot::Bot;
 use crate::error::AdapterResult;
 use crate::event::BoxedEvent;
@@ -52,7 +54,7 @@ pub trait Adapter: Send + Sync + 'static {
     fn on_message(
         &self,
         bot: &Self::Bot,
-        data: &[u8],
+        data: Bytes,
     ) -> impl Future<Output = Option<BoxedEvent>> + Send;
 
     /// Called when the adapter should start.

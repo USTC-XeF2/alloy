@@ -71,9 +71,7 @@ async fn info_handler(
         };
 
         // Query member information - API error, let framework handle it
-        let member = bot
-            .get_group_member_info(event.group_id, user_id, false)
-            .await?;
+        let member = bot.get_group_member_info(event.group_id, user_id).await?;
 
         Ok(format!(
             "Member Info\n\

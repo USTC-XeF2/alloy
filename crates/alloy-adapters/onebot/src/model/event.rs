@@ -5,7 +5,7 @@ use alloy_macros::{event_data, event_root};
 use serde::Deserialize;
 
 use crate::model::message::OneBotMessage;
-use crate::model::types::{PrivateSender, Sender, Status};
+use crate::model::types::{GroupRequestType, PrivateSender, Sender, Status};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -56,13 +56,6 @@ pub enum GroupIncreaseType {
 pub enum GroupBanType {
     Ban,
     LiftBan,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GroupRequestType {
-    Add,
-    Invite,
 }
 
 #[derive(Debug, Clone, Deserialize)]

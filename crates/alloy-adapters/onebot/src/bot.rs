@@ -37,20 +37,37 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tracing::{debug, warn};
 
-use crate::model::api::{
-    Credentials, FriendInfo, GetMsgResponse, GroupInfo, GroupMemberInfo, LoginInfo, StrangerInfo,
-    VersionInfo,
-};
 use crate::model::message::OneBotMessage;
-use crate::model::types::Status;
 use alloy_core::{
-    ApiError, ApiResult, Bot, Bytes, HttpMethod, HttpRequestFn, Scene, Sendable, Sender, impl_api,
+    ApiError, ApiExecutor, ApiPayload, ApiResult, Bot, Bytes, HttpMethod, HttpRequestFn, Scene,
+    Sendable, Sender,
 };
+
+#[derive(Debug, Deserialize)]
+struct WsApiResponse {
+    echo: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+enum ApiResponse<T> {
+    Ok {
+        data: T,
+    },
+    Failed {
+        retcode: i64,
+        #[serde(default)]
+        message: Option<String>,
+        #[serde(default)]
+        wording: Option<String>,
+    },
+}
 
 // =============================================================================
 // ApiCallStrategy
@@ -60,7 +77,7 @@ enum ApiCallStrategy {
     /// WebSocket caller with echo-based async routing
     Ws {
         message_tx: mpsc::Sender<Bytes>,
-        pending_calls: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+        pending_calls: Mutex<HashMap<u64, oneshot::Sender<Bytes>>>,
         echo_counter: AtomicU64,
         api_timeout: Duration,
     },
@@ -86,7 +103,7 @@ impl ApiCallStrategy {
     }
 
     /// Makes an API call and returns the response data.
-    async fn call(&self, action: &str, params: Value) -> ApiResult<Value> {
+    async fn call<T: ApiPayload>(&self, payload: T) -> ApiResult<ApiResponse<T::Response>> {
         match self {
             Self::Ws {
                 message_tx,
@@ -103,12 +120,12 @@ impl ApiCallStrategy {
 
                 // Serialize and send the request.
                 let request = json!({
-                    "action": action,
-                    "params": params,
+                    "action": T::NAME,
+                    "params": payload,
                     "echo": echo
                 });
 
-                debug!(action = %action, echo = %echo, "Calling OneBot API via WebSocket");
+                debug!(action = %T::NAME, echo = %echo, "Calling OneBot API via WebSocket");
 
                 let request_bytes = serde_json::to_vec(&request)?;
                 if let Err(e) = message_tx.send(request_bytes.into()).await {
@@ -119,7 +136,7 @@ impl ApiCallStrategy {
 
                 // Await the response with a timeout.
                 match timeout(*api_timeout, rx).await {
-                    Ok(Ok(response)) => Ok(response),
+                    Ok(Ok(data)) => Ok(serde_json::from_slice(&data)?),
                     _ => {
                         // Timed out — remove the pending entry.
                         pending_calls.lock().remove(&echo);
@@ -129,11 +146,11 @@ impl ApiCallStrategy {
             }
             Self::HttpClient { http_request } => {
                 let body = serde_json::to_vec(&json!({
-                    "action": action,
-                    "params": params,
+                    "action": T::NAME,
+                    "params": payload,
                 }))?;
 
-                debug!(action = %action, "Calling OneBot API via HTTP");
+                debug!(action = %T::NAME, "Calling OneBot API via HTTP");
 
                 let resp = (http_request)(HttpMethod::POST, "", body.into()).await?;
 
@@ -143,19 +160,20 @@ impl ApiCallStrategy {
         }
     }
 
-    /// Routes an incoming protocol message that is an API response.
-    fn on_incoming_response(&self, data: &Value) {
+    fn try_handle_response(&self, data: Bytes) -> Result<(), Bytes> {
         if let Self::Ws { pending_calls, .. } = self
-            && let Some(echo) = data.get("echo").and_then(Value::as_u64)
+            && let Ok(WsApiResponse { echo }) = serde_json::from_slice(&data)
         {
             let mut pending = pending_calls.lock();
             if let Some(tx) = pending.remove(&echo) {
-                let _ = tx.send(data.clone());
+                return tx.send(data);
             } else {
                 // Echo arrived but no waiter — was probably already timed out.
                 warn!(echo = %echo, "Received WS API response for unknown echo (timed out?)");
             }
         }
+
+        Err(data)
     }
 
     /// Called when the underlying transport connection is closed.
@@ -198,14 +216,10 @@ impl OneBotBot {
         }
     }
 
-    pub(crate) fn handle_response(&self, data: &Value) {
-        self.call_strategy.on_incoming_response(data);
+    pub(crate) fn try_handle_response(&self, data: Bytes) -> Result<(), Bytes> {
+        self.call_strategy.try_handle_response(data)
     }
 }
-
-// =============================================================================
-// Bot Trait Implementation
-// =============================================================================
 
 #[async_trait]
 impl Bot for OneBotBot {
@@ -213,51 +227,29 @@ impl Bot for OneBotBot {
         &self.id
     }
 
-    async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value> {
-        let mut response = self.call_strategy.call(action, params).await?;
-        let response = response.as_object_mut().ok_or_else(|| {
-            ApiError::SerializationError("Expected API response to be an object".into())
-        })?;
-
-        if let Some(retcode) = response.get("retcode").and_then(Value::as_i64)
-            && retcode != 0
-        {
-            let message = response
-                .get("message")
-                .or_else(|| response.get("wording"))
-                .and_then(Value::as_str)
-                .unwrap_or("Unknown error")
-                .to_string();
-            return Err(ApiError::ApiError { retcode, message });
-        }
-
-        response.remove("data").ok_or_else(|| {
-            ApiError::SerializationError("Expected API response to contain data".into())
-        })
-    }
-
     async fn send(&self, scene: &Scene, message: &dyn Sendable) -> ApiResult<String> {
-        let onebot_msg = OneBotMessage::from_erased_message(message);
+        let onebot_msg = OneBotMessage::from_erased_message(message).into_owned();
 
-        match scene {
+        let id: Option<i32> = match scene {
             Scene::Group { group_id, .. } => {
                 if let Ok(group_id) = group_id.parse::<i64>() {
-                    Some(self.send_group_msg(group_id, &onebot_msg).await?)
+                    Some(self.send_group_msg(group_id, onebot_msg).await?.into())
                 } else {
                     None
                 }
             }
             Scene::Private { user_id } => {
                 if let Ok(user_id) = user_id.parse::<i64>() {
-                    Some(self.send_private_msg(user_id, &onebot_msg).await?)
+                    Some(self.send_private_msg(user_id, onebot_msg).await?.into())
                 } else {
                     None
                 }
             }
             _ => None,
-        }
-        .map(|id| id.to_string())
-        .ok_or_else(|| ApiError::Other("unsupported scene for OneBot".into()))
+        };
+
+        id.map(|id| id.to_string())
+            .ok_or_else(|| ApiError::Other("unsupported scene for OneBot".into()))
     }
 
     async fn on_disconnect(&self) {
@@ -265,302 +257,20 @@ impl Bot for OneBotBot {
     }
 }
 
-impl OneBotBot {
-    // =========================================================================
-    // Message APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Sends a private message.
-        ///
-        /// # Arguments
-        /// * `user_id` - Target user's QQ number
-        /// * `message` - Message content as OneBotMessage
-        send_private_msg,
-        (user_id: i64, message: &OneBotMessage) -> i32,
-        "message_id"
-    );
-
-    impl_api!(
-        /// Sends a group message.
-        ///
-        /// # Arguments
-        /// * `group_id` - Target group number
-        /// * `message` - Message content as OneBotMessage
-        send_group_msg,
-        (group_id: i64, message: &OneBotMessage) -> i32,
-        "message_id"
-    );
-
-    /// Sends a message (auto-detect type based on parameters).
-    ///
-    /// If both `user_id` and `group_id` are provided, `message_type` determines which to use.
-    pub async fn send_msg(
-        &self,
-        message_type: Option<&str>,
-        user_id: Option<i64>,
-        group_id: Option<i64>,
-        message: &OneBotMessage,
-    ) -> ApiResult<i64> {
-        let mut params = json!({
-            "message": message
-        });
-
-        if let Some(mt) = message_type {
-            params["message_type"] = json!(mt);
+impl ApiExecutor for OneBotBot {
+    async fn execute<T: ApiPayload<Client = Self>>(&self, payload: T) -> ApiResult<T::Response> {
+        match self.call_strategy.call(payload).await? {
+            ApiResponse::Ok { data } => Ok(data),
+            ApiResponse::Failed {
+                retcode,
+                message,
+                wording,
+            } => {
+                let message = message
+                    .or(wording)
+                    .unwrap_or_else(|| "Unknown error".into());
+                Err(ApiError::ApiError { retcode, message })
+            }
         }
-        if let Some(uid) = user_id {
-            params["user_id"] = json!(uid);
-        }
-        if let Some(gid) = group_id {
-            params["group_id"] = json!(gid);
-        }
-
-        let result = self.call_api("send_msg", params).await?;
-
-        result
-            .get("message_id")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| ApiError::SerializationError("Missing message_id".into()))
     }
-
-    impl_api!(
-        /// Deletes (recalls) a message.
-        delete_msg,
-        (message_id: i32)
-    );
-
-    impl_api!(
-        /// Gets a message by ID.
-        get_msg,
-        (message_id: i32) -> GetMsgResponse
-    );
-
-    impl_api!(
-        /// Gets a forwarded message.
-        get_forward_msg,
-        (id: &str) -> OneBotMessage,
-        "message"
-    );
-
-    impl_api!(
-        /// Sends a like.
-        send_like,
-        (user_id: i64, times: u8)
-    );
-
-    // =========================================================================
-    // Group Management APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Kicks a user from a group.
-        set_group_kick,
-        (group_id: i64, user_id: i64, reject_add_request: bool)
-    );
-
-    impl_api!(
-        /// Bans a user in a group.
-        ///
-        /// # Arguments
-        /// * `group_id` - Group number
-        /// * `user_id` - User to ban
-        /// * `duration` - Ban duration in seconds (0 = unban)
-        set_group_ban,
-        (group_id: i64, user_id: i64, duration: u32)
-    );
-
-    impl_api!(
-        /// Enables/disables whole group ban.
-        set_group_whole_ban,
-        (group_id: i64, enable: bool)
-    );
-
-    impl_api!(
-        /// Sets/unsets a user as group admin.
-        set_group_admin,
-        (group_id: i64, user_id: i64, enable: bool)
-    );
-
-    impl_api!(
-        /// Sets a user's group card (nickname).
-        set_group_card,
-        (group_id: i64, user_id: i64, card: &str)
-    );
-
-    impl_api!(
-        /// Sets the group name.
-        set_group_name,
-        (group_id: i64, group_name: &str)
-    );
-
-    impl_api!(
-        /// Leaves a group.
-        set_group_leave,
-        (group_id: i64, is_dismiss: bool)
-    );
-
-    impl_api!(
-        /// Sets a user's special title in a group.
-        set_group_special_title,
-        (group_id: i64, user_id: i64, special_title: &str)
-    );
-
-    // =========================================================================
-    // Friend/Group Request APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Handles a friend add request.
-        set_friend_add_request,
-        (flag: &str, approve: bool, remark: &str)
-    );
-
-    impl_api!(
-        /// Handles a group add/invite request.
-        set_group_add_request,
-        (flag: &str, sub_type: &str, approve: bool, reason: &str)
-    );
-
-    // =========================================================================
-    // Information APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Gets login info.
-        get_login_info,
-        () -> LoginInfo
-    );
-
-    impl_api!(
-        /// Gets stranger info.
-        get_stranger_info,
-        (user_id: i64, no_cache: bool) -> StrangerInfo
-    );
-
-    impl_api!(
-        /// Gets the friend list.
-        get_friend_list,
-        () -> Vec<FriendInfo>
-    );
-
-    impl_api!(
-        /// Gets group info.
-        get_group_info,
-        (group_id: i64, no_cache: bool) -> GroupInfo
-    );
-
-    impl_api!(
-        /// Gets the group list.
-        get_group_list,
-        () -> Vec<GroupInfo>
-    );
-
-    impl_api!(
-        /// Gets group member info.
-        get_group_member_info,
-        (group_id: i64, user_id: i64, no_cache: bool) -> GroupMemberInfo
-    );
-
-    impl_api!(
-        /// Gets the group member list.
-        get_group_member_list,
-        (group_id: i64) -> Vec<GroupMemberInfo>
-    );
-
-    /// Gets group honor info.
-    pub async fn get_group_honor_info(&self, group_id: i64, honor_type: &str) -> ApiResult<Value> {
-        self.call_api(
-            "get_group_honor_info",
-            json!({
-                "group_id": group_id,
-                "type": honor_type
-            }),
-        )
-        .await
-    }
-
-    // =========================================================================
-    // Credential APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Gets cookies for a domain.
-        get_cookies,
-        (domain: &str) -> String,
-        "cookies"
-    );
-
-    impl_api!(
-        /// Gets CSRF token.
-        get_csrf_token,
-        () -> i32,
-        "token"
-    );
-
-    impl_api!(
-        /// Gets credentials (cookies + CSRF token).
-        get_credentials,
-        (domain: &str) -> Credentials
-    );
-
-    // =========================================================================
-    // File APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Gets a voice file.
-        get_record,
-        (file: &str, out_format: &str) -> String,
-        "file"
-    );
-
-    impl_api!(
-        /// Gets an image file.
-        get_image,
-        (file: &str) -> String,
-        "file"
-    );
-
-    impl_api!(
-        /// Checks if the bot can send images.
-        can_send_image,
-        () -> bool,
-        "yes"
-    );
-
-    impl_api!(
-        /// Checks if the bot can send voice.
-        can_send_record,
-        () -> bool,
-        "yes"
-    );
-
-    // =========================================================================
-    // System APIs
-    // =========================================================================
-
-    impl_api!(
-        /// Gets the running status.
-        get_status,
-        () -> Status
-    );
-
-    impl_api!(
-        /// Gets version info.
-        get_version_info,
-        () -> VersionInfo
-    );
-
-    impl_api!(
-        /// Restarts the OneBot implementation.
-        set_restart,
-        (delay: u32)
-    );
-
-    impl_api!(
-        /// Cleans the cache.
-        clean_cache,
-        ()
-    );
 }

@@ -18,6 +18,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use linkme::distributed_slice;
 use tokio::sync::watch;
@@ -57,7 +58,7 @@ pub trait ConnectionHandler: Send + Sync {
     fn register_connection(&self, bot_id: &str, sender: Option<Sender>) -> watch::Sender<()>;
 
     /// Process incoming data from a connection.
-    async fn on_message(&self, bot_id: &str, data: &[u8]);
+    async fn on_message(&self, bot_id: &str, data: Bytes);
 
     /// Called when a connection is closed.
     async fn on_disconnect(&self, bot_id: &str);

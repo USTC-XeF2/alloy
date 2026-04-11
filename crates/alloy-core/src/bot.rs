@@ -3,11 +3,14 @@
 //! This module defines the `Bot` trait which represents an active bot instance
 //! that can receive events and send messages.
 
+use std::future::{Future, IntoFuture};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use downcast_rs::{DowncastSync, impl_downcast};
-use serde_json::Value;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::error::ApiResult;
 use crate::event::Scene;
@@ -31,30 +34,16 @@ use crate::message::Sendable;
 /// Concrete implementations (e.g., `OneBotBot`) should provide
 /// strongly-typed API methods on top of `call_api`.
 #[async_trait]
-pub trait Bot: DowncastSync + 'static {
+pub trait Bot: DowncastSync + ApiExecutor + 'static {
     /// Returns the bot's unique identifier.
     fn id(&self) -> &str;
-
-    /// Calls a raw API with the given action name and parameters.
-    ///
-    /// This is the low-level API that all other methods should use.
-    ///
-    /// # Arguments
-    ///
-    /// * `action` - The API action name (e.g., "send_private_msg")
-    /// * `params` - JSON value containing the parameters
-    ///
-    /// # Returns
-    ///
-    /// The raw JSON response from the API.
-    async fn call_api(&self, action: &str, params: Value) -> ApiResult<Value>;
 
     /// Sends a message in a given scene.
     ///
     /// # Arguments
     ///
     /// * `scene` - The scene to send the message to
-    /// * `message` - The message content to send
+    /// * *`message` - The message content to send
     ///
     /// # Returns
     ///
@@ -80,84 +69,70 @@ impl_downcast!(sync Bot);
 /// A boxed Bot trait object.
 pub type BoxedBot = Arc<dyn Bot>;
 
-/// Generates strongly-typed async API wrapper methods based on [`Bot::call_api`].
-///
-/// This macro is intended for adapter-specific bot implementations that expose
-/// ergonomic API methods while sharing the same underlying request flow.
-///
-/// Each generated method:
-/// 1. Uses the function name as the API action (`stringify!($name)`).
-/// 2. Packs arguments into a JSON object.
-/// 3. Calls `self.call_api(...)` and maps the response to the requested return shape.
-///
-/// # Supported Forms
-///
-/// 1. No return payload (`ApiResult<()>`):
-///    `impl_api!(set_status, (online: bool));`
-///
-/// 2. Deserialize full response into a type:
-///    `impl_api!(get_profile, (user_id: i64) -> UserProfile);`
-///
-/// 3. Deserialize a specific response field:
-///    `impl_api!(get_msg_id, (seq: i64) -> String, "message_id");`
-///
-/// # Parameters
-///
-/// - Optional outer attributes can be attached to generated methods
-///   (e.g. doc comments, cfg attributes).
-/// - `$name`: generated function name, and also the action string.
-/// - `($arg: $typ, ...)`: named parameters used both in signature and JSON body.
-/// - `-> $ret`: target deserialize type for form (2) and (3).
-/// - `$field`: JSON field key to extract before deserialization for form (3).
-///
-/// # Example
-///
-/// ```ignore
-/// impl OneBotBot {
-///     impl_api!(
-///         /// Send a private message.
-///         send_private_msg,
-///         (user_id: i64, message: String) -> i64,
-///         "message_id"
-///     );
-/// }
-/// ```
-#[macro_export]
-macro_rules! impl_api {
-    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) $(,)?) => {
-        $(#[$meta])*
-        pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<()> {
-            self.call_api(
-                stringify!($name),
-                ::serde_json::json!({ $(stringify!($arg): $arg),* })
-            ).await?;
-            Ok(())
-        }
-    };
+// ----------------------------------------------------------------------------
+// API Interface
+// ----------------------------------------------------------------------------
 
-    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty $(,)?) => {
-        $(#[$meta])*
-        pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<$ret> {
-            let result = self.call_api(
-                stringify!($name),
-                ::serde_json::json!({ $(stringify!($arg): $arg),* })
-            ).await?;
-            Ok(::serde_json::from_value(result)?)
-        }
-    };
+/// The `ApiExecutor` trait defines the capability to execute API requests.
+pub trait ApiExecutor {
+    /// Executes an API request with the given payload.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The type of the API payload, which must implement [`ApiPayload`].
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves to an [`ApiResult`] containing the response.
+    fn execute<T>(&self, payload: T) -> impl Future<Output = ApiResult<T::Response>> + Send
+    where
+        Self: Sized,
+        T: ApiPayload<Client = Self>;
+}
 
-    ($(#[$meta:meta])* $name:ident, ($($arg:ident: $typ:ty),*) -> $ret:ty, $field:expr $(,)?) => {
-        $(#[$meta])*
-        pub async fn $name(&self, $($arg: $typ),*) -> ::alloy_core::error::ApiResult<$ret> {
-            let mut result = self.call_api(
-                stringify!($name),
-                ::serde_json::json!({ $(stringify!($arg): $arg),* })
-            ).await?;
-            let value = result
-                .as_object_mut()
-                .and_then(|obj| obj.remove($field))
-                .ok_or_else(|| ::alloy_core::error::ApiError::SerializationError(format!("Missing {}", $field)))?;
-            Ok(::serde_json::from_value(value)?)
-        }
-    };
+pub trait ApiPayload: Sized + Send + Serialize {
+    const NAME: &'static str;
+
+    type Client: ApiExecutor;
+    type Response: DeserializeOwned;
+
+    fn build(self, client: &Self::Client) -> ApiRequest<'_, Self> {
+        ApiRequest::new(client, self)
+    }
+}
+
+/// A wrapper for an API request that combines a client and a payload.
+///
+/// This structure implements [`IntoFuture`], allowing it to be awaited directly.
+pub struct ApiRequest<'a, T>
+where
+    T: ApiPayload,
+{
+    client: &'a T::Client,
+    payload: T,
+}
+
+impl<T> ApiRequest<'_, T>
+where
+    T: ApiPayload,
+{
+    pub fn new(client: &T::Client, payload: T) -> ApiRequest<'_, T> {
+        ApiRequest { client, payload }
+    }
+
+    pub fn payload_mut(&mut self) -> &mut T {
+        &mut self.payload
+    }
+}
+
+impl<'a, T> IntoFuture for ApiRequest<'a, T>
+where
+    T: ApiPayload + 'a,
+{
+    type Output = ApiResult<T::Response>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(self.client.execute(self.payload))
+    }
 }

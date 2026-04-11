@@ -14,8 +14,9 @@ use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
 use alloy_core::{
-    Adapter, AdapterResult, Bot, BoxedEvent, ConnectionHandler, ConnectionInfo, HttpClientConfig,
-    HttpMethod, HttpServerConfig, Sender, TransportContext, WsClientConfig, WsServerConfig,
+    Adapter, AdapterResult, Bot, BoxedEvent, Bytes, ConnectionHandler, ConnectionInfo,
+    HttpClientConfig, HttpMethod, HttpServerConfig, Sender, TransportContext, WsClientConfig,
+    WsServerConfig,
 };
 
 /// The OneBot v11 adapter.
@@ -42,20 +43,17 @@ impl Adapter for OneBotAdapter {
         OneBotBot::new(bot_id, sender)
     }
 
-    async fn on_message(&self, bot: &Self::Bot, data: &[u8]) -> Option<BoxedEvent> {
+    async fn on_message(&self, bot: &Self::Bot, data: Bytes) -> Option<BoxedEvent> {
         let bot_id = bot.id();
 
-        // Try to parse as JSON to check if it's an API response
-        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(data)
-            && value.get("echo").is_some()
-        {
-            bot.handle_response(&value);
-            trace!(bot_id = %bot_id, echo = ?value.get("echo"), "Handled API response");
-            return None; // API responses are not events
-        }
+        // Try to handle as API response
+        let Err(data) = bot.try_handle_response(data) else {
+            trace!(bot_id = %bot_id, "Handled API response");
+            return None;
+        };
 
         // Parse as event
-        match serde_json::from_slice::<OneBotEvent>(data) {
+        match serde_json::from_slice::<OneBotEvent>(&data) {
             Ok(e) => Some(Arc::new(e)),
             Err(e) => {
                 warn!(bot_id = %bot_id, error = %e, "Failed to parse event raw data");

@@ -4,16 +4,14 @@
 //! to OneBot v11 implementations.
 
 mod adapter;
-pub mod bot;
+mod bot;
+
+pub mod api;
 pub mod config;
 pub mod model;
 
 pub use adapter::OneBotAdapter;
 pub use bot::OneBotBot;
-pub use config::{
-    ConnectionConfig, HttpClientConfig, HttpServerConfig, OneBotConfig, WsClientConfig,
-    WsServerConfig,
-};
 
 // Re-export model types for easier access.
 pub use model::api::*;

@@ -2,12 +2,12 @@
 //!
 //! This module defines the structures for making API calls to the OneBot implementation.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::message::OneBotMessage;
 use super::types::{GroupRole, Sender, Sex};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {
     Private,

@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use parking_lot::Mutex;
 use tokio::sync::watch;
 use tracing::{info, trace, warn};
@@ -163,7 +164,7 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
         }
     }
 
-    async fn on_message(&self, bot_id: &str, data: &[u8]) {
+    async fn on_message(&self, bot_id: &str, data: Bytes) {
         let Some((bot, _, _)) = self.entries.lock().get(bot_id).cloned() else {
             return;
         };

@@ -86,8 +86,8 @@ pub enum ApiError {
     Other(String),
 }
 
-impl From<serde_json::Error> for ApiError {
-    fn from(err: serde_json::Error) -> Self {
+impl<E: serde::ser::Error> From<E> for ApiError {
+    fn from(err: E) -> Self {
         Self::SerializationError(err.to_string())
     }
 }

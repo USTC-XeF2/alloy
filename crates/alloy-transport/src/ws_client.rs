@@ -54,7 +54,7 @@ impl ClientLoopState {
     }
 
     /// Handles incoming message and resets retry counters on success.
-    async fn handle_message_received(&mut self, data: &[u8]) {
+    async fn handle_message_received(&mut self, data: Bytes) {
         self.handler.on_message(&self.bot_id, data).await;
         self.retry_count = 0;
         self.current_delay = Duration::from_secs(1);
@@ -121,11 +121,11 @@ impl ClientLoopState {
     async fn handle_message(&mut self, msg: Option<Result<Message, Error>>) -> bool {
         match msg {
             Some(Ok(Message::Text(text))) => {
-                self.handle_message_received(text.as_bytes()).await;
+                self.handle_message_received(text.into()).await;
                 true
             }
             Some(Ok(Message::Binary(data))) => {
-                self.handle_message_received(&data).await;
+                self.handle_message_received(data).await;
                 true
             }
             Some(Ok(Message::Ping(_))) => {
