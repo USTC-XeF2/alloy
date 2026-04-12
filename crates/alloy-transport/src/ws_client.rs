@@ -8,7 +8,11 @@ use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{
+    Message,
+    client::IntoClientRequest,
+    http::header::{AUTHORIZATION, HeaderValue},
+};
 use tracing::{error, info, trace, warn};
 
 use alloy_core::error::TransportResult;
@@ -63,8 +67,18 @@ pub async fn ws_connect(
             let bot_id_inner = bot_id_cloned.clone();
             let url_inner = url.clone();
 
+            let connect_fn = async || {
+                let mut request = url_inner.clone().into_client_request()?;
+                if let Some(token) = &config.access_token {
+                    let mut header_value = HeaderValue::from_str(&format!("Bearer {}", token))?;
+                    header_value.set_sensitive(true);
+                    request.headers_mut().insert(AUTHORIZATION, header_value);
+                }
+                connect_async(request).await
+            };
+
             // Use backon to handle the initial connection and its retries.
-            let connect_result = (|| connect_async(&url_inner))
+            let connect_result = connect_fn
                 .retry(backoff)
                 .sleep(tokio::time::sleep)
                 .notify(move |e, delay| {

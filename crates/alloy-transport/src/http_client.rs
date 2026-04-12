@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use futures::FutureExt;
 use reqwest::ClientBuilder;
+use reqwest::header::CONTENT_TYPE;
 use url::Url;
 
 use alloy_core::error::{TransportError, TransportResult};
@@ -41,7 +42,10 @@ pub async fn http_start_client(
         let token = config.access_token.clone();
         async move {
             let url = url.map_err(|e| TransportError::Serialization(e.to_string()))?;
-            let mut req = client.request(method, url).body(body);
+            let mut req = client
+                .request(method, url)
+                .header(CONTENT_TYPE, "application/json")
+                .body(body);
             if let Some(t) = &token {
                 req = req.bearer_auth(t);
             }
