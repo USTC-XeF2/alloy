@@ -60,6 +60,7 @@ use {
 
 type RouteHandler = (Arc<dyn ConnectionHandler>, ServerBotIdFn);
 
+#[derive(Default)]
 struct SharedState {
     /// HTTP route table: path → connection handler.
     #[cfg(feature = "http-server")]
@@ -68,17 +69,6 @@ struct SharedState {
     /// WebSocket route table: path → connection handler.
     #[cfg(feature = "ws-server")]
     ws_routes: Mutex<HashMap<String, RouteHandler>>,
-}
-
-impl SharedState {
-    fn new() -> Self {
-        Self {
-            #[cfg(feature = "http-server")]
-            http_routes: Mutex::new(HashMap::new()),
-            #[cfg(feature = "ws-server")]
-            ws_routes: Mutex::new(HashMap::new()),
-        }
-    }
 }
 
 // ─── Server lifecycle container ───────────────────────────────────────────────
@@ -97,7 +87,7 @@ struct ServerEntry {
 // ─── Global registry ──────────────────────────────────────────────────────────
 
 static SERVER_REGISTRY: LazyLock<Mutex<HashMap<String, Weak<ServerEntry>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+    LazyLock::new(Mutex::default);
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -119,7 +109,7 @@ async fn get_or_create_server(addr: &str) -> std::io::Result<Arc<ServerEntry>> {
     }
 
     // ── Slow path: bind a new listener and start serving ──────────────────────
-    let state = Arc::new(SharedState::new());
+    let state = Arc::new(SharedState::default());
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
 

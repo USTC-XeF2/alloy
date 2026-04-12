@@ -136,7 +136,7 @@ impl AlloyRuntime {
             config,
             plugin_manager: Arc::new(plugin_manager),
             transport_context: transport_ctx,
-            bridges: Arc::new(Mutex::new(HashMap::new())),
+            bridges: Arc::default(),
             running: AtomicBool::new(false),
         }
     }

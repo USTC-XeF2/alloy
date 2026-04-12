@@ -93,10 +93,10 @@ impl<A: Adapter, D: Dispatcher> AdapterBridge<A, D> {
     pub fn new(adapter: A, event_dispatcher: Arc<D>, transport: TransportContext) -> Self {
         Self {
             adapter,
-            entries: Mutex::new(HashMap::new()),
+            entries: Mutex::default(),
             event_dispatcher,
             transport,
-            listeners: Mutex::new(Vec::new()),
+            listeners: Mutex::default(),
         }
     }
 }

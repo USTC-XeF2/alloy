@@ -50,7 +50,7 @@ pub type ServiceMap = HashMap<TypeId, (String, ServiceArc)>;
 /// `State` provides type-indexed storage for arbitrary values, allowing different
 /// contexts to maintain their own independent state. Each value is stored by its
 /// type ID, so only one value per type can be stored at a time.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct State {
     /// Per-type isolated state storage.
     data: Mutex<HashMap<TypeId, Box<dyn Any + Send>>>,
@@ -59,13 +59,6 @@ pub struct State {
 static STATE_MISMATCH: &str = "State: type mismatch in state storage";
 
 impl State {
-    /// Creates a new empty `State`.
-    pub(crate) fn new() -> Self {
-        Self {
-            data: Mutex::new(HashMap::new()),
-        }
-    }
-
     /// Stores a value in the state map.
     ///
     /// Only one value per type can be stored; subsequent calls overwrite.
@@ -222,7 +215,7 @@ impl PluginContext {
             config,
             service_ids,
             all_services,
-            state: State::new(),
+            state: State::default(),
         }
     }
 
@@ -306,7 +299,7 @@ impl HandlerContext {
         Self {
             base,
             plugin,
-            state: Arc::new(State::new()),
+            state: Arc::default(),
         }
     }
 

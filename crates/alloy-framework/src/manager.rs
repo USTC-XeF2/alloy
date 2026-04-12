@@ -231,16 +231,16 @@ impl PluginManager {
         #[cfg(feature = "command")] command_config: crate::command::CommandConfig,
     ) -> Self {
         Self {
-            plugins: RwLock::new(HashMap::new()),
+            plugins: RwLock::default(),
             plugin_configs: plugin_configs
                 .into_iter()
                 .map(|(k, v)| (k, Arc::new(v)))
                 .collect(),
-            services: Arc::new(RwLock::new(HashMap::new())),
+            services: Arc::default(),
             #[cfg(feature = "command")]
             command_context: Arc::new(crate::context::CommandContext {
                 config: command_config,
-                help_provider: parking_lot::Mutex::new(HashMap::new()),
+                help_provider: parking_lot::Mutex::default(),
             }),
         }
     }

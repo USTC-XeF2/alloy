@@ -93,7 +93,7 @@ impl ApiCallStrategy {
             Some(Sender::HttpClient { http_request }) => Self::HttpClient { http_request },
             Some(Sender::Ws { message_tx }) => Self::Ws {
                 message_tx,
-                pending_calls: Mutex::new(HashMap::new()),
+                pending_calls: Mutex::default(),
                 echo_counter: AtomicU64::new(1),
                 api_timeout: Duration::from_secs(30),
             },
