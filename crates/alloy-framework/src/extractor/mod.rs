@@ -30,4 +30,4 @@ pub mod plugin;
 pub use bot::Bot;
 pub use core::FromContext;
 pub use event::Event;
-pub use plugin::{PluginConfig, PluginState, ServiceRef};
+pub use plugin::{DefaultPluginState, PluginConfig, PluginState, ServiceRef};

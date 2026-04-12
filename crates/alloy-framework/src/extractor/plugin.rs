@@ -3,7 +3,7 @@ use std::sync::Arc;
 use derive_more::{AsRef, Deref, DerefMut};
 
 use crate::context::HandlerContext;
-use crate::error::ExtractResult;
+use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
 
 /// Extractor that provides a handler with its plugin's typed configuration.
@@ -34,15 +34,29 @@ impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConf
 /// retrieved via this extractor. If a value of type `T` has not been set, extraction
 /// fails with [`ExtractError::StateNotFound`] and the handler is silently skipped.
 #[derive(Deref, DerefMut)]
-pub struct PluginState<T>(pub T);
+pub struct PluginState<T: Clone + Send + 'static>(pub T);
 
 impl<T: Clone + Send + 'static> FromContext for PluginState<T> {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.plugin()
             .state()
             .get::<T>()
-            .map(PluginState)
-            .ok_or_else(|| crate::error::ExtractError::StateNotFound(std::any::type_name::<T>()))
+            .map(Self)
+            .ok_or_else(|| ExtractError::StateNotFound(std::any::type_name::<T>()))
+    }
+}
+
+/// Extractor that provides mutable access to a plugin state value, with a default.
+///
+/// This is a convenience wrapper around `PluginState` that allows handlers to easily
+/// access a mutable plugin state value that has a default. If the state value of type
+/// `T` has not been set, it is initialized with `T::default()` and then returned.
+#[derive(Deref, DerefMut)]
+pub struct DefaultPluginState<T: Clone + Default + Send + 'static>(pub T);
+
+impl<T: Clone + Default + Send + 'static> FromContext for DefaultPluginState<T> {
+    async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
+        Ok(Self(ctx.plugin().state().get_or_insert_with(T::default)))
     }
 }
 

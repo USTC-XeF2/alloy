@@ -56,6 +56,8 @@ pub struct State {
     data: Mutex<HashMap<TypeId, Box<dyn Any + Send>>>,
 }
 
+static STATE_MISMATCH: &str = "State: type mismatch in state storage";
+
 impl State {
     /// Creates a new empty `State`.
     pub(crate) fn new() -> Self {
@@ -67,8 +69,11 @@ impl State {
     /// Stores a value in the state map.
     ///
     /// Only one value per type can be stored; subsequent calls overwrite.
-    pub fn set<T: Send + 'static>(&self, value: T) {
-        self.data.lock().insert(TypeId::of::<T>(), Box::new(value));
+    pub fn set<T: Send + 'static>(&self, value: T) -> Option<T> {
+        self.data
+            .lock()
+            .insert(TypeId::of::<T>(), Box::new(value))
+            .map(|v| *v.downcast::<T>().expect(STATE_MISMATCH))
     }
 
     /// Retrieves a cloned value from the state map.
@@ -76,8 +81,18 @@ impl State {
         self.data
             .lock()
             .get(&TypeId::of::<T>())
-            .and_then(|v| v.downcast_ref::<T>())
-            .cloned()
+            .map(|v| v.downcast_ref::<T>().expect(STATE_MISMATCH).clone())
+    }
+
+    /// Retrieves a cloned value from the state map, or inserts a default if not found.
+    pub fn get_or_insert_with<T: Clone + Send + 'static>(&self, f: impl FnOnce() -> T) -> T {
+        self.data
+            .lock()
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Box::new(f()))
+            .downcast_ref::<T>()
+            .expect(STATE_MISMATCH)
+            .clone()
     }
 
     /// Returns `true` if a value of type `T` exists in the state.
@@ -90,8 +105,7 @@ impl State {
         self.data
             .lock()
             .remove(&TypeId::of::<T>())
-            .and_then(|v| v.downcast::<T>().ok())
-            .map(|v| *v)
+            .map(|v| *v.downcast::<T>().expect(STATE_MISMATCH))
     }
 }
 
