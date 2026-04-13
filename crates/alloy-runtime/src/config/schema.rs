@@ -225,4 +225,12 @@ impl SpanEventConfig {
         exit: true,
         close: true,
     };
+
+    /// Enter and exit events.
+    pub const ACTIVE: Self = Self {
+        new: false,
+        enter: true,
+        exit: true,
+        close: false,
+    };
 }

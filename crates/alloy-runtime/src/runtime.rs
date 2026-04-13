@@ -118,7 +118,7 @@ impl AlloyRuntime {
     /// ```
     pub fn from_config(config: AlloyConfig) -> Self {
         // Initialize logging from config (try_init won't panic if already initialized)
-        logging::init_from_config(&config.logging);
+        let _ = logging::try_init_from_config(&config.logging);
 
         // Create transport context by collecting all capabilities registered via
         // `#[register_capability(...)]` across linked crates.
