@@ -1,29 +1,50 @@
 use std::sync::Arc;
 
-use derive_more::{AsRef, Deref};
-
 use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
-use alloy_core::{Bot as BotTrait, BoxedBot};
+use alloy_core::error::ApiResult;
+use alloy_core::{ApiExecutor, ApiPayload, Bot, BoxedBot};
 
 /// Context wrapper that provides access to the bot instance.
 ///
 /// This is the primary way handlers receive and use the bot. Use `Deref` to access
 /// the bot interface directly.
-#[derive(Debug, Clone, Deref, AsRef)]
-#[as_ref(dyn BotTrait)]
-pub struct Bot<T: BotTrait>(Arc<T>);
+#[derive(Debug, Clone)]
+pub struct BotClient<T: Bot + ApiExecutor<Bot = T>>(Arc<T>);
 
-/// Implementation for extracting `Bot<T>` where `T: Bot`.
+impl<T> BotClient<T>
+where
+    T: Bot + ApiExecutor<Bot = T>,
+{
+    pub fn id(&self) -> &str {
+        self.0.id()
+    }
+}
+
+impl<T> ApiExecutor for BotClient<T>
+where
+    T: Bot + ApiExecutor<Bot = T>,
+{
+    type Bot = T;
+
+    async fn execute<U: ApiPayload<Bot = Self::Bot>>(&self, payload: U) -> ApiResult<U::Response> {
+        self.0.execute(payload).await
+    }
+}
+
+/// Implementation for extracting `BotClient<T>` where `T: Bot`.
 ///
 /// This enables handlers to inject a concrete bot type and access protocol-specific APIs:
-impl<T: BotTrait> FromContext for Bot<T> {
+impl<T> FromContext for BotClient<T>
+where
+    T: Bot + ApiExecutor<Bot = T>,
+{
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         ctx.bot()
             .clone()
             .downcast_arc::<T>()
-            .map(Bot)
+            .map(BotClient)
             .map_err(|_| ExtractError::BotTypeMismatch {
                 expected: std::any::type_name::<T>(),
             })

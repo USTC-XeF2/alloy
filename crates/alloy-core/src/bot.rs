@@ -34,7 +34,7 @@ use crate::message::Sendable;
 /// Concrete implementations (e.g., `OneBotBot`) should provide
 /// strongly-typed API methods on top of `call_api`.
 #[async_trait]
-pub trait Bot: DowncastSync + ApiExecutor + 'static {
+pub trait Bot: DowncastSync + 'static {
     /// Returns the bot's unique identifier.
     fn id(&self) -> &str;
 
@@ -75,6 +75,8 @@ pub type BoxedBot = Arc<dyn Bot>;
 
 /// The `ApiExecutor` trait defines the capability to execute API requests.
 pub trait ApiExecutor {
+    type Bot: Bot;
+
     /// Executes an API request with the given payload.
     ///
     /// # Type Parameters
@@ -86,17 +88,19 @@ pub trait ApiExecutor {
     /// A future that resolves to an [`ApiResult`] containing the response.
     fn execute<T>(&self, payload: T) -> impl Future<Output = ApiResult<T::Response>> + Send
     where
-        Self: Sized,
-        T: ApiPayload<Client = Self>;
+        T: ApiPayload<Bot = Self::Bot>;
 }
 
 pub trait ApiPayload: Sized + Send + Serialize {
     const NAME: &'static str;
 
-    type Client: ApiExecutor;
+    type Bot: Bot;
     type Response: DeserializeOwned;
 
-    fn build(self, client: &Self::Client) -> ApiRequest<'_, Self> {
+    fn build<T>(self, client: &T) -> ApiRequest<'_, T, Self>
+    where
+        T: ApiExecutor<Bot = Self::Bot>,
+    {
         ApiRequest::new(client, self)
     }
 }
@@ -104,32 +108,35 @@ pub trait ApiPayload: Sized + Send + Serialize {
 /// A wrapper for an API request that combines a client and a payload.
 ///
 /// This structure implements [`IntoFuture`], allowing it to be awaited directly.
-pub struct ApiRequest<'a, T>
+pub struct ApiRequest<'a, T, U>
 where
-    T: ApiPayload,
+    T: ApiExecutor,
+    U: ApiPayload<Bot = T::Bot>,
 {
-    client: &'a T::Client,
-    payload: T,
+    client: &'a T,
+    payload: U,
 }
 
-impl<T> ApiRequest<'_, T>
+impl<T, U> ApiRequest<'_, T, U>
 where
-    T: ApiPayload,
+    T: ApiExecutor,
+    U: ApiPayload<Bot = T::Bot>,
 {
-    pub fn new(client: &T::Client, payload: T) -> ApiRequest<'_, T> {
+    pub fn new(client: &T, payload: U) -> ApiRequest<'_, T, U> {
         ApiRequest { client, payload }
     }
 
-    pub fn payload_mut(&mut self) -> &mut T {
+    pub fn payload_mut(&mut self) -> &mut U {
         &mut self.payload
     }
 }
 
-impl<'a, T> IntoFuture for ApiRequest<'a, T>
+impl<'a, T, U> IntoFuture for ApiRequest<'a, T, U>
 where
-    T: ApiPayload + 'a,
+    T: ApiExecutor,
+    U: ApiPayload<Bot = T::Bot> + 'a,
 {
-    type Output = ApiResult<T::Response>;
+    type Output = ApiResult<U::Response>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(self) -> Self::IntoFuture {

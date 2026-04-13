@@ -27,7 +27,7 @@ pub mod core;
 pub mod event;
 pub mod plugin;
 
-pub use bot::Bot;
+pub use bot::BotClient as Bot;
 pub use core::FromContext;
 pub use event::Event;
 pub use plugin::{DefaultPluginState, PluginConfig, PluginState, ServiceRef};

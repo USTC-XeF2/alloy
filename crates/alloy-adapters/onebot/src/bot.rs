@@ -43,6 +43,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tracing::{debug, warn};
 
+use crate::api::{SendGroupMsgExt, SendPrivateMsgExt};
 use crate::model::message::OneBotMessage;
 use alloy_core::error::{ApiError, ApiResult};
 use alloy_core::transport::{HttpRequestFn, Sender};
@@ -255,7 +256,9 @@ impl Bot for OneBotBot {
 }
 
 impl ApiExecutor for OneBotBot {
-    async fn execute<T: ApiPayload<Client = Self>>(&self, payload: T) -> ApiResult<T::Response> {
+    type Bot = Self;
+
+    async fn execute<T: ApiPayload<Bot = Self>>(&self, payload: T) -> ApiResult<T::Response> {
         match self.call_strategy.call(payload).await? {
             ApiResponse::Ok { data } => Ok(data),
             ApiResponse::Failed {

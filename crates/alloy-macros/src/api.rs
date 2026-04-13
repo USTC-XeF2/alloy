@@ -43,6 +43,7 @@ pub fn expand_api_payload(attr: TokenStream, item: TokenStream) -> Result<TokenS
         .collect::<Vec<_>>();
     let action_ident = Ident::new(&struct_ident.to_string().to_snake_case(), Span::call_site());
     let builder_trait_ident = format_ident!("{}Builder", struct_ident);
+    let ext_trait_ident = format_ident!("{}Ext", struct_ident);
     let response_ty = args.response;
     let bot_ty = args.bot;
     let response_wrapper_ident = format_ident!("{}Response", struct_ident);
@@ -187,28 +188,36 @@ pub fn expand_api_payload(attr: TokenStream, item: TokenStream) -> Result<TokenS
                 #(#default_builder_trait_methods)*
             }
 
-            impl #builder_trait_ident for ::alloy_core::bot::ApiRequest<'_, #struct_ident> {
+            impl<T> #builder_trait_ident for ::alloy_core::bot::ApiRequest<'_, T, #struct_ident>
+            where
+                T: ::alloy_core::ApiExecutor<Bot = #bot_ty>,
+            {
                 #(#default_builder_impl_methods)*
             }
         }
     };
 
-    let ext_tokens = if args.ext {
-        quote! {
-            impl #bot_ty {
-                #(#struct_doc_attrs)*
-                pub fn #action_ident(&self, #(#required_sig),*) -> ::alloy_core::bot::ApiRequest<'_, #struct_ident> {
-                    ::alloy_core::bot::ApiRequest::new(
-                        self,
-                        #struct_ident {
-                            #(#init_fields),*
-                        },
-                    )
-                }
+    let ext_tokens = quote! {
+        pub trait #ext_trait_ident {
+            #(#struct_doc_attrs)*
+            fn #action_ident(&self, #(#required_sig),*) -> ::alloy_core::bot::ApiRequest<'_, Self, #struct_ident>
+            where
+                Self: ::alloy_core::ApiExecutor<Bot = #bot_ty> + Sized;
+        }
+
+        impl<T> #ext_trait_ident for T
+        where
+            T: ::alloy_core::ApiExecutor<Bot = #bot_ty> + Sized,
+        {
+            fn #action_ident(&self, #(#required_sig),*) -> ::alloy_core::bot::ApiRequest<'_, Self, #struct_ident> {
+                ::alloy_core::bot::ApiRequest::new(
+                    self,
+                    #struct_ident {
+                        #(#init_fields),*
+                    },
+                )
             }
         }
-    } else {
-        quote! {}
     };
 
     Ok(quote! {
@@ -219,7 +228,7 @@ pub fn expand_api_payload(attr: TokenStream, item: TokenStream) -> Result<TokenS
         impl ::alloy_core::bot::ApiPayload for #struct_ident {
             const NAME: &'static str = stringify!(#action_ident);
 
-            type Client = #bot_ty;
+            type Bot = #bot_ty;
             type Response = #api_payload_response_ty;
         }
 
@@ -232,7 +241,6 @@ pub fn expand_api_payload(attr: TokenStream, item: TokenStream) -> Result<TokenS
 struct ApiPayloadArgs {
     bot: Type,
     response: Type,
-    ext: bool,
     field: Option<syn::LitStr>,
 }
 
@@ -240,7 +248,6 @@ impl ApiPayloadArgs {
     fn parse(attr: TokenStream) -> Result<Self> {
         let mut bot = None;
         let mut response = None;
-        let mut ext = None;
         let mut field = None;
 
         let parser = syn::meta::parser(|meta| {
@@ -251,11 +258,6 @@ impl ApiPayloadArgs {
 
             if meta.path.is_ident("response") {
                 response = Some(meta.value()?.parse::<Type>()?);
-                return Ok(());
-            }
-
-            if meta.path.is_ident("ext") {
-                ext = Some(meta.value()?.parse::<LitBool>()?.value);
                 return Ok(());
             }
 
@@ -275,7 +277,6 @@ impl ApiPayloadArgs {
         Ok(Self {
             bot,
             response,
-            ext: ext.unwrap_or(true),
             field,
         })
     }
