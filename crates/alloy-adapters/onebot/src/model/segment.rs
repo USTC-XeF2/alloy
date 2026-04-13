@@ -93,7 +93,7 @@ impl std::fmt::Display for Segment {
 }
 
 impl ReceiveMessageSegment for Segment {
-    fn segment_type(&self) -> &str {
+    fn segment_type(&self) -> &'static str {
         match self {
             Segment::Text(_) => "text",
             Segment::Face(_) => "face",
@@ -126,8 +126,8 @@ impl ReceiveMessageSegment for Segment {
 
     fn as_rich_text(&self) -> Option<RichTextSegment> {
         match self {
-            Segment::Text(data) => Some(RichTextSegment::Text(data.text.clone())),
-            Segment::Image(data) => Some(RichTextSegment::Image(data.file.clone())),
+            Segment::Text(data) => Some(RichTextSegment::Text(data.text.clone().into())),
+            Segment::Image(data) => Some(RichTextSegment::Image(data.file.clone().into())),
             Segment::At(data) => Some(if data.qq == "all" {
                 RichTextSegment::AtAll
             } else {
@@ -140,14 +140,10 @@ impl ReceiveMessageSegment for Segment {
 }
 
 impl SendMessageSegment for Segment {
-    fn text(text: impl Into<String>) -> Self {
-        Segment::Text(TextData { text: text.into() })
-    }
-
     fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
         match seg {
-            RichTextSegment::Text(s) => Some(Segment::text(s)),
-            RichTextSegment::Image(r) => Some(Segment::image(r)),
+            RichTextSegment::Text(s) => Some(Segment::text(s.clone())),
+            RichTextSegment::Image(r) => Some(Segment::image(r.clone())),
             RichTextSegment::At(id) => Some(Segment::At(AtData { qq: id.clone() })),
             RichTextSegment::AtAll => Some(Segment::at_all()),
             RichTextSegment::Reply(id) => Some(Segment::reply(id)),
@@ -160,13 +156,17 @@ impl SendMessageSegment for Segment {
 // ============================================================================
 
 impl Segment {
+    pub fn text(text: impl Into<String>) -> Self {
+        Segment::Text(TextData { text: text.into() })
+    }
+
     // --------------------------------
     // Face
     // --------------------------------
 
     /// Creates a QQ face/emoji segment.
-    pub fn face(id: i32) -> Self {
-        Segment::Face(FaceData { id: id.to_string() })
+    pub fn face(id: impl Into<String>) -> Self {
+        Segment::Face(FaceData { id: id.into() })
     }
 
     // --------------------------------
@@ -573,7 +573,7 @@ mod tests {
         let json = serde_json::to_string(&at).unwrap();
         assert_eq!(json, r#"{"type":"at","data":{"qq":"10001000"}}"#);
 
-        let face = Segment::face(178);
+        let face = Segment::face("178");
         let json = serde_json::to_string(&face).unwrap();
         assert_eq!(json, r#"{"type":"face","data":{"id":"178"}}"#);
     }

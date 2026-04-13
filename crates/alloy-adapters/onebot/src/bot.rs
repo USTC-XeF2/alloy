@@ -226,7 +226,7 @@ impl Bot for OneBotBot {
     }
 
     async fn send(&self, scene: &Scene, message: &dyn Sendable) -> ApiResult<String> {
-        let onebot_msg = OneBotMessage::from_erased_message(message).into_owned();
+        let onebot_msg = OneBotMessage::from_sendable(message).into_owned();
 
         let id: Option<i32> = match scene {
             Scene::Group { group_id, .. } => {

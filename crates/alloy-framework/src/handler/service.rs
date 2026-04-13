@@ -22,14 +22,14 @@ use alloy_core::{Message, ReceiveMessageSegment, Sendable};
 // ============================================================================
 
 /// A trait for types that can be returned from handlers.
-pub trait HandlerResponse: Send + 'static {
+pub trait HandlerResponse: Send + Sync {
     /// Process the handler response, performing any necessary side effects (e.g. sending messages).
-    fn process_response(self, ctx: &HandlerContext) -> impl Future<Output = ()> + Send;
+    fn process_response(&self, ctx: &HandlerContext) -> impl Future<Output = ()> + Send;
 }
 
 /// Implementation for `()` - no response needed.
 impl HandlerResponse for () {
-    async fn process_response(self, _ctx: &HandlerContext) {
+    async fn process_response(&self, _ctx: &HandlerContext) {
         // No action needed
     }
 }
@@ -47,17 +47,21 @@ async fn send_message(ctx: &HandlerContext, message: &dyn Sendable) {
     }
 }
 
-/// Implementation for `String` - send message on Ok, log errors on Err.
-impl HandlerResponse for String {
-    async fn process_response(self, ctx: &HandlerContext) {
-        send_message(ctx, &self).await;
+impl HandlerResponse for &'static str {
+    async fn process_response(&self, ctx: &HandlerContext) {
+        send_message(ctx, self).await;
     }
 }
 
-/// Implementation for `Message<S>` - sends the message using `send_message`.
+impl HandlerResponse for String {
+    async fn process_response(&self, ctx: &HandlerContext) {
+        send_message(ctx, self).await;
+    }
+}
+
 impl<S: ReceiveMessageSegment> HandlerResponse for Message<S> {
-    async fn process_response(self, ctx: &HandlerContext) {
-        send_message(ctx, &self).await;
+    async fn process_response(&self, ctx: &HandlerContext) {
+        send_message(ctx, self).await;
     }
 }
 
@@ -65,7 +69,7 @@ impl<S: ReceiveMessageSegment> HandlerResponse for Message<S> {
 ///
 /// On Some, the inner value's response is handled. On None, no action is taken.
 impl<T: HandlerResponse> HandlerResponse for Option<T> {
-    async fn process_response(self, ctx: &HandlerContext) {
+    async fn process_response(&self, ctx: &HandlerContext) {
         if let Some(t) = self {
             t.process_response(ctx).await;
         }
@@ -75,8 +79,8 @@ impl<T: HandlerResponse> HandlerResponse for Option<T> {
 /// Implementation for `Result<T, E>` where T implements HandlerResponse.
 ///
 /// On Ok, the inner value's response is handled. On Err, the error is logged.
-impl<T: HandlerResponse, E: std::fmt::Display + Send + 'static> HandlerResponse for Result<T, E> {
-    async fn process_response(self, ctx: &HandlerContext) {
+impl<T: HandlerResponse, E: std::fmt::Display + Send + Sync> HandlerResponse for Result<T, E> {
+    async fn process_response(&self, ctx: &HandlerContext) {
         match self {
             Ok(t) => t.process_response(ctx).await,
             Err(e) => {

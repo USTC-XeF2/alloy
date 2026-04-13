@@ -93,8 +93,6 @@ impl OneBotMessageExt for OneBotMessage {
 
 #[cfg(test)]
 mod tests {
-    use alloy_core::SendMessageSegment;
-
     use super::*;
 
     #[test]

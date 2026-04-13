@@ -37,10 +37,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RichTextSegment {
     /// Plain text content.
-    Text(String),
+    Text(Cow<'static, str>),
     /// An image segment. The string is a platform-specific reference
     /// (file path, URL, base64, etc.).
-    Image(String),
+    Image(Cow<'static, str>),
     /// A user mention. The string is the user identifier
     /// (e.g., QQ number, Discord user ID).
     At(String),
@@ -57,7 +57,7 @@ pub enum RichTextSegment {
 /// A trait for segments received from an adapter/protocol.
 pub trait ReceiveMessageSegment: Send + Sync + 'static {
     /// Returns the type identifier of this segment (e.g., "text", "image", "at").
-    fn segment_type(&self) -> &str;
+    fn segment_type(&self) -> &'static str;
 
     /// Returns true if this is a plain text segment.
     fn is_text(&self) -> bool {
@@ -73,8 +73,6 @@ pub trait ReceiveMessageSegment: Send + Sync + 'static {
 
 /// A trait for segments that can be constructed and sent via an adapter.
 pub trait SendMessageSegment: ReceiveMessageSegment + Clone {
-    fn text(text: impl Into<String>) -> Self;
-
     /// Attempts to construct a segment from a platform-agnostic [`RichTextSegment`].
     ///
     /// `Text` segments should always be convertible. `Image` and `At` segments
@@ -87,7 +85,7 @@ pub trait SendMessageSegment: ReceiveMessageSegment + Clone {
 // ============================================================================
 
 impl ReceiveMessageSegment for RichTextSegment {
-    fn segment_type(&self) -> &str {
+    fn segment_type(&self) -> &'static str {
         match self {
             RichTextSegment::Text(_) => "text",
             RichTextSegment::Image(_) => "image",
@@ -111,10 +109,6 @@ impl ReceiveMessageSegment for RichTextSegment {
 }
 
 impl SendMessageSegment for RichTextSegment {
-    fn text(text: impl Into<String>) -> Self {
-        RichTextSegment::Text(text.into())
-    }
-
     /// Identity: `RichTextSegment` can always be constructed from itself.
     fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
         Some(seg.clone())
@@ -173,11 +167,11 @@ impl<S: ReceiveMessageSegment> Message<S> {
 }
 
 impl<S: SendMessageSegment> Message<S> {
-    /// Creates a message from a type-erased `ErasedMessage`.
+    /// Creates a message from a type-erased `Sendable` message.
     ///
-    /// This attempts to downcast the `ErasedMessage` to `Message<S>`. If the downcast
+    /// This attempts to downcast the `Sendable` to `Message<S>`. If the downcast
     /// fails, it tries to convert from rich text segments using `S::from_rich_text_segment`.
-    pub fn from_erased_message(msg: &dyn Sendable) -> Cow<'_, Self> {
+    pub fn from_sendable(msg: &dyn Sendable) -> Cow<'_, Self> {
         if let Some(msg) = msg.downcast_ref::<Self>() {
             Cow::Borrowed(msg)
         } else {
@@ -254,11 +248,11 @@ impl<S> FromIterator<S> for Message<S> {
 pub type RichText = Message<RichTextSegment>;
 
 impl RichText {
-    pub fn text(self, text: impl Into<String>) -> Self {
+    pub fn text(self, text: impl Into<Cow<'static, str>>) -> Self {
         self.with(RichTextSegment::Text(text.into()))
     }
 
-    pub fn image(self, reference: impl Into<String>) -> Self {
+    pub fn image(self, reference: impl Into<Cow<'static, str>>) -> Self {
         self.with(RichTextSegment::Image(reference.into()))
     }
 
@@ -286,7 +280,7 @@ impl RichText {
 ///
 /// Concrete adapter implementations can downcast using `downcast_rs` methods
 /// (e.g., `downcast_ref::<T>()`) to recover the original typed message.
-/// If the downcast fails they should fall back to [`ErasedMessage::extract_rich_text`].
+/// If the downcast fails they should fall back to [`Sendable::into_rich_text`].
 pub trait Sendable: Downcast + Send + Sync {
     /// Extracts platform-agnostic rich text segments from the message.
     fn extract_rich_text(&self) -> RichText;
@@ -294,9 +288,15 @@ pub trait Sendable: Downcast + Send + Sync {
 
 impl_downcast!(Sendable);
 
+impl Sendable for &'static str {
+    fn extract_rich_text(&self) -> RichText {
+        RichTextSegment::Text((*self).into()).into()
+    }
+}
+
 impl Sendable for String {
     fn extract_rich_text(&self) -> RichText {
-        RichTextSegment::text(self).into()
+        RichTextSegment::Text(self.clone().into()).into()
     }
 }
 

@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use alloy_core::{Message, SendMessageSegment};
+use alloy_core::Message;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 
@@ -225,7 +225,7 @@ mod tests {
     fn test_to_cq_string() {
         let msg = OneBotMessage::from(vec![
             Segment::text("Hello "),
-            Segment::face(178),
+            Segment::face("178"),
             Segment::text(" World"),
         ]);
         assert_eq!(msg.to_cq_string(), "Hello [CQ:face,id=178] World");
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn test_segment_cq_code_conversion() {
         assert_eq!(Segment::text("Hello").to_cq_code(), "Hello");
-        assert_eq!(Segment::face(178).to_cq_code(), "[CQ:face,id=178]");
+        assert_eq!(Segment::face("178").to_cq_code(), "[CQ:face,id=178]");
         assert_eq!(Segment::at(10001000).to_cq_code(), "[CQ:at,qq=10001000]");
         assert_eq!(Segment::at_all().to_cq_code(), "[CQ:at,qq=all]");
         assert_eq!(Segment::rps().to_cq_code(), "[CQ:rps]");

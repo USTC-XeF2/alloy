@@ -82,7 +82,7 @@ pub fn rich_text_shell_split(segments: &[RichTextSegment]) -> (Vec<String>, Hand
                 img_counter += 1;
                 registry
                     .images
-                    .insert(placeholder.clone(), reference.clone());
+                    .insert(placeholder.clone(), reference.clone().into());
                 args.push(placeholder);
             }
             RichTextSegment::At(_) | RichTextSegment::AtAll => {
