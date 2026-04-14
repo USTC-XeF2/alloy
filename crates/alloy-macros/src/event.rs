@@ -708,31 +708,37 @@ fn generate_view_tokens(enum_name: &Ident, parent_ty: &Type, spec: &VariantSpec)
         }
     });
 
-    let from_root = if spec.fields.is_empty() {
+    let match_pattern = if spec.fields.is_empty() {
         quote! {
-            fn from_root(event: Self::Root) -> Option<Self> {
-                if let Some(parent) = Self::Parent::from_root(event)
-                    && let #enum_name::#variant_ident = parent.data()
-                {
-                    Some(Self { parent })
-                } else {
-                    None
-                }
-            }
+            #enum_name::#variant_ident
         }
     } else {
         quote! {
-            fn from_root(event: Self::Root) -> Option<Self> {
-                if let Some(parent) = Self::Parent::from_root(event)
-                    && let #enum_name::#variant_ident { #(#field_patterns,)* .. } = parent.data()
-                {
-                    Some(Self {
-                        parent,
-                        #(#field_inits,)*
-                    })
-                } else {
-                    None
-                }
+            #enum_name::#variant_ident { #(#field_patterns,)* .. }
+        }
+    };
+
+    let from_root = quote! {
+        fn from_root(event: Self::Root) -> Option<Self> {
+            trait IntoInner<T> {
+                fn into_inner(self) -> T;
+            }
+            impl<T> IntoInner<T> for T {
+                fn into_inner(self) -> T { self }
+            }
+            impl<T> IntoInner<T> for ::std::boxed::Box<T> {
+                fn into_inner(self) -> T { *self }
+            }
+
+            if let Some(parent) = Self::Parent::from_root(event)
+                && let #match_pattern = parent.data().into_inner()
+            {
+                Some(Self {
+                    parent,
+                    #(#field_inits,)*
+                })
+            } else {
+                None
             }
         }
     };
