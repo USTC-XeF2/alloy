@@ -24,7 +24,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures::future;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use tokio::signal;
 use tracing::{error, info, warn};
 
 use crate::config::{AlloyConfig, ConfigLoader};
@@ -185,7 +184,7 @@ impl AlloyRuntime {
             self.transport_context,
         ));
 
-        self.bridges.lock().insert(adapter_name.to_string(), bridge);
+        self.bridges.lock().insert(adapter_name, bridge);
         info!(adapter = adapter_name, "Registered adapter");
         Ok(())
     }
@@ -232,7 +231,7 @@ impl AlloyRuntime {
                 let name = *name;
                 let bridge = bridge.clone();
                 async move {
-                    if let Err(e) = bridge.on_start().await {
+                    if let Err(e) = bridge.start().await {
                         error!(adapter = %name, error = %e, "Failed to start adapter");
                     } else {
                         info!(adapter = %name, "Adapter started");
@@ -275,7 +274,7 @@ impl AlloyRuntime {
             .values()
             .map(|bridge| {
                 let bridge = bridge.clone();
-                async move { bridge.on_shutdown().await }
+                async move { bridge.shutdown().await }
             })
             .collect::<Vec<_>>();
         future::join_all(futures).await;
@@ -283,52 +282,35 @@ impl AlloyRuntime {
         info!("Runtime stopped");
     }
 
-    /// Runs the runtime until a shutdown signal is received.
+    /// Runs the runtime and blocks until all bridge-owned listener tasks exit.
     pub async fn run(&self) {
         self.start().await;
-
-        info!("Alloy runtime is now running. Press Ctrl+C to stop.");
-
-        // Wait for shutdown signal
-        self.wait_for_shutdown().await;
-
+        self.wait_all_bridges().await;
         self.stop().await;
     }
 
     /// Runs the runtime with a custom shutdown future.
-    pub async fn run_until<F>(&self, shutdown: F)
-    where
-        F: Future<Output = ()>,
-    {
+    pub async fn run_until<F: Future>(&self, shutdown: F) {
         self.start().await;
 
-        shutdown.await;
+        tokio::select! {
+            _ = shutdown => {}
+            () = self.wait_all_bridges() => {}
+        }
 
         self.stop().await;
     }
 
-    /// Waits for shutdown signals (Ctrl+C or SIGTERM).
-    async fn wait_for_shutdown(&self) {
-        #[cfg(unix)]
-        {
-            let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
-                .expect("Failed to register SIGTERM handler");
-
-            tokio::select! {
-                _ = signal::ctrl_c() => {
-                    info!("Received Ctrl+C, shutting down");
-                }
-                _ = sigterm.recv() => {
-                    info!("Received SIGTERM, shutting down");
-                }
-            }
-        }
-
-        #[cfg(not(unix))]
-        {
-            signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
-            info!("Received Ctrl+C, shutting down");
-        }
+    async fn wait_all_bridges(&self) {
+        let bridges = self.bridges.lock().values().cloned().collect::<Vec<_>>();
+        let futures = bridges
+            .iter()
+            .map(|bridge| {
+                let bridge = bridge.clone();
+                async move { bridge.wait().await }
+            })
+            .collect::<Vec<_>>();
+        future::join_all(futures).await;
     }
 }
 

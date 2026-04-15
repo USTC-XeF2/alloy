@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use parking_lot::Mutex;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tracing::{info, trace, warn};
 
 use crate::adapter::Adapter;
@@ -38,10 +39,13 @@ use crate::transport::{ConnectionHandler, ListenerHandle, Sender, TransportConte
 #[async_trait]
 pub trait BridgeRuntime: Send + Sync {
     /// Starts the adapter (delegates to [`Adapter::on_start`]).
-    async fn on_start(self: Arc<Self>) -> AdapterResult<()>;
+    async fn start(self: Arc<Self>) -> AdapterResult<()>;
 
     /// Shuts down the adapter.
-    async fn on_shutdown(&self);
+    async fn shutdown(&self);
+
+    /// Waits until all bridge-owned listener handles finish.
+    async fn wait(&self);
 
     /// Returns a list of all active bot instances.
     fn bots(&self) -> Vec<Arc<dyn Bot>>;
@@ -86,6 +90,8 @@ pub struct AdapterBridge<A: Adapter, D: Dispatcher> {
     transport: TransportContext,
     /// Active listener handles (to keep them alive).
     listeners: Mutex<Vec<ListenerHandle>>,
+    /// Active background tasks (to keep them alive).
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl<A: Adapter, D: Dispatcher> AdapterBridge<A, D> {
@@ -97,6 +103,7 @@ impl<A: Adapter, D: Dispatcher> AdapterBridge<A, D> {
             event_dispatcher,
             transport,
             listeners: Mutex::default(),
+            tasks: Mutex::default(),
         }
     }
 }
@@ -104,12 +111,12 @@ impl<A: Adapter, D: Dispatcher> AdapterBridge<A, D> {
 #[async_trait]
 impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
     /// Starts the adapter (delegates to [`Adapter::on_start`]).
-    async fn on_start(self: Arc<Self>) -> AdapterResult<()> {
+    async fn start(self: Arc<Self>) -> AdapterResult<()> {
         self.adapter.on_start(self.transport, self.clone()).await
     }
 
     /// Shuts down the adapter.
-    async fn on_shutdown(&self) {
+    async fn shutdown(&self) {
         // Stop accepting new connections before tearing down active ones.
         let listeners = {
             let mut listeners = self.listeners.lock();
@@ -125,6 +132,21 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
 
         for (_, (bot, _rx, _)) in entries {
             bot.on_disconnect().await;
+        }
+
+        self.wait().await;
+    }
+
+    async fn wait(&self) {
+        let tasks = {
+            let mut tasks = self.tasks.lock();
+            std::mem::take(&mut *tasks)
+        };
+
+        for task in tasks {
+            if let Err(e) = task.await {
+                warn!(error = %e, "Background task terminated with join error");
+            }
         }
     }
 
@@ -211,7 +233,12 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
         }
     }
 
-    fn add_listener(&self, handle: ListenerHandle) {
+    fn add_listener(&self, handle: ListenerHandle, task: JoinHandle<()>) {
         self.listeners.lock().push(handle);
+        self.tasks.lock().push(task);
+    }
+
+    fn add_task(&self, task: JoinHandle<()>) {
+        self.tasks.lock().push(task);
     }
 }

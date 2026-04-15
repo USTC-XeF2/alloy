@@ -137,15 +137,18 @@ pub async fn sse_start_client(
 
     // Register the bot (SSE is receive-only, no Sender needed).
     let shutdown_token = handler.register_connection(&bot_id, None);
+    let handler_for_task = handler.clone();
 
     // Spawn the persistent SSE loop.
-    tokio::spawn(run_sse_loop(
+    let task = tokio::spawn(run_sse_loop(
         bot_id.clone(),
         config,
         client,
-        handler,
+        handler_for_task,
         shutdown_token,
     ));
+
+    handler.add_task(task);
 
     Ok(bot_id)
 }

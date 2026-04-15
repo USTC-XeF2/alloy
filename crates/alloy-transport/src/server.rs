@@ -284,13 +284,13 @@ pub async fn http_listen(
     let handle_id = format!("http-server-{}{}", entry.actual_addr, path);
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         shutdown_tx.closed().await;
         entry.state.http_routes.lock().remove(&path);
         info!(path = %path, "Unregistered HTTP route");
     });
 
-    handler.add_listener(ListenerHandle::new(handle_id, shutdown_rx));
+    handler.add_listener(ListenerHandle::new(handle_id, shutdown_rx), task);
     Ok(())
 }
 
@@ -364,13 +364,13 @@ pub async fn ws_listen(
     let handle_id = format!("ws-server-{}{}", entry.actual_addr, path);
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         shutdown_tx.closed().await;
         entry.state.ws_routes.lock().remove(&path);
         info!(path = %path, "Unregistered WebSocket route");
     });
 
-    handler.add_listener(ListenerHandle::new(handle_id, shutdown_rx));
+    handler.add_listener(ListenerHandle::new(handle_id, shutdown_rx), task);
     Ok(())
 }
 

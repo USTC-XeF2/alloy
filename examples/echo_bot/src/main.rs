@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use alloy::prelude::*;
+use alloy_adapter_onebot::api::*;
 use alloy_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use alloy_plugin_storage::{Data, STORAGE_PLUGIN, StorageDir, StorageService};
 use anyhow::Result;
@@ -165,6 +166,6 @@ async fn main() -> Result<()> {
     runtime.register_plugin(&STORAGE_PLUGIN);
     runtime.register_plugin(&ECHO_BOT_PLUGIN);
 
-    runtime.run().await;
+    runtime.run_until(tokio::signal::ctrl_c()).await;
     Ok(())
 }

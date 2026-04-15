@@ -55,11 +55,12 @@ pub async fn ws_connect(
 
     // Register the bot with its send capability; get back the shutdown sender.
     let shutdown_tx = handler.register_connection(&bot_id, Some(Sender::Ws { message_tx }));
+    let handler_for_task = handler.clone();
 
     let bot_id_cloned = bot_id.clone();
 
     // Spawn connection manager task
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         let backoff = build_backoff(&config);
         let url = config.url.clone();
 
@@ -70,7 +71,7 @@ pub async fn ws_connect(
             let connect_fn = async || {
                 let mut request = url_inner.clone().into_client_request()?;
                 if let Some(token) = &config.access_token {
-                    let mut header_value = HeaderValue::from_str(&format!("Bearer {}", token))?;
+                    let mut header_value = HeaderValue::from_str(&format!("Bearer {token}"))?;
                     header_value.set_sensitive(true);
                     request.headers_mut().insert(AUTHORIZATION, header_value);
                 }
@@ -112,10 +113,10 @@ pub async fn ws_connect(
                         msg = ws_rx.next() => {
                             match msg {
                                 Some(Ok(Message::Text(text))) => {
-                                    handler.on_message(&bot_id_cloned, text.into()).await;
+                                    handler_for_task.on_message(&bot_id_cloned, text.into()).await;
                                 }
                                 Some(Ok(Message::Binary(data))) => {
-                                    handler.on_message(&bot_id_cloned, data).await;
+                                    handler_for_task.on_message(&bot_id_cloned, data).await;
                                 }
                                 Some(Ok(Message::Ping(_))) => {
                                     trace!(bot_id = %bot_id_cloned, "Received ping");
@@ -149,8 +150,10 @@ pub async fn ws_connect(
             }
         }
 
-        handler.on_disconnect(&bot_id_cloned).await;
+        handler_for_task.on_disconnect(&bot_id_cloned).await;
     });
+
+    handler.add_task(task);
 
     Ok(bot_id)
 }

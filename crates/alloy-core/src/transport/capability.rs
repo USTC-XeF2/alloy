@@ -22,6 +22,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use linkme::distributed_slice;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tracing::warn;
 
 use super::config::{
@@ -64,7 +65,10 @@ pub trait ConnectionHandler: Send + Sync {
     async fn on_disconnect(&self, bot_id: &str);
 
     /// Register a listener handle, keeping it alive for the adapter's lifetime.
-    fn add_listener(&self, handle: ListenerHandle);
+    fn add_listener(&self, handle: ListenerHandle, task: JoinHandle<()>);
+
+    /// Register a join handle, keeping it alive for the adapter's lifetime.
+    fn add_task(&self, task: JoinHandle<()>);
 }
 
 // =============================================================================
