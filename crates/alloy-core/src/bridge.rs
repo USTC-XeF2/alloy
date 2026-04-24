@@ -31,9 +31,9 @@ use tokio::task::JoinHandle;
 use tracing::{info, trace, warn};
 
 use crate::adapter::Adapter;
-use crate::bot::{Bot, BoxedBot};
+use crate::bot::Bot;
 use crate::error::AdapterResult;
-use crate::event::{BoxedEvent, EventType};
+use crate::event::{EventRoot, EventType, PlatformEvent};
 use crate::transport::{ConnectionHandler, ListenerHandle, Sender, TransportContext};
 
 #[async_trait]
@@ -55,14 +55,15 @@ pub trait BridgeRuntime: Send + Sync {
 ///
 /// Implementations must be async to allow spawning handler tasks and awaiting
 /// their creation before returning.
-///
-/// Use `Arc<dyn Dispatcher>` to pass a dispatcher through the bridge layer.
 pub trait Dispatcher: Send + Sync + 'static {
     /// Dispatch `event` (originated from `bot`) to all registered handlers.
     ///
     /// Returns when the dispatch operation is complete (e.g., all handler tasks
     /// have been spawned, but not necessarily finished).
-    fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) -> impl Future<Output = ()> + Send;
+    fn dispatch<E, B>(&self, event: E, bot: Arc<B>) -> impl Future<Output = ()> + Send
+    where
+        E: EventRoot,
+        B: Bot;
 }
 
 // =============================================================================
@@ -199,20 +200,20 @@ impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {
         match event.event_type() {
             EventType::Message => info!(
                 bot_id = %bot_id,
-                platform = %event.platform(),
+                platform = %A::Event::PLATFORM,
                 event_id = %event.event_id(),
                 text = %event.rich_text(),
                 "Received message event"
             ),
             EventType::Meta => trace!(
                 bot_id = %bot_id,
-                platform = %event.platform(),
+                platform = %A::Event::PLATFORM,
                 event_id = %event.event_id(),
                 "Received meta event"
             ),
             _ => info!(
                 bot_id = %bot_id,
-                platform = %event.platform(),
+                platform = %A::Event::PLATFORM,
                 event_id = %event.event_id(),
                 "Received event"
             ),

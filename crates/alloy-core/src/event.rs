@@ -6,9 +6,9 @@
 //! - [`EventView`] for typed extraction (`Event<T>` where `T: EventView`)
 //! - [`EventType`] and [`Scene`] shared classification types
 
+use std::borrow::Cow;
 use std::convert::Infallible;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use downcast_rs::{Downcast, impl_downcast};
 
@@ -85,11 +85,8 @@ impl FromStr for EventType {
 
 /// Type-erased root event trait used by runtime dispatch.
 pub trait EventRoot: Downcast + Send + Sync {
-    /// Platform name (adapter name).
-    fn platform(&self) -> &'static str;
-
     /// Adapter-specific event id suffix, e.g. `message.private.friend`.
-    fn event_id(&self) -> String;
+    fn event_id(&self) -> Cow<'_, str>;
 
     /// High-level event classification.
     fn event_type(&self) -> EventType;
@@ -107,7 +104,7 @@ pub trait EventRoot: Downcast + Send + Sync {
     }
 
     /// Plain text projection of this event.
-    fn plain_text(&self) -> String;
+    fn plain_text(&self) -> Cow<'_, str>;
 
     /// Rich text projection of this event.
     fn rich_text(&self) -> RichText;
@@ -119,10 +116,13 @@ impl std::fmt::Debug for dyn EventRoot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EventRoot")
             .field("id", &self.event_id())
-            .field("platform", &self.platform())
             .field("type", &self.event_type())
             .finish()
     }
+}
+
+pub trait PlatformEvent: EventRoot {
+    const PLATFORM: &'static str;
 }
 
 // ============================================================================
@@ -151,5 +151,3 @@ impl<T: EventRoot> EventView for T {
         self
     }
 }
-
-pub type BoxedEvent = Arc<dyn EventRoot>;

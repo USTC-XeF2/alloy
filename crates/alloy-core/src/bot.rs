@@ -5,7 +5,6 @@
 
 use std::future::{Future, IntoFuture};
 use std::pin::Pin;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use downcast_rs::{DowncastSync, impl_downcast};
@@ -65,9 +64,6 @@ pub trait Bot: DowncastSync + 'static {
 }
 
 impl_downcast!(sync Bot);
-
-/// A boxed Bot trait object.
-pub type BoxedBot = Arc<dyn Bot>;
 
 // ----------------------------------------------------------------------------
 // API Interface

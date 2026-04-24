@@ -80,7 +80,7 @@ pub mod prelude {
     pub use alloy_framework::handler::{HandlerService, Layer, ServiceBuilderExt};
 
     // Extractors - for handler parameters
-    pub use alloy_framework::context::HandlerContext;
+    pub use alloy_framework::context::{BoxedBot, HandlerContext};
     pub use alloy_framework::extractor::{
         Bot, DefaultPluginState, Event, FromContext, PluginConfig, PluginState, ServiceRef,
     };
@@ -95,11 +95,10 @@ pub mod prelude {
     };
 
     // Bot types - for interacting with bots in handlers
-    pub use alloy_core::{ApiExecutor, ApiPayload, Bot as __Bot, BoxedBot};
+    pub use alloy_core::{ApiExecutor, ApiPayload, Bot as __Bot};
 
     // Core traits for custom implementations
     pub use alloy_core::{
-        BoxedEvent, Message, ReceiveMessageSegment, RichText, RichTextSegment, Scene,
-        SendMessageSegment,
+        Message, ReceiveMessageSegment, RichText, RichTextSegment, Scene, SendMessageSegment,
     };
 }

@@ -46,7 +46,7 @@ use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
 use crate::plugin::{ALLOY_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
 use alloy_core::bridge::Dispatcher;
-use alloy_core::{BoxedBot, BoxedEvent};
+use alloy_core::{Bot, EventRoot};
 
 // =============================================================================
 // Topological sort utility
@@ -604,9 +604,13 @@ impl Dispatcher for PluginManager {
     /// list, executed **sequentially**.  Each handler runs in its own spawned
     /// task for an isolated runtime environment.  If any handler calls
     /// `stop_propagation`, the remaining handlers are skipped.
-    async fn dispatch(&self, event: BoxedEvent, bot: BoxedBot) {
+    async fn dispatch<E, B>(&self, event: E, bot: Arc<B>)
+    where
+        E: EventRoot,
+        B: Bot,
+    {
         let base = Arc::new(EventContext::new(
-            event,
+            Arc::new(event),
             bot,
             #[cfg(feature = "command")]
             self.command_context.clone(),

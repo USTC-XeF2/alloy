@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use derive_more::{AsRef, Deref};
 
 use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
-use alloy_core::{BoxedEvent, EventView, Scene};
+use alloy_core::{EventRoot, EventView, Scene};
 
 /// Context wrapper that provides access to extracted event data.
 ///
@@ -44,16 +46,16 @@ where
             .map(Event)
             .ok_or_else(|| ExtractError::EventTypeMismatch {
                 expected: std::any::type_name::<T>(),
-                got: ctx.event().event_id(),
+                got: ctx.event().event_id().into(),
             })
     }
 }
 
-/// Blanket implementation for extracting the event as a clone of [`BoxedEvent`].
+/// Blanket implementation for extracting the raw event as an `Arc<dyn EventRoot>`.
 ///
-/// This is useful when a handler needs to work with any event type
-/// without knowing the concrete type at compile time.
-impl FromContext for BoxedEvent {
+/// This allows handlers to access the full event data without needing to know the
+/// specific event type.
+impl FromContext for Arc<dyn EventRoot> {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         Ok(ctx.event().clone())
     }

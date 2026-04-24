@@ -26,7 +26,10 @@ use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 
 use crate::error::{ExtractError, ExtractResult};
-use alloy_core::{BoxedBot, BoxedEvent};
+use alloy_core::{Bot, EventRoot};
+
+/// A boxed Bot trait object.
+pub type BoxedBot = Arc<dyn Bot>;
 
 /// Type alias for the heterogeneous service map values stored in the global registry.
 ///
@@ -123,7 +126,7 @@ pub(crate) struct CommandContext {
 /// - The event and bot are accessed without copying.
 /// - Each plugin has its own isolated state through [`PluginContext`].
 pub struct EventContext {
-    event: BoxedEvent,
+    event: Arc<dyn EventRoot>,
     bot: BoxedBot,
     /// Cleared by any handler that calls [`HandlerContext::stop_propagation`].
     is_propagating: AtomicBool,
@@ -135,7 +138,7 @@ pub struct EventContext {
 impl EventContext {
     /// Creates a new shared event context.
     pub(crate) fn new(
-        event: BoxedEvent,
+        event: Arc<dyn EventRoot>,
         bot: BoxedBot,
         #[cfg(feature = "command")] command: Arc<crate::context::CommandContext>,
     ) -> Self {
@@ -306,8 +309,8 @@ impl HandlerContext {
     // ─── Shared base delegation ───────────────────────────────────────────────
 
     /// Returns a reference to the underlying boxed event.
-    pub fn event(&self) -> &BoxedEvent {
-        &self.base.event
+    pub fn event(&self) -> Arc<dyn EventRoot> {
+        self.base.event.clone()
     }
 
     /// Returns a reference to the bot.

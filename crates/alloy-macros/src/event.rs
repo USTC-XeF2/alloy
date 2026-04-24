@@ -25,14 +25,10 @@ pub fn expand_event_root(attr: TokenStream, item: TokenStream) -> syn::Result<To
         #root_struct
 
         impl ::alloy_core::EventRoot for #root_name {
-            fn platform(&self) -> &'static str {
-                #platform
-            }
-
-            fn event_id(&self) -> String {
+            fn event_id(&self) -> ::std::borrow::Cow<'_, str> {
                 let mut s = String::new();
                 self.#data_field_ident.write_id(&mut s);
-                s
+                s.into()
             }
 
             fn event_type(&self) -> ::alloy_core::EventType {
@@ -43,13 +39,17 @@ pub fn expand_event_root(attr: TokenStream, item: TokenStream) -> syn::Result<To
                 self.#data_field_ident.scene()
             }
 
-            fn plain_text(&self) -> String {
-                self.#data_field_ident.plain_text()
+            fn plain_text(&self) -> ::std::borrow::Cow<'_, str> {
+                self.#data_field_ident.plain_text().into()
             }
 
             fn rich_text(&self) -> ::alloy_core::RichText {
                 self.#data_field_ident.rich_text()
             }
+        }
+
+        impl ::alloy_core::event::PlatformEvent for #root_name {
+            const PLATFORM: &'static str = #platform;
         }
 
         impl #root_name {

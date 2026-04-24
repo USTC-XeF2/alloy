@@ -11,7 +11,7 @@ use bytes::Bytes;
 
 use crate::bot::Bot;
 use crate::error::AdapterResult;
-use crate::event::BoxedEvent;
+use crate::event::PlatformEvent;
 use crate::transport::{ConnectionHandler, Sender, TransportContext};
 
 // =============================================================================
@@ -36,6 +36,9 @@ pub trait Adapter: Send + Sync + 'static {
     /// The bot type associated with this adapter.
     type Bot: Bot;
 
+    /// The event type associated with this adapter.
+    type Event: PlatformEvent;
+
     /// Creates an adapter instance from its deserialized configuration.
     fn from_config(config: Self::Config) -> Self;
 
@@ -55,7 +58,7 @@ pub trait Adapter: Send + Sync + 'static {
         &self,
         bot: &Self::Bot,
         data: Bytes,
-    ) -> impl Future<Output = Option<BoxedEvent>> + Send;
+    ) -> impl Future<Output = Option<Self::Event>> + Send;
 
     /// Called when the adapter should start.
     ///

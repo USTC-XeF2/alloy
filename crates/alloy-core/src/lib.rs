@@ -46,8 +46,8 @@ pub use bytes::Bytes;
 pub use http::Method as HttpMethod;
 
 // Re-export core types for public API
-pub use bot::{ApiExecutor, ApiPayload, Bot, BoxedBot};
-pub use event::{BoxedEvent, EventRoot, EventType, EventView, Scene};
+pub use bot::{ApiExecutor, ApiPayload, Bot};
+pub use event::{EventRoot, EventType, EventView, Scene};
 pub use message::{
     Message, ReceiveMessageSegment, RichText, RichTextSegment, SendMessageSegment, Sendable,
 };

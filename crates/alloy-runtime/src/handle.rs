@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use alloy_core::Bot;
 use alloy_core::bridge::BridgeRuntime;
-use alloy_core::{Bot, BoxedBot};
 use alloy_framework::{
-    context::HandlerContext,
+    context::{BoxedBot, HandlerContext},
     error::{ExtractError, ExtractResult},
     extractor::FromContext,
 };

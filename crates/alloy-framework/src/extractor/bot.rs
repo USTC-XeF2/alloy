@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::context::HandlerContext;
+use crate::context::{BoxedBot, HandlerContext};
 use crate::error::{ExtractError, ExtractResult};
 use crate::extractor::FromContext;
 use alloy_core::error::ApiResult;
-use alloy_core::{ApiExecutor, ApiPayload, Bot, BoxedBot};
+use alloy_core::{ApiExecutor, ApiPayload, Bot};
 
 /// Context wrapper that provides access to the bot instance.
 ///

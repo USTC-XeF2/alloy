@@ -19,7 +19,7 @@ use alloy_core::transport::{
     ConnectionHandler, ConnectionInfo, HttpClientConfig, HttpServerConfig, Sender,
     TransportContext, WsClientConfig, WsServerConfig,
 };
-use alloy_core::{Bot, BoxedEvent, Bytes, HttpMethod};
+use alloy_core::{Bot, Bytes, HttpMethod};
 
 /// The OneBot v11 adapter.
 ///
@@ -36,6 +36,7 @@ impl Adapter for OneBotAdapter {
     type Config = OneBotConfig;
 
     type Bot = OneBotBot;
+    type Event = OneBotEvent;
 
     fn from_config(config: Self::Config) -> Self {
         Self { config }
@@ -45,7 +46,7 @@ impl Adapter for OneBotAdapter {
         OneBotBot::new(bot_id, sender)
     }
 
-    async fn on_message(&self, bot: &Self::Bot, data: Bytes) -> Option<BoxedEvent> {
+    async fn on_message(&self, bot: &Self::Bot, data: Bytes) -> Option<Self::Event> {
         let bot_id = bot.id();
 
         // Try to handle as API response
@@ -56,7 +57,7 @@ impl Adapter for OneBotAdapter {
 
         // Parse as event
         match serde_json::from_slice::<OneBotEvent>(&data) {
-            Ok(e) => Some(Arc::new(e)),
+            Ok(e) => Some(e),
             Err(e) => {
                 warn!(bot_id = %bot_id, error = %e, "Failed to parse event raw data");
                 None
