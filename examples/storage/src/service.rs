@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use alloy::framework::{context::PluginContext, plugin::ServiceInit};
@@ -12,26 +12,41 @@ use serde::{Deserialize, Serialize};
 #[service_meta("storage")]
 pub trait StorageService: Send + Sync {
     /// Returns the `<base>/cache/` directory path.
-    fn cache_dir(&self) -> PathBuf;
+    fn cache_dir(&self) -> &Path;
 
     /// Returns the `<base>/data/` directory path.
-    fn data_dir(&self) -> PathBuf;
+    fn data_dir(&self) -> &Path;
 
     /// Returns the `<base>/config/` directory path.
-    fn config_dir(&self) -> PathBuf;
+    fn config_dir(&self) -> &Path;
 }
 
 /// Configuration for the storage plugin.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
     /// Root directory for all storage subdirectories. Defaults to `.`.
     #[serde(default = "default_base_dir")]
     pub base_dir: PathBuf,
+
+    /// Optional overrides for the three storage subdirectories.
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub data_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub config_dir: Option<PathBuf>,
+
+    /// Create storage directories if they do not exist. Defaults to `true`.
+    #[serde(default = "default_auto_create")]
+    pub auto_create: bool,
 }
 
 fn default_base_dir() -> PathBuf {
     PathBuf::from(".")
+}
+
+const fn default_auto_create() -> bool {
+    true
 }
 
 // ─── StorageServiceImpl ───────────────────────────────────────────────────────
@@ -41,20 +56,22 @@ fn default_base_dir() -> PathBuf {
 /// Instantiated by the framework via [`ServiceInit::init`]; you should not
 /// construct this directly — consume it through `ServiceRef<dyn StorageService>`.
 pub struct StorageServiceImpl {
-    base_dir: PathBuf,
+    cache_dir: PathBuf,
+    data_dir: PathBuf,
+    config_dir: PathBuf,
 }
 
 impl StorageService for StorageServiceImpl {
-    fn cache_dir(&self) -> PathBuf {
-        self.base_dir.join("cache")
+    fn cache_dir(&self) -> &Path {
+        &self.cache_dir
     }
 
-    fn data_dir(&self) -> PathBuf {
-        self.base_dir.join("data")
+    fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 
-    fn config_dir(&self) -> PathBuf {
-        self.base_dir.join("config")
+    fn config_dir(&self) -> &Path {
+        &self.config_dir
     }
 }
 
@@ -63,19 +80,30 @@ impl ServiceInit for StorageServiceImpl {
     ///
     /// Reads `base_dir` from config; falls back to `"."` when absent.
     async fn init(ctx: Arc<PluginContext>) -> Result<Self, String> {
-        let cfg: StorageConfig = ctx.config().unwrap_or_default();
-        let service = StorageServiceImpl {
-            base_dir: cfg.base_dir,
+        let cfg: StorageConfig = ctx
+            .config()
+            .map_err(|e| format!("Failed to load storage config: {}", e))?;
+
+        let base = cfg.base_dir;
+        let service = Self {
+            cache_dir: cfg.cache_dir.unwrap_or_else(|| base.join("cache")),
+            data_dir: cfg.data_dir.unwrap_or_else(|| base.join("data")),
+            config_dir: cfg.config_dir.unwrap_or_else(|| base.join("config")),
         };
 
-        for sub in ["cache", "data", "config"] {
-            let dir = service.base_dir.join(sub);
-            if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-                return Err(format!(
-                    "Failed to create storage directory '{}': {}",
-                    dir.display(),
-                    e
-                ));
+        if cfg.auto_create {
+            for dir in [
+                service.cache_dir(),
+                service.data_dir(),
+                service.config_dir(),
+            ] {
+                if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+                    return Err(format!(
+                        "Failed to create storage directory '{}': {}",
+                        dir.display(),
+                        e
+                    ));
+                }
             }
         }
 

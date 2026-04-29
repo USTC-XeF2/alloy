@@ -23,7 +23,7 @@ pub struct Data;
 
 impl StorageDirSelector for Data {
     fn select(service: Arc<dyn StorageService>) -> PathBuf {
-        service.data_dir()
+        service.data_dir().into()
     }
 }
 
@@ -32,7 +32,7 @@ pub struct Cache;
 
 impl StorageDirSelector for Cache {
     fn select(service: Arc<dyn StorageService>) -> PathBuf {
-        service.cache_dir()
+        service.cache_dir().into()
     }
 }
 
@@ -41,7 +41,7 @@ pub struct Config;
 
 impl StorageDirSelector for Config {
     fn select(service: Arc<dyn StorageService>) -> PathBuf {
-        service.config_dir()
+        service.config_dir().into()
     }
 }
 
@@ -54,7 +54,7 @@ impl StorageDirSelector for Config {
 /// - [`StorageDir<Cache>`] for disposable cached data
 /// - [`StorageDir<Config>`] for user-editable configs
 ///
-/// Implements [`Deref`] to `PathBuf`, so you can use PathBuf methods directly.
+/// Implements [`Deref`] to `PathBuf`, so you can use `PathBuf` methods directly.
 ///
 /// Example:
 /// ```rust,ignore
