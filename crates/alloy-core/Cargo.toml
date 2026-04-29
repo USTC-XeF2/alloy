@@ -15,7 +15,7 @@ derive_more = { workspace = true, features = ["as_ref", "deref", "deref_mut", "f
 downcast-rs = "2.0.2"
 futures = { workspace = true }
 http = "1.4.0"
-linkme = "0.3.35"
+linkme = "0.3.36"
 parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
