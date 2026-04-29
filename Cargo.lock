@@ -75,6 +75,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "shlex",
  "thiserror",
  "tokio",
  "tokio-test",

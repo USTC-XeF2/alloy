@@ -196,6 +196,7 @@ pub struct ReplyData {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ImageSubType {
     Normal,
     Sticker,

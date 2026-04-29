@@ -221,7 +221,9 @@ where
             }
 
             let rich_text = ctx.event().rich_text();
-            let (args, registry) = rich_text_shell_split(&rich_text);
+            let Some((args, registry)) = rich_text_shell_split(&rich_text) else {
+                return Err(EventSkipped.into());
+            };
 
             let expected_cmd = format!("{start_tag}{name}");
             if args.is_empty() || args[0].to_lowercase() != expected_cmd.to_lowercase() {

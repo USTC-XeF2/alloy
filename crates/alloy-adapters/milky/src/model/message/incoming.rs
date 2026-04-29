@@ -93,6 +93,7 @@ impl ReceiveMessageSegment for IncomingSegment {
             IncomingSegment::Image(d) => Some(RichTextSegment::Image(d.temp_url.clone().into())),
             IncomingSegment::Mention(d) => Some(RichTextSegment::At(d.user_id.to_string())),
             IncomingSegment::MentionAll(_) => Some(RichTextSegment::AtAll),
+            IncomingSegment::Reply(d) => Some(RichTextSegment::Reply(d.message_seq.to_string())),
             _ => None,
         }
     }
