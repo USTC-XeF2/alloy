@@ -8,7 +8,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use amira_core::{HandlerContext, FromContext, EventContext};
+//! use amira_framework::context::HandlerContext;
+//! use amira_framework::extractor::{FromContext, Event};
 //!
 //! // Simple handler with no parameters
 //! async fn simple_handler() {
@@ -16,13 +17,13 @@
 //! }
 //!
 //! // Handler with extractor
-//! async fn echo_handler(event: EventContext<MessageEvent>) {
+//! async fn echo_handler(event: Event<MessageEvent>) {
 //!     println!("Message: {}", event.plain_text());
 //! }
 //!
 //! // Handler with multiple extractors
 //! async fn complex_handler(
-//!     msg: EventContext<MessageEvent>,
+//!     msg: Event<MessageEvent>,
 //!     state: State<AppState>,
 //! ) {
 //!     // ...
@@ -59,7 +60,8 @@ use crate::extractor::FromContext;
 /// # Example
 ///
 /// ```rust,ignore
-/// use amira_core::{HandlerContext, FromContext, EventContext};
+/// use amira_framework::context::HandlerContext;
+/// use amira_framework::extractor::{FromContext, Event};
 ///
 /// // Simple handler with no context extraction
 /// async fn simple_handler() {
@@ -67,13 +69,13 @@ use crate::extractor::FromContext;
 /// }
 ///
 /// // Handler with message event extraction
-/// async fn echo_handler(event: EventContext<MessageEvent>) {
+/// async fn echo_handler(event: Event<MessageEvent>) {
 ///     println!("Message: {}", event.plain_text());
 /// }
 ///
 /// // Handler with multiple extractors
 /// async fn complex_handler(
-///     msg: EventContext<MessageEvent>,
+///     msg: Event<MessageEvent>,
 ///     state: State<AppState>,
 /// ) {
 ///     // Process message and state...

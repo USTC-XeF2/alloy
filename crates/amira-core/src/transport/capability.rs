@@ -154,8 +154,6 @@ pub static HTTP_START_CLIENT_REGISTRY: [HttpStartClientFn];
 #[distributed_slice]
 pub static SSE_CLIENT_REGISTRY: [SseClientFn];
 
-// Will be defined as impl method for TransportContext
-
 // =============================================================================
 // Transport Context
 // =============================================================================

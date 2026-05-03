@@ -18,7 +18,7 @@
 //! ```rust,ignore
 //! use amira::prelude::*;
 //!
-//! async fn echo(event: EventContext<MessageEvent>) -> anyhow::Result<String> {
+//! async fn echo(event: Event<MessageEvent>) -> anyhow::Result<String> {
 //!     Ok(event.plain_text())
 //! }
 //!

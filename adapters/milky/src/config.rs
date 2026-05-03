@@ -1,27 +1,8 @@
 //! Configuration types for the Milky adapter.
 //!
-//! This module defines the configuration schema loaded from the global
-//! `amira.toml` configuration file.
-//!
-//! # Milky Protocol Overview
-//!
-//! In the Milky protocol the **protocol end** (Milky server) always provides
-//! two HTTP endpoints:
-//!
-//! - `POST /api/:action` — API calls sent by the application.
-//! - `GET  /event`       — Event stream (SSE or WebSocket upgrade).
-//!
-//! Because API calls are **always HTTP**, there is no WebSocket-based API call
-//! mechanism. Each connection type configures how the application receives
-//! events and reaches the `/api/*` endpoint.
-//!
-//! # Connection Types
-//!
-//! - `type = "client"` + optional `event_source`:
-//!   - `none` (default): API-only client
-//!   - `sse`: subscribe to `/event` via SSE
-//!   - `ws`: subscribe to `/event` via WebSocket
-//! - `type = "webhook"`: receive-only HTTP webhook server
+//! Defines [`MilkyConfig`] and [`ConnectionConfig`], deserialized from
+//! `amira.toml`. See the [adapter module](super::adapter) for the protocol
+//! architecture and connection setup details.
 
 use serde::Deserialize;
 

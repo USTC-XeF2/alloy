@@ -11,6 +11,20 @@
 //! - [`Message<S>`]: A generic struct holding a collection of segments
 //!
 //! Protocol adapters define their own segment types and use `Message<TheirSegment>`.
+//!
+//! # Examples
+//!
+//! ```
+//! use amira_core::message::{RichText, RichTextSegment};
+//!
+//! let msg = RichText::new()
+//!     .text("Hello, ")
+//!     .at("12345")
+//!     .text("!");
+//!
+//! assert_eq!(msg.len(), 3);
+//! assert_eq!(msg.extract_plain_text(), "Hello, !");
+//! ```
 
 use std::borrow::Cow;
 use std::fmt::Display;
@@ -41,8 +55,7 @@ pub enum RichTextSegment {
     /// An image segment. The string is a platform-specific reference
     /// (file path, URL, base64, etc.).
     Image(Cow<'static, str>),
-    /// A user mention. The string is the user identifier
-    /// (e.g., QQ number, Discord user ID).
+    /// A user mention. The string is the platform-specific user identifier.
     At(String),
     /// A segment representing an @all mention.
     AtAll,
@@ -279,22 +292,33 @@ impl<S> FromIterator<S> for Message<S> {
 pub type RichText = Message<RichTextSegment>;
 
 impl RichText {
+    /// Appends a plain text segment.
+    ///
+    /// ```
+    /// use amira_core::RichText;
+    /// let msg = RichText::new().text("Hello, ");
+    /// assert_eq!(msg.to_string(), "Hello, ");
+    /// ```
     pub fn text(self, text: impl Into<Cow<'static, str>>) -> Self {
         self.with(RichTextSegment::Text(text.into()))
     }
 
+    /// Appends an image segment with a platform-specific reference (URL, path, base64, etc.).
     pub fn image(self, reference: impl Into<Cow<'static, str>>) -> Self {
         self.with(RichTextSegment::Image(reference.into()))
     }
 
+    /// Appends an @-mention segment for the given user ID.
     pub fn at(self, id: impl Into<String>) -> Self {
         self.with(RichTextSegment::At(id.into()))
     }
 
+    /// Appends an @all mention segment.
     pub fn at_all(self) -> Self {
         self.with(RichTextSegment::AtAll)
     }
 
+    /// Appends a quote-reply segment referencing the given message ID.
     pub fn reply(self, message_id: impl Into<String>) -> Self {
         self.with(RichTextSegment::Reply(message_id.into()))
     }

@@ -1,3 +1,8 @@
+//! Milky protocol outbound message segment types.
+//!
+//! Defines [`OutgoingSegment`] — used when constructing messages to send
+//! to the Milky server. Each segment serializes to the protocol's JSON format.
+
 use std::borrow::Cow;
 
 use amira_core::{ReceiveMessageSegment, RichTextSegment, SendMessageSegment};

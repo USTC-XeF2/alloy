@@ -1,21 +1,7 @@
 //! Milky protocol Bot implementation.
 //!
 //! This module provides `MilkyBot`, a concrete implementation of the `Bot` trait
-//! that provides strongly-typed API methods for all Milky protocol v1.1 APIs.
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! use amira_adapter_milky::MilkyBot;
-//! use amira_core::{BoxedBot, EventArc};
-//!
-//! async fn my_handler(bot: BoxedBot) {
-//!     if let Some(milky) = bot.as_any().downcast_ref::<MilkyBot>() {
-//!         let info = milky.get_login_info().await.unwrap();
-//!         println!("Logged in as: {}", info.nickname);
-//!     }
-//! }
-//! ```
+//! that provides strongly-typed API methods for all Milky protocol APIs.
 
 use async_trait::async_trait;
 use tracing::debug;

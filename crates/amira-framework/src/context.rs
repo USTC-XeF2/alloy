@@ -343,6 +343,11 @@ impl HandlerContext {
         self.base.is_propagating()
     }
 
+    /// Returns a reference to the per-dispatch, per-plugin handler state.
+    ///
+    /// This state is isolated to the current plugin and event dispatch, so it
+    /// cannot be observed or mutated by other plugins. For persistent state
+    /// shared across dispatches, use [`PluginContext::state()`] instead.
     pub fn state(&self) -> &State {
         &self.state
     }

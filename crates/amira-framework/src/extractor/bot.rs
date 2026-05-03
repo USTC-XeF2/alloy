@@ -56,9 +56,9 @@ where
 /// This allows handlers to inject the bot and use it to send messages:
 ///
 /// ```rust,ignore
-/// use amira_core::BoxedBot;
+/// use amira_framework::context::BoxedBot;
 ///
-/// async fn my_handler(bot: BoxedBot, event: EventContext<MessageEvent>) {
+/// async fn my_handler(bot: BoxedBot, event: Event<MessageEvent>) {
 ///     // Use the bot to send a message back
 ///     bot.send(event.as_ref(), "Hello!").await.ok();
 /// }

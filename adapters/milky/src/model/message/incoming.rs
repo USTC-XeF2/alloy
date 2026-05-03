@@ -1,3 +1,8 @@
+//! Milky protocol inbound message segment types.
+//!
+//! Defines [`IncomingSegment`] — the deserialized form of each segment
+//! in a message received from the Milky server.
+
 use amira_core::{ReceiveMessageSegment, RichTextSegment};
 use serde::Deserialize;
 

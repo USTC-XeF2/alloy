@@ -1,4 +1,8 @@
 //! Connection handling and lifecycle types.
+//!
+//! Defines [`Sender`] (transport-specific outbound capability), [`ConnectionInfo`]
+//! (inbound connection metadata), [`ListenerHandle`] (server lifecycle handle),
+//! and [`HttpRequestFn`] (type-erased HTTP client closure).
 
 use std::net::SocketAddr;
 use std::sync::Arc;

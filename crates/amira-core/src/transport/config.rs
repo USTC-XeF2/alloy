@@ -1,4 +1,8 @@
 //! Configuration types for transport clients and servers.
+//!
+//! Each transport variant has a corresponding config struct:
+//! [`WsServerConfig`], [`WsClientConfig`], [`HttpServerConfig`], [`HttpClientConfig`],
+//! and [`SseClientConfig`]. These are passed to capability functions during adapter startup.
 
 use std::time::Duration;
 

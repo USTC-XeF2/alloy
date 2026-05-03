@@ -1,19 +1,6 @@
-//! Milky protocol message types.
+//! Milky protocol message types: [`IncomingSegment`] (received) and [`OutgoingSegment`] (sent).
 //!
-//! Distinguishes incoming (received) and outgoing (sent) segments - each
-//! direction has its own typed enum with precisely-typed fields.
-//!
-//! # [`IncomingSegment`]
-//!
-//! Received from the Milky server; only deserializable. Carries full
-//! server-side metadata (resource IDs, temporary URLs, dimensions, etc.).
-//! Includes segment types that can only be received, never sent:
-//! `File`, `MarketFace`, `Xml`.
-//!
-//! # [`OutgoingSegment`]
-//!
-//! Sent to the Milky server; only serializable. Uses URIs for media upload
-//! and omits server-side metadata. Implements all builder helper methods.
+//! Each direction has its own typed enum with protocol-specific fields.
 
 pub mod common;
 pub mod incoming;

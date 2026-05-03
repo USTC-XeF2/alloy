@@ -26,7 +26,6 @@ use amira_core::{Bot, Bytes, HttpMethod};
 /// Supports multiple simultaneous connections of different types.
 #[derive(Default)]
 pub struct OneBotAdapter {
-    /// Adapter configuration.
     config: OneBotConfig,
 }
 

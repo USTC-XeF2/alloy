@@ -74,7 +74,7 @@ impl<T: Clone + Default + Send + 'static> FromContext for DefaultPluginState<T> 
 ///
 /// ```rust,ignore
 /// async fn my_handler(
-///     event: EventContext<MessageEvent>,
+///     event: Event<MessageEvent>,
 ///     service: ServiceRef<dyn MyService>,
 /// ) -> anyhow::Result<String> {
 ///     let value = service.get_value();

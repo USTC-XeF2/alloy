@@ -12,24 +12,6 @@
 //! | WebSocket (server & client) | Async echo matching — request is tagged with a numeric echo; response arrives on the shared channel and is routed to the waiting future. |
 //! | HTTP client | Synchronous POST — request body is sent as the HTTP body; the HTTP response body is the API response. No echo is needed. |
 //! | Receive-only (`kind == None`) | Disabled — connections without a send capability cannot issue API calls. |
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! use amira_adapter_onebot::OneBotBot;
-//! use amira_core::{BoxedBot, EventArc, FromContext};
-//!
-//! async fn my_handler(bot: BoxedBot, event: EventArc<MessageEvent>) {
-//!     // Downcast to OneBotBot for strongly-typed APIs
-//!     if let Ok(onebot) = bot.clone().downcast_arc::<OneBotBot>() {
-//!         // Send a private message
-//!         onebot.send_private_msg(12345678, "Hello!", false).await.ok();
-//!         
-//!         // Or use the generic send method (passes event directly)
-//!         bot.send(event.as_ref(), "Reply!").await.ok();
-//!     }
-//! }
-//! ```
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -199,9 +181,9 @@ impl ApiCallStrategy {
 /// Wraps an [`ApiCallStrategy`] that handles the transport-specific request/response
 /// strategy (WebSocket echo-matching or direct HTTP POST).
 pub struct OneBotBot {
-    /// Bot ID (self_id from events).
+    /// Resolved from the `self_id` field in incoming events.
     id: String,
-    /// Transport-specific API call mechanism (enum-based, no dyn dispatch).
+    /// Transport-specific API call mechanism.
     call_strategy: ApiCallStrategy,
 }
 

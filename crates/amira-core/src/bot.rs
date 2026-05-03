@@ -27,14 +27,16 @@ use crate::message::Sendable;
 ///
 /// # API Design
 ///
-/// - `call_api`: Raw API call with action name and JSON parameters
-/// - `send`: Unified message sending that extracts session from event
+/// - `send`: Unified message sending that extracts scene from event
 ///
-/// Concrete implementations (e.g., `OneBotBot`) should provide
-/// strongly-typed API methods on top of `call_api`.
+/// Adapter implementations provide strongly-typed API methods on their
+/// concrete bot type (e.g. `send_private_msg`, `get_login_info`).
 #[async_trait]
 pub trait Bot: DowncastSync + 'static {
-    /// Returns the bot's unique identifier.
+    /// Returns the bot's unique identifier, as resolved during connection setup.
+    ///
+    /// For client transports this is the bot's own ID (e.g. self-account UIN);
+    /// for server transports it is the resolved remote bot ID.
     fn id(&self) -> &str;
 
     /// Sends a message in a given scene.
