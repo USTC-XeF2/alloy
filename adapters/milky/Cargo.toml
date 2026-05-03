@@ -19,8 +19,6 @@ amira-core = { workspace = true }
 amira-macros = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
-parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["sync", "time"] }
 tracing = { workspace = true }

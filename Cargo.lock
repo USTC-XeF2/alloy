@@ -21,10 +21,8 @@ dependencies = [
  "amira-macros",
  "async-trait",
  "futures",
- "parking_lot",
  "serde",
  "serde_json",
- "tokio",
  "tracing",
 ]
 
