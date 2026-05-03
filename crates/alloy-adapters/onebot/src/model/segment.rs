@@ -140,11 +140,11 @@ impl ReceiveMessageSegment for Segment {
 }
 
 impl SendMessageSegment for Segment {
-    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
+    fn from_rich_text_segment(seg: RichTextSegment) -> Option<Self> {
         match seg {
-            RichTextSegment::Text(s) => Some(Segment::text(s.clone())),
-            RichTextSegment::Image(r) => Some(Segment::image(r.clone())),
-            RichTextSegment::At(id) => Some(Segment::At(AtData { qq: id.clone() })),
+            RichTextSegment::Text(s) => Some(Segment::text(s)),
+            RichTextSegment::Image(r) => Some(Segment::image(r)),
+            RichTextSegment::At(id) => Some(Segment::At(AtData { qq: id })),
             RichTextSegment::AtAll => Some(Segment::at_all()),
             RichTextSegment::Reply(id) => Some(Segment::reply(id)),
         }

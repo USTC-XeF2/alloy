@@ -77,7 +77,7 @@ pub trait SendMessageSegment: ReceiveMessageSegment + Clone {
     ///
     /// `Text` segments should always be convertible. `Image` and `At` segments
     /// should be converted where the protocol supports them.
-    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self>;
+    fn from_rich_text_segment(seg: RichTextSegment) -> Option<Self>;
 }
 
 // ============================================================================
@@ -110,8 +110,8 @@ impl ReceiveMessageSegment for RichTextSegment {
 
 impl SendMessageSegment for RichTextSegment {
     /// Identity: `RichTextSegment` can always be constructed from itself.
-    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
-        Some(seg.clone())
+    fn from_rich_text_segment(seg: RichTextSegment) -> Option<Self> {
+        Some(seg)
     }
 }
 
@@ -186,7 +186,7 @@ impl<S: SendMessageSegment> Message<S> {
         } else {
             Cow::Owned(
                 msg.extract_rich_text()
-                    .iter()
+                    .into_iter()
                     .filter_map(S::from_rich_text_segment)
                     .collect(),
             )

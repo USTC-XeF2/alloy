@@ -77,7 +77,7 @@ impl ReceiveMessageSegment for OutgoingSegment {
     fn as_rich_text(&self) -> Option<RichTextSegment> {
         match self {
             OutgoingSegment::Text(d) => Some(RichTextSegment::Text(d.text.clone())),
-            OutgoingSegment::Image(d) => Some(RichTextSegment::Image(d.uri.clone().into())),
+            OutgoingSegment::Image(d) => Some(RichTextSegment::Image(d.uri.clone())),
             OutgoingSegment::Mention(d) => Some(RichTextSegment::At(d.user_id.to_string())),
             OutgoingSegment::MentionAll(_) => Some(RichTextSegment::AtAll),
             OutgoingSegment::Reply(d) => Some(RichTextSegment::Reply(d.message_seq.to_string())),
@@ -87,10 +87,10 @@ impl ReceiveMessageSegment for OutgoingSegment {
 }
 
 impl SendMessageSegment for OutgoingSegment {
-    fn from_rich_text_segment(seg: &RichTextSegment) -> Option<Self> {
+    fn from_rich_text_segment(seg: RichTextSegment) -> Option<Self> {
         match seg {
-            RichTextSegment::Text(s) => Some(Self::text(s.clone())),
-            RichTextSegment::Image(r) => Some(Self::image(r.clone())),
+            RichTextSegment::Text(s) => Some(Self::text(s)),
+            RichTextSegment::Image(r) => Some(Self::image(r)),
             RichTextSegment::At(id) => id.parse::<i64>().ok().map(Self::mention),
             RichTextSegment::AtAll => Some(Self::mention_all()),
             RichTextSegment::Reply(id) => id.parse::<i64>().ok().map(Self::reply),
@@ -129,7 +129,7 @@ impl OutgoingSegment {
     }
 
     /// Creates an image segment from a URI (`file://`, `http(s)://`, `base64://`).
-    pub fn image(uri: impl Into<String>) -> Self {
+    pub fn image(uri: impl Into<Cow<'static, str>>) -> Self {
         OutgoingSegment::Image(ImageData {
             uri: uri.into(),
             sub_type: ImageSubType::Normal,
@@ -138,7 +138,7 @@ impl OutgoingSegment {
     }
 
     /// Creates a sticker (animated image) segment.
-    pub fn sticker(uri: impl Into<String>) -> Self {
+    pub fn sticker(uri: impl Into<Cow<'static, str>>) -> Self {
         OutgoingSegment::Image(ImageData {
             uri: uri.into(),
             sub_type: ImageSubType::Sticker,
@@ -206,7 +206,7 @@ pub enum ImageSubType {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ImageData {
     /// File URI (`file://`, `http(s)://`, `base64://`).
-    pub uri: String,
+    pub uri: Cow<'static, str>,
     pub sub_type: ImageSubType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
