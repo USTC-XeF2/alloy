@@ -63,7 +63,7 @@ async fn info_handler(
 ) -> Result<String> {
     if let Some(user) = &cmd.user {
         let Some(user_id) = user.as_ref() else {
-            return Ok("Invalid User ID: @all is not supported.".to_string());
+            return Ok("Invalid User ID: @all is not supported.".into());
         };
 
         // Parse user ID - user input error, return as message

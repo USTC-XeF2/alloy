@@ -127,6 +127,15 @@ impl Display for RichTextSegment {
     }
 }
 
+impl<S> From<S> for RichTextSegment
+where
+    S: Into<Cow<'static, str>>,
+{
+    fn from(text: S) -> Self {
+        RichTextSegment::Text(text.into())
+    }
+}
+
 // ============================================================================
 // Message Generic Struct
 // ============================================================================
@@ -217,10 +226,32 @@ impl<S: Display> Display for Message<S> {
     }
 }
 
-impl<S> From<S> for Message<S> {
+impl<S: ReceiveMessageSegment> From<S> for Message<S> {
     fn from(segment: S) -> Self {
         Self {
             segments: vec![segment],
+        }
+    }
+}
+
+impl<S> From<&'static str> for Message<S>
+where
+    S: From<&'static str>,
+{
+    fn from(text: &'static str) -> Self {
+        Self {
+            segments: vec![text.into()],
+        }
+    }
+}
+
+impl<S> From<String> for Message<S>
+where
+    S: From<String>,
+{
+    fn from(text: String) -> Self {
+        Self {
+            segments: vec![text.into()],
         }
     }
 }

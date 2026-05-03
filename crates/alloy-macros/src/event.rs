@@ -640,7 +640,7 @@ fn message_text_arms(spec: &VariantSpec) -> (TokenStream, TokenStream) {
         return (
             arm_with_cfg(
                 spec,
-                quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.to_string(), },
+                quote! { Self::#variant_ident { #message_ident, .. } => #message_ident.extract_plain_text(), },
             ),
             arm_with_cfg(
                 spec,
