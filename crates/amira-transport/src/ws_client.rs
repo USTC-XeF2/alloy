@@ -3,6 +3,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use amira_core::error::TransportResult;
+use amira_core::transport::{ConnectionHandler, Sender, WsClientConfig};
+use amira_macros::register_capability;
 use backon::{ExponentialBuilder, Retryable};
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
@@ -14,10 +17,6 @@ use tokio_tungstenite::tungstenite::{
     http::header::{AUTHORIZATION, HeaderValue},
 };
 use tracing::{error, info, trace, warn};
-
-use amira_core::error::TransportResult;
-use amira_core::transport::{ConnectionHandler, Sender, WsClientConfig};
-use amira_macros::register_capability;
 
 /// Builds a `backon::ExponentialBuilder` from a `WsClientConfig`.
 fn build_backoff(config: &WsClientConfig) -> ExponentialBuilder {

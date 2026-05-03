@@ -3,15 +3,15 @@
 //! This module provides `MilkyBot`, a concrete implementation of the `Bot` trait
 //! that provides strongly-typed API methods for all Milky protocol APIs.
 
+use amira_core::error::{ApiError, ApiResult};
+use amira_core::transport::{HttpRequestFn, Sender};
+use amira_core::{ApiExecutor, ApiPayload, Bot, HttpMethod, Message, Scene, Sendable};
 use async_trait::async_trait;
 use tracing::debug;
 
 use crate::api::{SendGroupMessageExt, SendPrivateMessageExt};
 use crate::model::api::ApiResponse;
 use crate::model::message::OutgoingSegment;
-use amira_core::error::{ApiError, ApiResult};
-use amira_core::transport::{HttpRequestFn, Sender};
-use amira_core::{ApiExecutor, ApiPayload, Bot, HttpMethod, Message, Scene, Sendable};
 
 /// A Milky protocol Bot implementation.
 ///

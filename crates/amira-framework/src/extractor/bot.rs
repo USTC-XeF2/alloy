@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use crate::context::{BoxedBot, HandlerContext};
-use crate::error::{ExtractError, ExtractResult};
-use crate::extractor::FromContext;
 use amira_core::error::ApiResult;
 use amira_core::{ApiExecutor, ApiPayload, Bot};
+
+use crate::context::{BoxedBot, HandlerContext};
+use crate::error::{ExtractError, ExtractResult};
+
+use super::core::FromContext;
 
 /// Context wrapper that provides access to the bot instance.
 ///

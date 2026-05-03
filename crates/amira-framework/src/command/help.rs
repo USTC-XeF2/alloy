@@ -6,11 +6,12 @@ use clap::{Command, Parser};
 use futures::future::BoxFuture;
 use futures::{FutureExt, future};
 
-use super::extractor::CommandArgs;
-use super::layer::{CommandService, on_command};
 use crate::context::HandlerContext;
 use crate::error::ExtractResult;
 use crate::handler::{FromCtxFn, HandlerService};
+
+use super::extractor::CommandArgs;
+use super::layer::{CommandService, on_command};
 
 pub(crate) trait HelpProvider: Send + Sync {
     fn call<'a>(&'a self, ctx: &'a HandlerContext) -> BoxFuture<'a, ExtractResult<CommandMap>>;

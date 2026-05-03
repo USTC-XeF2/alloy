@@ -12,10 +12,11 @@ use tower::filter::{AsyncFilterLayer, AsyncPredicate, FilterLayer, Predicate};
 use tower::{BoxError, Layer, Service, ServiceBuilder};
 use tower_layer::Stack;
 
-use super::service::{HandlerResponse, HandlerService};
-use super::traits::FromCtxFn;
 use crate::context::HandlerContext;
 use crate::error::EventSkipped;
+
+use super::service::{HandlerResponse, HandlerService};
+use super::traits::FromCtxFn;
 
 /// A wrapper that blocks event propagation if the inner service succeeds.
 ///

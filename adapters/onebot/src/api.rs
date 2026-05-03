@@ -1,3 +1,4 @@
+use amira_macros::api_payload;
 use serde::Serialize;
 
 use crate::bot::OneBotBot;
@@ -7,7 +8,6 @@ use crate::model::api::{
 };
 use crate::model::message::OneBotMessage;
 use crate::model::types::{GroupRequestType, Status};
-use amira_macros::api_payload;
 
 /// Sends a private message.
 #[derive(Debug, Serialize)]

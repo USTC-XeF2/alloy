@@ -26,6 +26,9 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, LazyLock, Weak};
 
+use amira_core::error::TransportResult;
+use amira_core::transport::{ConnectionHandler, ConnectionInfo, ListenerHandle, ServerBotIdFn};
+use amira_macros::register_capability;
 use axum::{
     Router,
     body::Bytes,
@@ -37,10 +40,6 @@ use parking_lot::Mutex;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
-
-use amira_core::error::TransportResult;
-use amira_core::transport::{ConnectionHandler, ConnectionInfo, ListenerHandle, ServerBotIdFn};
-use amira_macros::register_capability;
 
 #[cfg(feature = "http-server")]
 use axum::{response::Response, routing::post};

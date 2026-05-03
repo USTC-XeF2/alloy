@@ -1,5 +1,6 @@
-use super::segment::{AT_PLACEHOLDER_PREFIX, HandleRegistry, IMAGE_PLACEHOLDER_PREFIX};
 use amira_core::RichTextSegment;
+
+use super::segment::{AT_PLACEHOLDER_PREFIX, HandleRegistry, IMAGE_PLACEHOLDER_PREFIX};
 
 /// Splits rich text segments into shell-like arguments.
 ///

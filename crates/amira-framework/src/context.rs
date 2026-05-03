@@ -22,11 +22,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use amira_core::{Bot, EventRoot};
 use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 
 use crate::error::{ExtractError, ExtractResult};
-use amira_core::{Bot, EventRoot};
 
 /// A boxed Bot trait object.
 pub type BoxedBot = Arc<dyn Bot>;

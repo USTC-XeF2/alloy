@@ -3,8 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use parking_lot::Mutex;
-
 use amira_core::Bot;
 use amira_core::bridge::BridgeRuntime;
 use amira_framework::{
@@ -12,6 +10,7 @@ use amira_framework::{
     error::{ExtractError, ExtractResult},
     extractor::FromContext,
 };
+use parking_lot::Mutex;
 
 /// Handle for querying bot instances managed by all registered adapters.
 ///

@@ -14,11 +14,10 @@
 //! runtime.register_service(svc).await;
 //! ```
 
+use amira_core::{EventType, EventView};
 use tower::ServiceBuilder;
 use tower::filter::FilterLayer;
 use tower_layer::{Identity, Stack};
-
-use amira_core::{EventType, EventView};
 
 use crate::context::HandlerContext;
 use crate::handler::{EventPredicate, ServiceBuilderExt};

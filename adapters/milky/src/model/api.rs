@@ -1,5 +1,6 @@
 //! Milky protocol API types.
 
+use amira_core::Message;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::entity::{
@@ -7,7 +8,6 @@ use super::entity::{
     GroupNotification, Sex,
 };
 use super::message::IncomingSegment;
-use amira_core::Message;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]

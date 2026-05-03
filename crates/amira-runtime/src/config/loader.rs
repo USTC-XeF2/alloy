@@ -59,8 +59,9 @@ use figment::providers::Yaml;
 use figment::providers::{Env, Serialized};
 use tracing::{debug, info, trace, warn};
 
-use super::schema::AmiraConfig;
 use crate::error::{ConfigError, ConfigResult};
+
+use super::schema::AmiraConfig;
 
 /// Configuration profile for environment-specific settings.
 #[derive(Debug, Clone, Default)]

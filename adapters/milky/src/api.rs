@@ -1,3 +1,5 @@
+use amira_core::Message;
+use amira_macros::api_payload;
 use serde::Serialize;
 
 use crate::bot::MilkyBot;
@@ -15,8 +17,6 @@ use crate::model::entity::{
     MessageSceneType,
 };
 use crate::model::message::OutgoingSegment;
-use amira_core::Message;
-use amira_macros::api_payload;
 
 // =========================================================================
 // Account APIs

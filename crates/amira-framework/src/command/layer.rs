@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::task::{Context, Poll};
 
+use amira_core::EventType;
 use clap::Parser;
 use clap::error::ErrorKind;
 use futures::FutureExt;
@@ -8,13 +9,13 @@ use futures::future::BoxFuture;
 use tower::{BoxError, Layer, Service, ServiceBuilder};
 use tower_layer::{Identity, Stack};
 
-use super::extractor::CommandArgs;
-use super::segment::CURRENT_REGISTRY;
-use super::split::rich_text_shell_split;
 use crate::context::HandlerContext;
 use crate::error::EventSkipped;
 use crate::handler::{FromCtxFn, HandlerResponse, HandlerService, ServiceBuilderExt};
-use amira_core::EventType;
+
+use super::extractor::CommandArgs;
+use super::segment::CURRENT_REGISTRY;
+use super::split::rich_text_shell_split;
 
 /// Creates a tower [`Layer`] that parses messages as the given clap command.
 ///

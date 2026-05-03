@@ -21,13 +21,6 @@
 
 use std::sync::Arc;
 
-use futures::future;
-use tracing::warn;
-
-use crate::bot::MilkyBot;
-use crate::config::{ConnectionConfig, EventSource, MilkyConfig};
-use crate::model::api::{ApiResponse, LoginInfo};
-use crate::model::event::MilkyEvent;
 use amira_core::adapter::Adapter;
 use amira_core::error::AdapterResult;
 use amira_core::transport::{
@@ -35,6 +28,13 @@ use amira_core::transport::{
     TransportContext, WsClientConfig,
 };
 use amira_core::{Bot, Bytes, HttpMethod};
+use futures::future;
+use tracing::warn;
+
+use crate::bot::MilkyBot;
+use crate::config::{ConnectionConfig, EventSource, MilkyConfig};
+use crate::model::api::{ApiResponse, LoginInfo};
+use crate::model::event::MilkyEvent;
 
 /// The Milky protocol adapter.
 #[derive(Default)]

@@ -2,16 +2,15 @@
 
 use std::sync::Arc;
 
-use futures::FutureExt;
-use reqwest::ClientBuilder;
-use reqwest::header::CONTENT_TYPE;
-use url::Url;
-
 use amira_core::error::{TransportError, TransportResult};
 use amira_core::transport::{
     ClientBotIdFn, ConnectionHandler, HttpClientConfig, HttpRequestFn, Sender,
 };
 use amira_macros::register_capability;
+use futures::FutureExt;
+use reqwest::ClientBuilder;
+use reqwest::header::CONTENT_TYPE;
+use url::Url;
 
 /// Registers an HTTP outbound API-client bot.
 ///

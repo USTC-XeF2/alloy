@@ -4,7 +4,8 @@ use derive_more::{AsRef, Deref, DerefMut};
 
 use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
-use crate::extractor::FromContext;
+
+use super::core::FromContext;
 
 /// Extractor that provides a handler with its plugin's typed configuration.
 ///

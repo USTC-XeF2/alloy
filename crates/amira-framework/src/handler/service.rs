@@ -8,14 +8,15 @@
 use std::marker::PhantomData;
 use std::task::{Context, Poll};
 
+use amira_core::{Message, ReceiveMessageSegment, Sendable};
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use tower::{BoxError, Service};
 use tracing::error;
 
-use super::traits::FromCtxFn;
 use crate::context::HandlerContext;
-use amira_core::{Message, ReceiveMessageSegment, Sendable};
+
+use super::traits::FromCtxFn;
 
 // ============================================================================
 // HandlerResponse

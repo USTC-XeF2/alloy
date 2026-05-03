@@ -21,6 +21,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use amira_core::adapter::Adapter;
+use amira_core::bridge::{AdapterBridge, BridgeRuntime};
+use amira_core::transport::TransportContext;
+use amira_framework::{context::PluginContext, manager::PluginManager, plugin::PluginDescriptor};
 use futures::future;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -30,10 +34,6 @@ use crate::config::{AmiraConfig, ConfigLoader};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::handle::BotHandle;
 use crate::logging;
-use amira_core::adapter::Adapter;
-use amira_core::bridge::{AdapterBridge, BridgeRuntime};
-use amira_core::transport::TransportContext;
-use amira_framework::{context::PluginContext, manager::PluginManager, plugin::PluginDescriptor};
 
 /// The main Amira runtime that orchestrates adapters, transports, and plugins.
 ///

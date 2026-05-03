@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use amira_core::{EventRoot, EventView, Scene};
 use derive_more::{AsRef, Deref};
 
 use crate::context::HandlerContext;
 use crate::error::{ExtractError, ExtractResult};
-use crate::extractor::FromContext;
-use amira_core::{EventRoot, EventView, Scene};
+
+use super::core::FromContext;
 
 /// Context wrapper that provides access to extracted event data.
 ///

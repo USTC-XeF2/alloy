@@ -2,15 +2,14 @@
 
 use std::sync::Arc;
 
+use amira_core::error::{TransportError, TransportResult};
+use amira_core::transport::{ConnectionHandler, SseClientConfig};
+use amira_macros::register_capability;
 use eventsource_client::{Client, ClientBuilder, ReconnectOptions, SSE};
 use futures::StreamExt;
 use launchdarkly_sdk_transport::HyperTransport;
 use tokio::sync::watch;
 use tracing::{info, trace, warn};
-
-use amira_core::error::{TransportError, TransportResult};
-use amira_core::transport::{ConnectionHandler, SseClientConfig};
-use amira_macros::register_capability;
 
 // =============================================================================
 // SSE event loop

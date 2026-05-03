@@ -5,6 +5,13 @@
 
 use std::sync::Arc;
 
+use amira_core::adapter::Adapter;
+use amira_core::error::AdapterResult;
+use amira_core::transport::{
+    ConnectionHandler, ConnectionInfo, HttpClientConfig, HttpServerConfig, Sender,
+    TransportContext, WsClientConfig, WsServerConfig,
+};
+use amira_core::{Bot, Bytes, HttpMethod};
 use futures::future;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -13,13 +20,6 @@ use tracing::{trace, warn};
 use crate::bot::OneBotBot;
 use crate::config::{ConnectionConfig, OneBotConfig};
 use crate::model::event::OneBotEvent;
-use amira_core::adapter::Adapter;
-use amira_core::error::AdapterResult;
-use amira_core::transport::{
-    ConnectionHandler, ConnectionInfo, HttpClientConfig, HttpServerConfig, Sender,
-    TransportContext, WsClientConfig, WsServerConfig,
-};
-use amira_core::{Bot, Bytes, HttpMethod};
 
 /// The OneBot v11 adapter.
 ///

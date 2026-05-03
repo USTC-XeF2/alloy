@@ -25,11 +25,12 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::warn;
 
+use crate::error::TransportResult;
+
 use super::config::{
     HttpClientConfig, HttpServerConfig, SseClientConfig, WsClientConfig, WsServerConfig,
 };
 use super::connection::{ConnectionInfo, HttpRequestFn, ListenerHandle, Sender};
-use crate::error::TransportResult;
 
 // =============================================================================
 // Connection Handler

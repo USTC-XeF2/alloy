@@ -36,6 +36,8 @@ use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
+use amira_core::bridge::Dispatcher;
+use amira_core::{Bot, EventRoot};
 use futures::{FutureExt, future};
 use parking_lot::RwLock;
 use serde_json::{Map, Value};
@@ -45,8 +47,6 @@ use tracing::{error, info, warn};
 use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
 use crate::plugin::{AMIRA_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
-use amira_core::bridge::Dispatcher;
-use amira_core::{Bot, EventRoot};
 
 // =============================================================================
 // Topological sort utility
