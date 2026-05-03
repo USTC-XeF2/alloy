@@ -1,0 +1,18 @@
+[package]
+name = "amira-macros"
+version = { workspace = true }
+description = "Procedural macros for the Amira bot framework"
+edition = { workspace = true }
+rust-version = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[lib]
+proc-macro = true
+
+[dependencies]
+heck = "0.5.0"
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+syn = { version = "2.0.117", features = ["full"] }

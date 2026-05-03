@@ -3,22 +3,22 @@
 version = 4
 
 [[package]]
-name = "alloy"
+name = "amira"
 version = "0.1.0"
 dependencies = [
- "alloy-core",
- "alloy-framework",
- "alloy-macros",
- "alloy-runtime",
- "alloy-transport",
+ "amira-core",
+ "amira-framework",
+ "amira-macros",
+ "amira-runtime",
+ "amira-transport",
 ]
 
 [[package]]
-name = "alloy-adapter-milky"
+name = "amira-adapter-milky"
 version = "0.1.0"
 dependencies = [
- "alloy-core",
- "alloy-macros",
+ "amira-core",
+ "amira-macros",
  "async-trait",
  "futures",
  "parking_lot",
@@ -29,11 +29,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-adapter-onebot"
+name = "amira-adapter-onebot"
 version = "0.1.0"
 dependencies = [
- "alloy-core",
- "alloy-macros",
+ "amira-core",
+ "amira-macros",
  "async-trait",
  "futures",
  "hex",
@@ -47,7 +47,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-core"
+name = "amira-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -65,10 +65,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-framework"
+name = "amira-framework"
 version = "0.1.0"
 dependencies = [
- "alloy-core",
+ "amira-core",
  "clap",
  "derive_more",
  "futures",
@@ -85,7 +85,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-macros"
+name = "amira-macros"
 version = "0.1.0"
 dependencies = [
  "heck",
@@ -95,21 +95,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-plugin-storage"
+name = "amira-plugin-storage"
 version = "0.1.0"
 dependencies = [
- "alloy",
+ "amira",
  "derive_more",
  "serde",
  "tokio",
 ]
 
 [[package]]
-name = "alloy-runtime"
+name = "amira-runtime"
 version = "0.1.0"
 dependencies = [
- "alloy-core",
- "alloy-framework",
+ "amira-core",
+ "amira-framework",
  "dotenvy",
  "figment",
  "futures",
@@ -124,11 +124,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy-transport"
+name = "amira-transport"
 version = "0.1.0"
 dependencies = [
- "alloy-core",
- "alloy-macros",
+ "amira-core",
+ "amira-macros",
  "axum",
  "backon",
  "bytes",
@@ -617,9 +617,9 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 name = "echo-bot"
 version = "0.1.0"
 dependencies = [
- "alloy",
- "alloy-adapter-onebot",
- "alloy-plugin-storage",
+ "amira",
+ "amira-adapter-onebot",
+ "amira-plugin-storage",
  "anyhow",
  "clap",
  "serde_json",

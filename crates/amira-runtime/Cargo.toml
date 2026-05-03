@@ -1,0 +1,38 @@
+[package]
+name = "amira-runtime"
+version = { workspace = true }
+description = "Runtime orchestration layer for the Amira bot framework"
+edition = { workspace = true }
+rust-version = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[features]
+default = []
+
+# Command system
+command = ["amira-framework/command"]
+
+# Config format features
+toml-config = ["figment/toml"]
+yaml-config = ["figment/yaml"]
+dotenv-config = ["dep:dotenvy"]
+
+# Logging features
+json-log = ["tracing-subscriber/json"]
+
+[dependencies]
+amira-core = { workspace = true }
+amira-framework = { workspace = true }
+dotenvy = { version = "0.15.7", optional = true }
+figment = { version = "0.10.19", features = ["env"] }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+tracing = { workspace = true }
+tracing-appender = "0.2.5"
+tracing-subscriber = "0.3.23"

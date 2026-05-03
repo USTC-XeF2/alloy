@@ -1,0 +1,14 @@
+[package]
+name = "amira-plugin-storage"
+version = "0.1.0"
+edition = "2024"
+authors = ["XeF2 <contact@xef2.top>"]
+license = "MIT"
+description = "A file-storage plugin for the Amira bot framework"
+publish = false
+
+[dependencies]
+amira = { path = "../../crates/amira", default-features = false }
+derive_more = { version = "2.1.1", features = ["as_ref", "deref"] }
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.52.1", features = ["fs"] }

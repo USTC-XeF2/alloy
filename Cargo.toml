@@ -2,30 +2,31 @@
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-repository = "https://github.com/USTC-XeF2/alloy"
+repository = "https://github.com/USTC-XeF2/amira"
 authors = ["XeF2 <contact@xef2.top>"]
 license = "MIT"
 
 [workspace]
 members = [
-    "crates/alloy",
-    "crates/alloy-adapters/*",
-    "crates/alloy-core",
-    "crates/alloy-framework",
-    "crates/alloy-macros",
-    "crates/alloy-runtime",
-    "crates/alloy-transport",
-    "examples/storage",
-    "examples/echo_bot",
+    "crates/amira",
+    "crates/amira-core",
+    "crates/amira-framework",
+    "crates/amira-macros",
+    "crates/amira-runtime",
+    "crates/amira-transport",
+    "adapters/milky",
+    "adapters/onebot",
+    "examples/echo-bot",
+    "examples/plugin-storage",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-alloy-core = { version = "0.1.0", path = "crates/alloy-core" }
-alloy-framework = { version = "0.1.0", path = "crates/alloy-framework" }
-alloy-macros = { version = "0.1.0", path = "crates/alloy-macros" }
-alloy-runtime = { version = "0.1.0", path = "crates/alloy-runtime" }
-alloy-transport = { version = "0.1.0", path = "crates/alloy-transport" }
+amira-core = { version = "0.1.0", path = "crates/amira-core" }
+amira-framework = { version = "0.1.0", path = "crates/amira-framework" }
+amira-macros = { version = "0.1.0", path = "crates/amira-macros" }
+amira-runtime = { version = "0.1.0", path = "crates/amira-runtime" }
+amira-transport = { version = "0.1.0", path = "crates/amira-transport" }
 
 async-trait = "0.1.89"
 bytes = "1.11.1"

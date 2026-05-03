@@ -1,0 +1,92 @@
+# Amira Bot Framework Configuration
+# Example configuration file for the echo_bot example
+#
+# Configuration supports:
+# - Environment variable override: AMIRA_LOGGING__LEVEL=debug
+# - Profile-specific files: amira.prod.toml
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+[logging]
+# Default log level: trace, debug, info, warn, error
+level = "info"
+
+# Output format: compact, pretty, full, json (json requires json-log feature)
+format = "compact"
+
+# Output destination: stdout, stderr, file
+output = "stdout"
+
+# Whether to include timestamps in logs
+timestamps = true
+
+# Whether to include source file location (file name)
+file_location = false
+
+# Whether to include thread IDs
+thread_ids = false
+
+# Whether to include thread names
+thread_names = false
+
+# Span events for Tower Service lifecycle visibility (useful for debugging)
+[logging.span_events]
+new = false
+enter = false
+exit = false
+close = false
+
+# Per-module log level overrides (takes precedence over global level)
+[logging.filters]
+amira_runtime = "debug"
+amira_transport = "info"
+amira_adapter_onebot = "debug"
+amira_core = "info"
+
+# Log file configuration (only used when output = "file")
+# file_path = "./logs/amira.log"
+
+# Maximum log file size before rotation (in bytes, default: 10MB)
+# max_file_size = 10485760
+
+# Number of rotated log files to keep (default: 5)
+# max_files = 5
+
+# =============================================================================
+# Adapter Configurations
+# =============================================================================
+# Each adapter can define its own configuration schema.
+# Use config.extract_adapter::<AdapterConfig>("adapter_name") to load.
+
+[adapters.onebot]
+# List of connections - all enabled connections run simultaneously
+
+# WebSocket client mode: connect to OneBot implementation
+# [[adapters.onebot.connections]]
+# type = "ws-client"
+# url = "ws://127.0.0.1:8080/ws"
+# access_token = "${BOT_ACCESS_TOKEN:-}"
+
+# WebSocket server mode: accept incoming connections
+# Useful when OneBot implementation connects to your bot
+[[adapters.onebot.connections]]
+type = "ws-server"
+host = "127.0.0.1"
+port = 8080
+path = "/onebot/v11/ws"
+access_token = ""
+
+# HTTP client mode: push to OneBot implementation
+# [[adapters.onebot.connections]]
+# type = "http-client"
+# api_url = "http://127.0.0.1:5700"
+# access_token = "${BOT_ACCESS_TOKEN:-}"
+
+# HTTP server mode: receive webhooks from OneBot implementation
+# [[adapters.onebot.connections]]
+# type = "http-server"
+# host = "0.0.0.0"
+# port = 9000
+# path = "/onebot/callback"
+# secret = "${WEBHOOK_SECRET:-}"

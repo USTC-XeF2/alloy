@@ -1,0 +1,50 @@
+[package]
+name = "amira-transport"
+version = { workspace = true }
+description = "Network transport layer for the Amira bot framework"
+edition = { workspace = true }
+rust-version = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[features]
+default = []
+
+# Transport types
+http-client = ["dep:reqwest", "dep:url"]
+http-server = ["dep:axum"]
+sse-client = ["dep:eventsource-client", "dep:launchdarkly-sdk-transport"]
+ws-client = ["dep:backon", "dep:bytes", "dep:tokio-tungstenite"]
+ws-server = ["dep:axum", "axum/ws"]
+
+# Convenience feature groups
+full = ["http-client", "http-server", "ws-client", "ws-server", "sse-client"]
+
+rustls = [
+    "reqwest?/rustls", 
+    "tokio-tungstenite?/rustls-tls-native-roots"
+]
+native-tls = [
+    "reqwest?/native-tls", 
+    "tokio-tungstenite?/native-tls"
+]
+
+http2 = ["reqwest?/http2"]
+
+[dependencies]
+amira-core = { workspace = true }
+amira-macros = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["macros", "time"] }
+tracing = { workspace = true }
+
+axum = { version = "0.8.9", optional = true }
+backon = { version = "1.6.0", default-features = false, features = ["std", "tokio-sleep"], optional = true }
+bytes = { workspace = true, optional = true }
+eventsource-client = { version = "0.17.3", optional = true }
+launchdarkly-sdk-transport = { version = "0.1.2", optional = true }
+reqwest = { version = "0.13.3", default-features = false, features = ["charset", "system-proxy"], optional = true }
+tokio-tungstenite = { version = "0.29.0", optional = true }
+url = { version = "2.5.8", optional = true }

@@ -1,0 +1,44 @@
+[package]
+name = "amira"
+version = { workspace = true }
+description = "A high-performance, highly decoupled, and type-safe bot framework for Rust"
+edition = { workspace = true }
+rust-version = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+amira-core = { workspace = true }
+amira-framework = { workspace = true }
+amira-macros = { workspace = true }
+amira-runtime = { workspace = true, optional = true }
+amira-transport = { workspace = true }
+
+[features]
+default = ["command", "runtime", "toml-config", "dotenv-config"]
+
+# Structured command support
+command = ["amira-framework/command", "amira-runtime?/command"]
+
+# Runtime support
+runtime = ["dep:amira-runtime"]
+
+# Config format features
+toml-config = ["amira-runtime/toml-config"]
+yaml-config = ["amira-runtime/yaml-config"]
+dotenv-config = ["amira-runtime/dotenv-config"]
+
+# Logging features
+json-log = ["amira-runtime/json-log"]
+
+# Transport features
+ws-client = ["amira-transport/ws-client"]
+ws-server = ["amira-transport/ws-server"]
+http-client = ["amira-transport/http-client"]
+http-server = ["amira-transport/http-server"]
+sse-client = ["amira-transport/sse-client"]
+full-transport = ["amira-transport/full"]
+rustls = ["amira-transport/rustls"]
+native-tls = ["amira-transport/native-tls"]
+http2 = ["amira-transport/http2"]
