@@ -46,7 +46,7 @@ use tracing::{error, info, warn};
 
 use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
-use crate::plugin::{AMIRA_PLUGIN_API_VERSION, Plugin, PluginDescriptor, PluginLoadContext};
+use crate::plugin::{Plugin, PluginDescriptor, PluginLoadContext};
 
 // =============================================================================
 // Topological sort utility
@@ -256,22 +256,6 @@ impl PluginManager {
     /// Logs a warning when the API version does not match, but continues —
     /// hard rejection can be enforced by callers if needed.
     pub fn register_plugin(&self, desc: &PluginDescriptor) -> Arc<PluginContext> {
-        if !desc.is_compatible() {
-            warn!(
-                plugin = %desc.name,
-                descriptor_version = %format!(
-                    "{}.{}",
-                    desc.api_version >> 16,
-                    desc.api_version & 0xFFFF
-                ),
-                host_version = %format!(
-                    "{}.{}",
-                    AMIRA_PLUGIN_API_VERSION >> 16,
-                    AMIRA_PLUGIN_API_VERSION & 0xFFFF
-                ),
-                "Plugin API version mismatch — registering anyway, but behaviour may be undefined"
-            );
-        }
         let instance = desc.instantiate();
         let name = instance.name().to_string();
 

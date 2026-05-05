@@ -60,31 +60,6 @@ pub type OnLoadFn =
 /// Type of the async `on_unload` function stored inside a [`Plugin`].
 pub type OnUnloadFn = fn() -> BoxFuture<'static, ()>;
 
-// ─── PluginType ───────────────────────────────────────────────────────────────
-
-/// Describes what functional role a plugin plays.
-///
-/// The value is **auto-inferred** by the [`define_plugin!`] macro:
-/// - Plugins that declare a non-empty `provides` list → [`PluginType::Service`].
-/// - All other plugins → [`PluginType::Runtime`].
-///
-/// The inferred value can be overridden by setting `plugin_type` inside the
-/// `metadata` block:
-///
-/// ```rust,ignore
-/// define_plugin! {
-///     name: "my_plugin",
-///     metadata: { plugin_type: service },
-/// }
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PluginType {
-    /// Plugin primarily registers shared services for other plugins to consume.
-    Service,
-    /// Plugin primarily handles events / has active runtime behaviour.
-    Runtime,
-}
-
 // ─── PluginMetadata ───────────────────────────────────────────────────────────
 
 /// Descriptive metadata attached to every plugin.
@@ -124,8 +99,6 @@ pub enum PluginType {
 pub struct PluginMetadata {
     /// Semver version string of the plugin.
     pub version: &'static str,
-    /// Functional role of the plugin (service-oriented vs. runtime/event-driven).
-    pub plugin_type: PluginType,
     /// One-line description shown in logs and registries.
     pub desc: &'static str,
     /// Optional long-form description.

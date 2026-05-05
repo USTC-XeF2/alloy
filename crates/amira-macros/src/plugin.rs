@@ -310,21 +310,6 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     } else {
         quote! { ::std::env!("CARGO_PKG_DESCRIPTION") }
     };
-    let plugin_type_tokens = match &metadata.plugin_type {
-        Some(pt) if pt == "service" => quote! { #fw::plugin::PluginType::Service },
-        Some(pt) if pt == "runtime" => quote! { #fw::plugin::PluginType::Runtime },
-        Some(other) => {
-            return syn::Error::new(other.span(), "plugin_type must be `service` or `runtime`")
-                .to_compile_error();
-        }
-        None => {
-            if provides.is_empty() {
-                quote! { #fw::plugin::PluginType::Runtime }
-            } else {
-                quote! { #fw::plugin::PluginType::Service }
-            }
-        }
-    };
 
     // ── ServiceEntry vec ──────────────────────────────────────────────────────
     let service_entries = provides.iter().map(|e| {
@@ -391,7 +376,6 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
 
             const __AMIRA_META: #fw::plugin::PluginMetadata = #fw::plugin::PluginMetadata {
                 version:     #version_tokens,
-                plugin_type: #plugin_type_tokens,
                 desc:        #desc_tokens,
                 full_desc:   #full_desc_tokens,
             };
@@ -409,7 +393,6 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
             }
 
             #fw::plugin::PluginDescriptor {
-                api_version: #fw::plugin::AMIRA_PLUGIN_API_VERSION,
                 name:        #name,
                 provides:    __AMIRA_PROVIDES_IDS,
                 depends_on:  __AMIRA_DEPENDS_ON,

@@ -78,10 +78,9 @@ pub mod registry;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
 pub use core::{
-    DependsOnEntry, OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, PluginType,
-    ServiceEntry,
+    DependsOnEntry, OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, ServiceEntry,
 };
-pub use descriptor::{AMIRA_PLUGIN_API_VERSION, PluginDescriptor};
+pub use descriptor::PluginDescriptor;
 pub use registry::{ServiceInit, ServiceMeta};
 
 // ─── Macro-internal re-export (needed by define_plugin! at call sites) ───────
