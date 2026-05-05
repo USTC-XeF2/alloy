@@ -99,7 +99,7 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 ///
 /// ```rust,ignore
 /// define_plugin! {
-///     /// Optional doc comment — attached to the static AND used as `full_desc`.
+///     /// Optional doc comment — attached to the static AND used as `desc`.
 ///     name: "my_plugin",                       // required, must be first (after docs)
 ///
 ///     // Services this plugin registers at load time (Trait → impl mapping)
@@ -119,14 +119,15 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 ///     on_load:   my_on_load_fn,    // async fn(PluginLoadContext) -> Result<()>
 ///     on_unload: my_on_unload_fn,  // async fn()
 ///
-///     metadata: {
-///         version:     "2.0.0",          // default: CARGO_PKG_VERSION
-///         desc:        "Short summary.",  // default: CARGO_PKG_DESCRIPTION
-///         full_desc:   "Longer text.",    // overrides doc comment
-///         plugin_type: service,           // `service` or `runtime`; auto-inferred
-///     },
+///     version: "2.0.0",            // optional, default: CARGO_PKG_VERSION
 /// }
 /// ```
+///
+/// ## Description
+///
+/// The plugin's `desc` is determined automatically:
+/// - If a `///` doc comment is present above `define_plugin!`, it becomes `desc`.
+/// - Otherwise, `CARGO_PKG_DESCRIPTION` from the defining crate is used.
 ///
 /// ## Field reference
 ///
@@ -138,7 +139,7 @@ pub fn register_capability(attr: TokenStream, item: TokenStream) -> TokenStream 
 /// | `handlers` | — | `[expr, …]` — Tower handler services |
 /// | `on_load` | — | `async fn(PluginLoadContext) -> Result<()>` |
 /// | `on_unload` | — | `async fn()` |
-/// | `metadata` | — | `{ version, desc, full_desc, plugin_type }` |
+/// | `version` | — | Override semver string; defaults to `CARGO_PKG_VERSION` |
 ///
 /// [`PluginDescriptor`]: amira_framework::plugin::PluginDescriptor
 #[proc_macro]

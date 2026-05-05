@@ -10,8 +10,8 @@
 //! - Optional **service-provider** metadata for inter-plugin dependency ordering.
 //!
 //! A [`PluginDescriptor`] is the *static, `Copy` handle* to a plugin — it carries
-//! only metadata and a factory function pointer.  The runtime calls
-//! [`PluginDescriptor::instantiate`] to create the live [`Plugin`].
+//! metadata, lifecycle hooks, and the handler factory.  The runtime calls
+//! [`Plugin::new`] to create the live [`Plugin`].
 //!
 //! # Quick start
 //!
@@ -72,15 +72,15 @@
 //! ```
 
 // ─── Submodules ──────────────────────────────────────────────────────────────
-pub mod core;
-pub mod descriptor;
-pub mod registry;
+mod context;
+mod core;
+mod descriptor;
+mod registry;
 
 // ─── Re-exports from submodules ──────────────────────────────────────────────
-pub use core::{
-    DependsOnEntry, OnLoadFn, OnUnloadFn, Plugin, PluginLoadContext, PluginMetadata, ServiceEntry,
-};
-pub use descriptor::PluginDescriptor;
+pub use context::PluginLoadContext;
+pub use core::Plugin;
+pub use descriptor::{DependsOnEntry, PluginDescriptor, ServiceEntry};
 pub use registry::{ServiceInit, ServiceMeta};
 
 // ─── Macro-internal re-export (needed by define_plugin! at call sites) ───────

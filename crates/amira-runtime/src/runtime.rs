@@ -190,7 +190,7 @@ impl AmiraRuntime {
     }
 
     /// Registers a plugin from a [`PluginDescriptor`].
-    pub fn register_plugin(&self, desc: &PluginDescriptor) -> Arc<PluginContext> {
+    pub fn register_plugin(&self, desc: &'static PluginDescriptor) -> Arc<PluginContext> {
         self.plugin_manager.register_plugin(desc)
     }
 

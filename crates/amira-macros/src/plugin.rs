@@ -23,26 +23,17 @@ struct DependsOnEntry {
     is_required: bool,
 }
 
-/// Optional overrides from `metadata: { … }`.
-#[derive(Default)]
-struct MetadataOpts {
-    version: Option<LitStr>,
-    desc: Option<LitStr>,
-    full_desc: Option<LitStr>,
-    plugin_type: Option<Ident>, // "service" | "runtime"
-}
-
 /// Parsed content of the whole `define_plugin! { … }` invocation.
 pub struct DefinePluginInput {
     /// Leading `/// …` doc attributes, in order.
     doc_attrs: Vec<Attribute>,
     name: LitStr,
+    version: Option<LitStr>,
     provides: Vec<ProvidesEntry>,
     depends_on: Vec<DependsOnEntry>,
     handlers: Vec<Expr>,
     on_load: Option<Path>,
     on_unload: Option<Path>,
-    metadata: MetadataOpts,
 }
 
 // ─── Parsing ──────────────────────────────────────────────────────────────────
@@ -113,38 +104,6 @@ fn parse_handlers(input: ParseStream) -> Result<Vec<Expr>> {
     Ok(exprs.into_iter().collect())
 }
 
-/// Parse `{ version: "…", desc: "…", full_desc: "…", plugin_type: service|runtime }`.
-fn parse_metadata(input: ParseStream) -> Result<MetadataOpts> {
-    let content;
-    braced!(content in input);
-    let mut opts = MetadataOpts::default();
-    while !content.is_empty() {
-        while content.peek(Token![,]) {
-            content.parse::<Token![,]>()?;
-        }
-        if content.is_empty() {
-            break;
-        }
-        let key: Ident = content.parse()?;
-        content.parse::<Token![:]>()?;
-        match key.to_string().as_str() {
-            "version" => opts.version = Some(content.parse()?),
-            "desc" => opts.desc = Some(content.parse()?),
-            "full_desc" => opts.full_desc = Some(content.parse()?),
-            "plugin_type" => opts.plugin_type = Some(content.parse()?),
-            other => {
-                return Err(syn::Error::new(
-                    key.span(),
-                    format!(
-                        "unknown metadata key `{other}`; expected version, desc, full_desc, or plugin_type"
-                    ),
-                ));
-            }
-        }
-    }
-    Ok(opts)
-}
-
 impl Parse for DefinePluginInput {
     fn parse(input: ParseStream) -> Result<Self> {
         // ── Optional leading doc attributes: `/// …`  ─────────────────────────
@@ -173,12 +132,12 @@ impl Parse for DefinePluginInput {
         let mut out = DefinePluginInput {
             doc_attrs,
             name,
+            version: None,
             provides: Vec::new(),
             depends_on: Vec::new(),
             handlers: Vec::new(),
             on_load: None,
             on_unload: None,
-            metadata: MetadataOpts::default(),
         };
 
         // ── Optional fields in any order ──────────────────────────────────────
@@ -197,12 +156,12 @@ impl Parse for DefinePluginInput {
                 "handlers" => out.handlers = parse_handlers(input)?,
                 "on_load" => out.on_load = Some(input.parse()?),
                 "on_unload" => out.on_unload = Some(input.parse()?),
-                "metadata" => out.metadata = parse_metadata(input)?,
+                "version" => out.version = Some(input.parse()?),
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
                         format!(
-                            "unknown field `{other}`; expected name, provides, depends_on, handlers, on_load, on_unload, or metadata"
+                            "unknown field `{other}`; expected name, provides, depends_on, handlers, on_load, on_unload, or version"
                         ),
                     ));
                 }
@@ -252,26 +211,18 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
     let DefinePluginInput {
         doc_attrs,
         name,
+        version,
         provides,
         depends_on,
         handlers,
         on_load,
         on_unload,
-        metadata,
     } = input;
 
     let fw = quote! { ::amira::framework };
 
     // ── Static variable name ──────────────────────────────────────────────────
     let static_ident = name_to_static_ident(&name);
-
-    // ── provides IDs (static slice) ───────────────────────────────────────────
-    let provides_ids = provides.iter().map(|e| {
-        let t = &e.trait_path;
-        let attrs = &e.attrs;
-        quote! { #(#attrs)* <dyn #t as #fw::plugin::ServiceMeta>::ID }
-    });
-    let provides_ids_tokens = quote! { &[ #( #provides_ids ),* ] };
 
     // ── depends_on IDs (static slice of DependsOnEntry) ──────────────────────
     let depends_on_entries: Vec<_> = depends_on
@@ -291,24 +242,17 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
         .collect();
     let depends_on_tokens = quote! { &[ #( #depends_on_entries ),* ] };
 
-    // ── metadata: full_desc — explicit beats doc, doc beats None ──────────────
-    let full_desc_tokens = if let Some(fd) = &metadata.full_desc {
-        quote! { ::std::option::Option::Some(#fd) }
-    } else if let Some(doc_text) = doc_attrs_to_string(&doc_attrs) {
-        quote! { ::std::option::Option::Some(#doc_text) }
+    // ── metadata: desc — doc comment beats CARGO_PKG_DESCRIPTION ──────────────
+    let desc_tokens = if let Some(doc_text) = doc_attrs_to_string(&doc_attrs) {
+        quote! { #doc_text }
     } else {
-        quote! { ::std::option::Option::None }
+        quote! { ::std::env!("CARGO_PKG_DESCRIPTION") }
     };
 
-    let version_tokens = if let Some(v) = &metadata.version {
+    let version_tokens = if let Some(v) = &version {
         quote! { #v }
     } else {
         quote! { ::std::env!("CARGO_PKG_VERSION") }
-    };
-    let desc_tokens = if let Some(d) = &metadata.desc {
-        quote! { #d }
-    } else {
-        quote! { ::std::env!("CARGO_PKG_DESCRIPTION") }
     };
 
     // ── ServiceEntry vec ──────────────────────────────────────────────────────
@@ -367,38 +311,20 @@ pub fn expand(input: DefinePluginInput) -> TokenStream {
         quote! { ::std::option::Option::None }
     };
 
+    let service_entries_tokens = quote! { &[ #( #service_entries ),* ] };
+
     // ── Final expansion: emit a `pub static` item ─────────────────────────────
     quote! {
         #(#doc_attrs)*
-        pub static #static_ident: #fw::plugin::PluginDescriptor = {
-            const __AMIRA_PROVIDES_IDS:  &[&'static str] = #provides_ids_tokens;
-            const __AMIRA_DEPENDS_ON: &[#fw::plugin::DependsOnEntry] = #depends_on_tokens;
-
-            const __AMIRA_META: #fw::plugin::PluginMetadata = #fw::plugin::PluginMetadata {
-                version:     #version_tokens,
-                desc:        #desc_tokens,
-                full_desc:   #full_desc_tokens,
-            };
-
-            fn __amira_plugin_create() -> #fw::plugin::Plugin {
-                #fw::plugin::Plugin::__new(
-                    #name,
-                    vec![ #( #depends_on_entries ),* ],
-                    vec![ #( #handler_entries ),* ],
-                    vec![ #( #service_entries ),* ],
-                    #on_load_tokens,
-                    #on_unload_tokens,
-                    __AMIRA_META,
-                )
-            }
-
-            #fw::plugin::PluginDescriptor {
-                name:        #name,
-                provides:    __AMIRA_PROVIDES_IDS,
-                depends_on:  __AMIRA_DEPENDS_ON,
-                create:      __amira_plugin_create,
-                metadata:    __AMIRA_META,
-            }
+        pub static #static_ident: #fw::plugin::PluginDescriptor = #fw::plugin::PluginDescriptor {
+            name:             #name,
+            version:          #version_tokens,
+            desc:             #desc_tokens,
+            provides:         #service_entries_tokens,
+            depends_on:       #depends_on_tokens,
+            on_load:          #on_load_tokens,
+            on_unload:        #on_unload_tokens,
+            create_handlers:  || vec![ #( #handler_entries ),* ],
         };
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! [`PluginManager`] is the central owner of all registered plugins. It:
 //!
-//! - Accepts [`PluginDescriptor`]s and instantiates them into live [`Plugin`]s
+//! - Accepts [`PluginDescriptor`]s and creates live [`Plugin`]s via [`Plugin::new`]
 //!   with an initial state of [`PluginLoadState::Registered`].
 //! - Drives plugin lifecycle (`on_load` / `on_unload`) in dependency order via
 //!   [`load_all`](PluginManager::load_all) / [`unload_all`](PluginManager::unload_all).
@@ -255,8 +255,8 @@ impl PluginManager {
     ///
     /// Logs a warning when the API version does not match, but continues —
     /// hard rejection can be enforced by callers if needed.
-    pub fn register_plugin(&self, desc: &PluginDescriptor) -> Arc<PluginContext> {
-        let instance = desc.instantiate();
+    pub fn register_plugin(&self, desc: &'static PluginDescriptor) -> Arc<PluginContext> {
+        let instance = Plugin::new(desc);
         let name = instance.name().to_string();
 
         let config = self
