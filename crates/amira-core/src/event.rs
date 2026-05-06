@@ -97,7 +97,7 @@ pub trait EventRoot: Downcast + Send + Sync {
     /// User id associated with this event if available.
     fn user_id(&self) -> Option<String> {
         match self.scene() {
-            Some(Scene::Private { user_id }) => Some(user_id.clone()),
+            Some(Scene::Private { user_id }) => Some(user_id),
             Some(Scene::Group { user_id, .. }) => user_id,
             _ => None,
         }

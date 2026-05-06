@@ -309,8 +309,8 @@ impl HandlerContext {
     // ─── Shared base delegation ───────────────────────────────────────────────
 
     /// Returns a reference to the underlying boxed event.
-    pub fn event(&self) -> Arc<dyn EventRoot> {
-        self.base.event.clone()
+    pub fn event(&self) -> &Arc<dyn EventRoot> {
+        &self.base.event
     }
 
     /// Returns a reference to the bot.

@@ -67,8 +67,8 @@ use crate::logging;
 ///     .build()?;
 /// ```
 pub struct AmiraRuntime {
-    /// The configuration.
-    config: AmiraConfig,
+    /// Adapter-specific configuration.
+    adapter_config: HashMap<String, serde_json::Value>,
     /// Plugin manager — owns all plugins and drives event dispatch.
     plugin_manager: Arc<PluginManager>,
     /// Transport context.
@@ -126,23 +126,18 @@ impl AmiraRuntime {
         info!("Runtime initialized from configuration");
 
         let plugin_manager = PluginManager::new(
-            config.plugins.clone(),
+            config.plugins,
             #[cfg(feature = "command")]
-            config.command.clone(),
+            config.command,
         );
 
         Self {
-            config,
+            adapter_config: config.adapters,
             plugin_manager: Arc::new(plugin_manager),
             transport_context: transport_ctx,
             bridges: Arc::default(),
             running: AtomicBool::new(false),
         }
-    }
-
-    /// Returns a reference to the configuration.
-    pub fn config(&self) -> &AmiraConfig {
-        &self.config
     }
 
     /// Registers an adapter with the runtime.
@@ -163,7 +158,7 @@ impl AmiraRuntime {
         let adapter_name = A::NAME;
 
         // Try to get config from file, otherwise use default
-        let config = if let Some(config_value) = self.config.adapters.get(adapter_name) {
+        let config = if let Some(config_value) = self.adapter_config.get(adapter_name) {
             A::Config::deserialize(config_value).map_err(|e| {
                 RuntimeError(format!(
                     "Failed to deserialize config for adapter '{adapter_name}': {e}"
@@ -302,9 +297,10 @@ impl AmiraRuntime {
     }
 
     async fn wait_all_bridges(&self) {
-        let bridges = self.bridges.lock().values().cloned().collect::<Vec<_>>();
-        let futures = bridges
-            .iter()
+        let futures = self
+            .bridges
+            .lock()
+            .values()
             .map(|bridge| {
                 let bridge = bridge.clone();
                 async move { bridge.wait().await }

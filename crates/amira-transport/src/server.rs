@@ -406,9 +406,7 @@ async fn handle_ws_connection(
     // The returned token drives graceful shutdown for this connection.
     let shutdown_token = handler.register_connection(
         &bot_id,
-        Some(amira_core::transport::Sender::Ws {
-            message_tx: tx.clone(),
-        }),
+        Some(amira_core::transport::Sender::Ws { message_tx: tx }),
     );
 
     // ── Send task: forwards outgoing frames to the WebSocket write half ───────

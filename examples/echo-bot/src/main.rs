@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use amira::prelude::*;
-use amira_adapter_onebot::api::*;
+use amira_adapter_onebot::api::GetGroupMemberInfoExt;
 use amira_adapter_onebot::{GroupMessageEvent, MessageEvent, OneBotAdapter, OneBotBot};
 use amira_plugin_storage::{Data, STORAGE_PLUGIN, StorageDir, StorageService};
 use anyhow::Result;

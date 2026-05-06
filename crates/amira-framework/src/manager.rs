@@ -70,14 +70,12 @@ use crate::plugin::{Plugin, PluginDescriptor, PluginLoadContext};
 /// # Errors
 ///
 /// Returns `None` when a dependency cycle is detected.
-fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<String>>> {
-    let plugin_names: Vec<String> = plugins.keys().cloned().collect();
-
+fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<&String>>> {
     // Map: service_id → plugin_name that provides it (last wins).
-    let mut provider_map: HashMap<&str, String> = HashMap::new();
+    let mut provider_map = HashMap::new();
     for (name, plugin) in plugins {
         for service_id in plugin.provides() {
-            if let Some(prev_name) = provider_map.insert(service_id, name.clone()) {
+            if let Some(prev_name) = provider_map.insert(service_id, name) {
                 warn!(
                     service       = service_id,
                     prev_provider = %prev_name,
@@ -89,17 +87,13 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
     }
 
     // Build adjacency / in-degree tables (using plugin name as key).
-    let mut in_degree: HashMap<String, usize> =
-        plugin_names.iter().map(|n| (n.clone(), 0)).collect();
-    let mut dependents: HashMap<String, Vec<String>> = plugin_names
-        .iter()
-        .map(|n| (n.clone(), Vec::new()))
-        .collect();
+    let mut in_degree: HashMap<_, _> = plugins.keys().map(|n| (n, 0)).collect();
+    let mut dependents: HashMap<_, _> = plugins.keys().map(|n| (n.as_str(), Vec::new())).collect();
 
     for (name, plugin) in plugins {
         for entry in plugin.depends_on() {
             if let Some(provider_name) = provider_map.get(entry.name) {
-                if provider_name == name {
+                if provider_name == &name {
                     warn!(
                         plugin  = %name,
                         service = entry.name,
@@ -107,33 +101,32 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
                     );
                 } else {
                     dependents
-                        .get_mut(provider_name)
+                        .get_mut(provider_name.as_str())
                         .unwrap()
-                        .push(name.clone());
-                    *in_degree.get_mut(name).unwrap() += 1;
+                        .push(name);
+                    *in_degree.get_mut(&name).unwrap() += 1;
                 }
             }
         }
     }
 
     // Kahn's algorithm — collect one layer per BFS frontier.
-    let mut layers: Vec<Vec<String>> = Vec::new();
-    let mut current: Vec<String> = plugin_names
-        .iter()
+    let mut layers = Vec::new();
+    let mut current: Vec<_> = plugins
+        .keys()
         .filter(|n| in_degree.get(*n).is_some_and(|&d| d == 0))
-        .cloned()
         .collect();
     let mut processed = 0;
 
     while !current.is_empty() {
         processed += current.len();
-        let mut next: Vec<String> = Vec::new();
+        let mut next = Vec::new();
         for name in &current {
-            for dependent in &dependents[name] {
+            for dependent in &dependents[name.as_str()] {
                 if let Some(deg) = in_degree.get_mut(dependent) {
                     *deg -= 1;
                     if *deg == 0 {
-                        next.push(dependent.clone());
+                        next.push(*dependent);
                     }
                 }
             }
@@ -143,10 +136,9 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
     }
 
     if processed != plugins.len() {
-        let cycle_nodes: Vec<String> = plugin_names
-            .iter()
+        let cycle_nodes: Vec<_> = plugins
+            .keys()
             .filter(|n| in_degree.get(*n).is_some_and(|&d| d > 0))
-            .cloned()
             .collect();
         error!(
             cycle_nodes = ?cycle_nodes,
@@ -535,20 +527,21 @@ impl PluginManager {
         self.unload_plugin_unchecked(name).await
     }
 
+    fn active_plugins(&self) -> HashMap<String, Arc<Plugin>> {
+        self.plugins
+            .read()
+            .iter()
+            .filter(|(_, entry)| entry.state == PluginLoadState::Active)
+            .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
+            .collect()
+    }
+
     /// Attempts to load all registered plugins in dependency order.
     pub async fn load_all(&self) {
-        let layers = {
-            let plugins = self.plugins.read();
-            let plugins_map = plugins
-                .iter()
-                .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
-                .collect::<HashMap<_, _>>();
-            if let Some(l) = topological_layers(&plugins_map) {
-                l
-            } else {
-                error!("Skipping plugin loading due to dependency cycle");
-                return;
-            }
+        let plugins_map = self.active_plugins();
+        let Some(layers) = topological_layers(&plugins_map) else {
+            error!("Skipping plugin loading due to dependency cycle");
+            return;
         };
 
         for layer in layers {
@@ -558,19 +551,10 @@ impl PluginManager {
 
     /// Unloads all **active** plugins in reverse dependency order.
     pub async fn unload_all(&self) {
-        let layers = {
-            let plugins = self.plugins.read();
-            let plugins_map = plugins
-                .iter()
-                .filter(|(_, entry)| entry.state == PluginLoadState::Active)
-                .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
-                .collect::<HashMap<_, _>>();
-            if let Some(l) = topological_layers(&plugins_map) {
-                l
-            } else {
-                error!("Skipping plugin unloading due to dependency cycle");
-                return;
-            }
+        let plugins_map = self.active_plugins();
+        let Some(layers) = topological_layers(&plugins_map) else {
+            error!("Skipping plugin unloading due to dependency cycle");
+            return;
         };
 
         for layer in layers.iter().rev() {

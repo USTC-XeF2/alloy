@@ -82,7 +82,7 @@ impl ServiceInit for StorageServiceImpl {
     async fn init(ctx: Arc<PluginContext>) -> Result<Self, String> {
         let cfg: StorageConfig = ctx
             .config()
-            .map_err(|e| format!("Failed to load storage config: {}", e))?;
+            .map_err(|e| format!("Failed to load storage config: {e}"))?;
 
         let base = cfg.base_dir;
         let service = Self {
