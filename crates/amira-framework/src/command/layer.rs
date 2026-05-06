@@ -5,7 +5,7 @@ use amira_core::EventType;
 use clap::Parser;
 use clap::error::ErrorKind;
 use futures::FutureExt;
-use futures::future::BoxFuture;
+use futures::future::{self, BoxFuture};
 use tower::{BoxError, Layer, Service, ServiceBuilder};
 use tower_layer::{Identity, Stack};
 
@@ -73,6 +73,7 @@ where
 {
     name: String,
     start_tag: Option<String>,
+    aliases: Vec<String>,
     reply_help: bool,
     reply_error: bool,
     block: bool,
@@ -95,6 +96,7 @@ where
         Self {
             name: name.into(),
             start_tag: None,
+            aliases: Vec::new(),
             reply_help: true,
             reply_error: true,
             block: true,
@@ -106,6 +108,12 @@ where
     /// to [`CommandConfig::default_start_tag`] from the runtime configuration).
     pub fn start_tag(mut self, tag: impl Into<String>) -> Self {
         self.start_tag = Some(tag.into());
+        self
+    }
+
+    /// Add an alias for this command.
+    pub fn alias(mut self, alias: impl Into<String>) -> Self {
+        self.aliases.push(alias.into());
         self
     }
 
@@ -165,6 +173,7 @@ where
         CommandService {
             name: self.name.clone(),
             start_tag: self.start_tag.clone(),
+            aliases: self.aliases.clone(),
             reply_help: self.reply_help,
             reply_error: self.reply_error,
             block: self.block,
@@ -184,11 +193,16 @@ where
 pub struct CommandService<T, S> {
     name: String,
     start_tag: Option<String>,
+    aliases: Vec<String>,
     reply_help: bool,
     reply_error: bool,
     block: bool,
     inner: S,
     _marker: PhantomData<T>,
+}
+
+fn skip_event() -> BoxFuture<'static, Result<(), BoxError>> {
+    future::ready(Err(Box::new(EventSkipped) as BoxError)).boxed()
 }
 
 impl<T, S> Service<HandlerContext> for CommandService<T, S>
@@ -206,62 +220,61 @@ where
     }
 
     fn call(&mut self, ctx: HandlerContext) -> Self::Future {
-        let name = self.name.clone();
+        if ctx.event().event_type() != EventType::Message {
+            return skip_event();
+        }
+
+        let rich_text = ctx.event().rich_text();
+        let Some((args, registry)) = rich_text_shell_split(&rich_text) else {
+            return skip_event();
+        };
+
         let start_tag = self
             .start_tag
-            .clone()
-            .unwrap_or_else(|| ctx.command().config.default_start_tag.clone());
-        let reply_help = self.reply_help;
-        let reply_error = self.reply_error;
-        let block = self.block;
-        let mut inner = self.inner.clone();
+            .as_ref()
+            .unwrap_or_else(|| &ctx.command().config.default_start_tag);
 
-        async move {
-            if ctx.event().event_type() != EventType::Message {
-                return Err(EventSkipped.into());
+        let Some(cmd_name) = args.first().and_then(|s| s.strip_prefix(start_tag)) else {
+            return skip_event();
+        };
+
+        if cmd_name != self.name && self.aliases.iter().all(|alias| alias != cmd_name) {
+            return skip_event();
+        }
+
+        CURRENT_REGISTRY.with(|reg| {
+            *reg.borrow_mut() = Some(registry);
+        });
+        let result = T::try_parse_from(&args);
+        CURRENT_REGISTRY.with(|reg| {
+            *reg.borrow_mut() = None;
+        });
+
+        if self.block {
+            ctx.stop_propagation();
+        }
+
+        match result {
+            Ok(cmd) => {
+                ctx.state().set(CommandArgs(cmd));
+                self.inner.call(ctx).boxed()
             }
+            Err(err) => {
+                let should_reply = if err.kind() == ErrorKind::DisplayHelp {
+                    self.reply_help
+                } else {
+                    self.reply_error
+                };
 
-            let rich_text = ctx.event().rich_text();
-            let Some((args, registry)) = rich_text_shell_split(&rich_text) else {
-                return Err(EventSkipped.into());
-            };
-
-            let expected_cmd = format!("{start_tag}{name}");
-            if args.is_empty() || args[0].to_lowercase() != expected_cmd.to_lowercase() {
-                return Err(EventSkipped.into());
-            }
-
-            CURRENT_REGISTRY.with(|reg| {
-                *reg.borrow_mut() = Some(registry);
-            });
-            let result = T::try_parse_from(&args);
-            CURRENT_REGISTRY.with(|reg| {
-                *reg.borrow_mut() = None;
-            });
-
-            if block {
-                ctx.stop_propagation();
-            }
-
-            match result {
-                Ok(cmd) => {
-                    ctx.state().set(CommandArgs(cmd));
-                    inner.call(ctx).await
-                }
-                Err(err) => {
-                    let should_reply = if err.kind() == ErrorKind::DisplayHelp {
-                        reply_help
-                    } else {
-                        reply_error
-                    };
+                async move {
                     if should_reply {
                         err.to_string().process_response(&ctx).await;
                     }
                     Ok(())
                 }
+                .boxed()
             }
         }
-        .boxed()
     }
 }
 
