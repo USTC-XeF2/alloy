@@ -41,6 +41,18 @@ pub struct StorageConfig {
     pub auto_create: bool,
 }
 
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            base_dir: default_base_dir(),
+            cache_dir: None,
+            data_dir: None,
+            config_dir: None,
+            auto_create: default_auto_create(),
+        }
+    }
+}
+
 fn default_base_dir() -> PathBuf {
     PathBuf::from(".")
 }
@@ -82,7 +94,9 @@ impl ServiceInit for StorageServiceImpl {
     async fn init(ctx: Arc<PluginContext>) -> Result<Self, String> {
         let cfg: StorageConfig = ctx
             .config()
-            .map_err(|e| format!("Failed to load storage config: {e}"))?;
+            .transpose()
+            .map_err(|e| format!("Failed to load storage config: {e}"))?
+            .unwrap_or_default();
 
         let base = cfg.base_dir;
         let service = Self {

@@ -178,9 +178,9 @@ impl std::fmt::Debug for EventContext {
 #[derive(Debug)]
 pub struct PluginContext {
     /// The name of the plugin.
-    name: String,
-    /// The plugin's config section from `amira.toml` (or an empty object).
-    config: Arc<serde_json::Value>,
+    name: &'static str,
+    /// The plugin's config section from `amira.toml`.
+    config: Option<Arc<serde_json::Value>>,
     /// Service IDs this plugin declared (via `provides` or `depends_on`).
     /// Used to check if a service lookup should be allowed.
     service_ids: HashSet<String>,
@@ -195,8 +195,8 @@ pub struct PluginContext {
 impl PluginContext {
     /// Creates a new `PluginContext` with the given plugin name, config, and service declarations.
     pub(crate) fn new(
-        name: String,
-        config: Arc<serde_json::Value>,
+        name: &'static str,
+        config: Option<Arc<serde_json::Value>>,
         service_ids: HashSet<String>,
         all_services: Arc<RwLock<ServiceMap>>,
     ) -> Self {
@@ -210,19 +210,19 @@ impl PluginContext {
     }
 
     /// Returns the name of the plugin.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> &'static str {
+        self.name
     }
 
     /// Deserialize the plugin config section into `T`.
     ///
     /// Returns `Err` if the config is missing required fields or has the wrong
     /// shape; use `#[serde(default)]` on the struct to make all fields optional.
-    pub fn config<T>(&self) -> serde_json::Result<T>
+    pub fn config<T>(&self) -> Option<serde_json::Result<T>>
     where
         T: serde::de::DeserializeOwned,
     {
-        T::deserialize(self.config.as_ref())
+        self.config.as_ref().map(|v| T::deserialize(v.as_ref()))
     }
 
     /// Looks up a service by its trait-object type.

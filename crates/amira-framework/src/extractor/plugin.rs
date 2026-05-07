@@ -21,7 +21,12 @@ pub struct PluginConfig<T>(T);
 
 impl<T: serde::de::DeserializeOwned + Default + Send> FromContext for PluginConfig<T> {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
-        Ok(PluginConfig(ctx.plugin().config().unwrap_or_default()))
+        Ok(PluginConfig(
+            ctx.plugin()
+                .config()
+                .and_then(Result::ok)
+                .unwrap_or_default(),
+        ))
     }
 }
 

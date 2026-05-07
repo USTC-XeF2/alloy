@@ -40,7 +40,6 @@ use amira_core::bridge::Dispatcher;
 use amira_core::{Bot, EventRoot};
 use futures::{FutureExt, future};
 use parking_lot::RwLock;
-use serde_json::{Map, Value};
 use tower::ServiceExt;
 use tracing::{error, info, warn};
 
@@ -53,7 +52,9 @@ use crate::plugin::{Plugin, PluginDescriptor, PluginLoadContext};
 /// Returns `Vec<layer>` where each inner `Vec<String>` contains the names of
 /// plugins that may be loaded **in parallel** (no intra-layer dependencies).
 /// Unload order is obtained by reversing the slice of layers.
-fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<&String>>> {
+fn topological_layers(
+    plugins: &HashMap<&'static str, Arc<Plugin>>,
+) -> Option<Vec<Vec<&'static str>>> {
     // Map: service_id → plugin_name that provides it (last wins).
     let mut provider_map = HashMap::new();
     for (name, plugin) in plugins {
@@ -70,24 +71,21 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
     }
 
     // Build adjacency / in-degree tables (using plugin name as key).
-    let mut in_degree: HashMap<_, _> = plugins.keys().map(|n| (n, 0)).collect();
-    let mut dependents: HashMap<_, _> = plugins.keys().map(|n| (n.as_str(), Vec::new())).collect();
+    let mut in_degree: HashMap<_, _> = plugins.keys().map(|n| (*n, 0)).collect();
+    let mut dependents: HashMap<_, _> = plugins.keys().map(|n| (*n, Vec::new())).collect();
 
     for (name, plugin) in plugins {
         for entry in plugin.depends_on() {
             if let Some(provider_name) = provider_map.get(entry.name) {
-                if provider_name == &name {
+                if *provider_name == name {
                     warn!(
                         plugin  = %name,
                         service = entry.name,
                         "Plugin depends on a service it provides itself — ignored"
                     );
                 } else {
-                    dependents
-                        .get_mut(provider_name.as_str())
-                        .unwrap()
-                        .push(name);
-                    *in_degree.get_mut(&name).unwrap() += 1;
+                    dependents.get_mut(*provider_name).unwrap().push(*name);
+                    *in_degree.get_mut(name).unwrap() += 1;
                 }
             }
         }
@@ -98,6 +96,7 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
     let mut current: Vec<_> = plugins
         .keys()
         .filter(|n| in_degree.get(*n).is_some_and(|&d| d == 0))
+        .cloned()
         .collect();
     let mut processed = 0;
 
@@ -105,8 +104,8 @@ fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<
         processed += current.len();
         let mut next = Vec::new();
         for name in &current {
-            for dependent in &dependents[name.as_str()] {
-                if let Some(deg) = in_degree.get_mut(dependent) {
+            for dependent in &dependents[name] {
+                if let Some(deg) = in_degree.get_mut(*dependent) {
                     *deg -= 1;
                     if *deg == 0 {
                         next.push(*dependent);
@@ -180,9 +179,9 @@ struct PluginEntry {
 /// from `amira.toml → plugins → <name>`.  The runtime converts the figment
 /// config before calling [`new`](Self::new).
 pub struct PluginManager {
-    plugins: RwLock<HashMap<String, PluginEntry>>,
-    /// Per-plugin config sections, keyed by plugin name. Stored as Arc<Value> to avoid cloning.
-    plugin_configs: HashMap<String, Arc<Value>>,
+    plugins: RwLock<HashMap<&'static str, PluginEntry>>,
+    /// Per-plugin config sections, keyed by plugin name. Stored as Arc<serde_json::Value> to avoid cloning.
+    plugin_configs: HashMap<String, Arc<serde_json::Value>>,
     /// Managed exclusively by [`load_all`] / [`unload_all`].
     /// Wrapped in Arc for sharing with PluginContext instances.
     services: Arc<RwLock<ServiceMap>>,
@@ -194,7 +193,7 @@ pub struct PluginManager {
 impl PluginManager {
     /// Creates a new manager with the given per-plugin config map.
     pub fn new(
-        plugin_configs: HashMap<String, Value>,
+        plugin_configs: HashMap<String, serde_json::Value>,
         #[cfg(feature = "command")] command_config: crate::command::CommandConfig,
     ) -> Self {
         Self {
@@ -224,13 +223,7 @@ impl PluginManager {
     /// hard rejection can be enforced by callers if needed.
     pub fn register_plugin(&self, desc: &'static PluginDescriptor) -> Arc<PluginContext> {
         let instance = Plugin::new(desc);
-        let name = instance.name().to_string();
-
-        let config = self
-            .plugin_configs
-            .get(&name)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(Value::Object(Map::default())));
+        let name = instance.name();
 
         // Build the list of enabled service IDs (both provides and depends_on)
         let service_ids: HashSet<String> = instance
@@ -242,14 +235,14 @@ impl PluginManager {
             .collect();
 
         let context = Arc::new(PluginContext::new(
-            name.clone(),
-            config,
+            name,
+            self.plugin_configs.get(name).cloned(),
             service_ids,
             self.services.clone(),
         ));
 
         self.plugins.write().insert(
-            name.clone(),
+            name,
             PluginEntry {
                 plugin: Arc::new(instance),
                 state: PluginLoadState::Registered,
@@ -292,11 +285,11 @@ impl PluginManager {
     }
 
     /// Returns a map of plugin name → load state for all registered plugins.
-    pub fn plugin_states(&self) -> HashMap<String, PluginLoadState> {
+    pub fn plugin_states(&self) -> HashMap<&'static str, PluginLoadState> {
         self.plugins
             .read()
             .iter()
-            .map(|(name, entry)| (name.clone(), entry.state))
+            .map(|(name, entry)| (*name, entry.state))
             .collect()
     }
 
@@ -482,7 +475,7 @@ impl PluginManager {
 
         // Check if any other active plugin has required dependencies on this plugin's services.
         for (other_name, entry) in self.plugins.read().iter() {
-            if other_name == name || entry.state != PluginLoadState::Active {
+            if *other_name == name || entry.state != PluginLoadState::Active {
                 continue;
             }
             for dep in entry.plugin.depends_on() {
@@ -502,12 +495,12 @@ impl PluginManager {
         self.unload_plugin_unchecked(name).await
     }
 
-    fn active_plugins(&self) -> HashMap<String, Arc<Plugin>> {
+    fn active_plugins(&self) -> HashMap<&'static str, Arc<Plugin>> {
         self.plugins
             .read()
             .iter()
             .filter(|(_, entry)| entry.state == PluginLoadState::Active)
-            .map(|(name, entry)| (name.clone(), entry.plugin.clone()))
+            .map(|(name, entry)| (*name, entry.plugin.clone()))
             .collect()
     }
 
