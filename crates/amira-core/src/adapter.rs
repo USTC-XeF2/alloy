@@ -14,10 +14,6 @@ use crate::error::AdapterResult;
 use crate::event::PlatformEvent;
 use crate::transport::{ConnectionHandler, Sender, TransportContext};
 
-// =============================================================================
-// Adapter Trait
-// =============================================================================
-
 /// The core adapter trait.
 ///
 /// An adapter provides the protocol-specific logic:

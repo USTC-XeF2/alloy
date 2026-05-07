@@ -65,10 +65,6 @@ where
     }
 }
 
-// ============================================================================
-// EventPredicate
-// ============================================================================
-
 /// A type-erased, [`Predicate`]-implementing wrapper for synchronous closures.
 ///
 /// When the inner predicate returns `false` the request is rejected with [`EventSkipped`].

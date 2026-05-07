@@ -11,10 +11,6 @@ use launchdarkly_sdk_transport::HyperTransport;
 use tokio::sync::watch;
 use tracing::{info, trace, warn};
 
-// =============================================================================
-// SSE event loop
-// =============================================================================
-
 /// Persistent SSE client loop.
 ///
 /// Opens an SSE connection to the configured URL, processes incoming events,
@@ -83,10 +79,6 @@ async fn run_sse_loop(
     handler.on_disconnect(&bot_id).await;
     info!(bot_id = %bot_id, "SSE client stopped");
 }
-
-// =============================================================================
-// Capability registration
-// =============================================================================
 
 /// Registers an SSE client bot.
 ///

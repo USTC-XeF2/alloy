@@ -48,28 +48,11 @@ use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
 use crate::plugin::{Plugin, PluginDescriptor, PluginLoadContext};
 
-// =============================================================================
-// Topological sort utility
-// =============================================================================
-
 /// Computes the plugin load order as **layers** via Kahn's algorithm.
 ///
 /// Returns `Vec<layer>` where each inner `Vec<String>` contains the names of
 /// plugins that may be loaded **in parallel** (no intra-layer dependencies).
 /// Unload order is obtained by reversing the slice of layers.
-///
-/// Dependency edges are derived from [`Plugin::provides`] / [`Plugin::depends_on`]:
-/// - An edge **A → B** means "A must load before B".
-///
-/// # Warnings
-///
-/// - Unresolved dependencies are logged; loading continues without the
-///   ordering guarantee for that edge.
-/// - Duplicate providers are logged; the last registration wins.
-///
-/// # Errors
-///
-/// Returns `None` when a dependency cycle is detected.
 fn topological_layers(plugins: &HashMap<String, Arc<Plugin>>) -> Option<Vec<Vec<&String>>> {
     // Map: service_id → plugin_name that provides it (last wins).
     let mut provider_map = HashMap::new();
@@ -171,19 +154,11 @@ pub enum PluginLoadState {
     Failed,
 }
 
-// =============================================================================
-// PluginEntry (internal)
-// =============================================================================
-
 struct PluginEntry {
     plugin: Arc<Plugin>,
     state: PluginLoadState,
     context: Arc<PluginContext>,
 }
-
-// =============================================================================
-// PluginManager
-// =============================================================================
 
 /// Central manager for plugin registration, lifecycle, and event dispatch.
 ///
@@ -562,10 +537,6 @@ impl PluginManager {
         }
     }
 }
-
-// =============================================================================
-// Dispatcher impl
-// =============================================================================
 
 impl Dispatcher for PluginManager {
     /// Dispatches `event` to all **active** plugins' handlers in a single flat

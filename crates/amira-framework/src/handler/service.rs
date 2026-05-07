@@ -18,10 +18,6 @@ use crate::context::HandlerContext;
 
 use super::traits::FromCtxFn;
 
-// ============================================================================
-// HandlerResponse
-// ============================================================================
-
 /// A trait for types that can be returned from handlers.
 pub trait HandlerResponse: Send + Sync {
     /// Process the handler response, performing any necessary side effects (e.g. sending messages).
@@ -90,10 +86,6 @@ impl<T: HandlerResponse, E: std::fmt::Display + Send + Sync> HandlerResponse for
         }
     }
 }
-
-// ============================================================================
-// HandlerService
-// ============================================================================
 
 /// A tower [`Service`] that calls a single generic handler.
 ///

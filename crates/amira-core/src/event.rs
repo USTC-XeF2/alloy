@@ -14,10 +14,6 @@ use downcast_rs::{Downcast, impl_downcast};
 
 use super::message::RichText;
 
-// ============================================================================
-// Session Scene Identifier
-// ============================================================================
-
 /// Session scene (conversation context) identifier.
 ///
 /// Returned by [`EventRoot::scene`](EventRoot::scene).
@@ -42,10 +38,6 @@ pub enum Scene {
         id: String,
     },
 }
-
-// ============================================================================
-// Event Type Classification
-// ============================================================================
 
 /// Classification of event types.
 ///
@@ -78,10 +70,6 @@ impl FromStr for EventType {
         })
     }
 }
-
-// ============================================================================
-// EventRoot
-// ============================================================================
 
 /// Type-erased root event trait used by runtime dispatch.
 pub trait EventRoot: Downcast + Send + Sync {
@@ -124,10 +112,6 @@ impl std::fmt::Debug for dyn EventRoot {
 pub trait PlatformEvent: EventRoot {
     const PLATFORM: &'static str;
 }
-
-// ============================================================================
-// EventView
-// ============================================================================
 
 /// Typed event view extraction trait.
 pub trait EventView: Sized + Send {

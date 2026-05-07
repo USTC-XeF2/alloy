@@ -6,11 +6,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-// =============================================================================
-// Root Configuration
-// =============================================================================
 
 /// Root configuration structure for the Amira framework.
 ///
@@ -30,7 +25,7 @@ pub struct AmiraConfig {
     ///
     /// Each adapter registers its own configuration schema.
     #[serde(default)]
-    pub adapters: HashMap<String, Value>,
+    pub adapters: HashMap<String, serde_json::Value>,
 
     /// Plugin-specific configurations.
     ///
@@ -48,12 +43,8 @@ pub struct AmiraConfig {
     ///
     /// [`HandlerContext`]: amira_framework::context::HandlerContext
     #[serde(default)]
-    pub plugins: HashMap<String, Value>,
+    pub plugins: HashMap<String, serde_json::Value>,
 }
-
-// =============================================================================
-// Logging Configuration
-// =============================================================================
 
 /// Logging configuration.
 ///

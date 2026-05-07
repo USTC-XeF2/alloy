@@ -33,10 +33,6 @@ use derive_more::{AsMut, AsRef, Deref, DerefMut, From, Into, IntoIterator};
 use downcast_rs::{Downcast, impl_downcast};
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
-// Rich Text Segment
-// ============================================================================
-
 /// A platform-agnostic rich text segment.
 ///
 /// This enum provides a unified representation of message segments across
@@ -63,10 +59,6 @@ pub enum RichTextSegment {
     Reply(String),
 }
 
-// ============================================================================
-// Message Segment Traits
-// ============================================================================
-
 /// A trait for segments received from an adapter/protocol.
 pub trait ReceiveMessageSegment: Send + Sync + 'static {
     /// Returns the type identifier of this segment (e.g., "text", "image", "at").
@@ -92,10 +84,6 @@ pub trait SendMessageSegment: ReceiveMessageSegment + Clone {
     /// should be converted where the protocol supports them.
     fn from_rich_text_segment(seg: RichTextSegment) -> Option<Self>;
 }
-
-// ============================================================================
-// RichTextSegment as first-class receive/send segment
-// ============================================================================
 
 impl ReceiveMessageSegment for RichTextSegment {
     fn segment_type(&self) -> &'static str {
@@ -148,10 +136,6 @@ where
         RichTextSegment::Text(text.into())
     }
 }
-
-// ============================================================================
-// Message Generic Struct
-// ============================================================================
 
 /// A generic message type composed of segments.
 ///
@@ -277,10 +261,6 @@ impl<S> FromIterator<S> for Message<S> {
     }
 }
 
-// ============================================================================
-// RichText — non-generic, protocol-agnostic message type
-// ============================================================================
-
 /// A protocol-agnostic message composed of [`RichTextSegment`]s.
 ///
 /// Handlers can return `RichText` (or `Result<RichText, E>`) and the
@@ -323,10 +303,6 @@ impl RichText {
         self.with(RichTextSegment::Reply(message_id.into()))
     }
 }
-
-// ============================================================================
-// ErasedMessage — type-erased message for object-safe Bot::send_message
-// ============================================================================
 
 /// Object-safe, type-erased message trait.
 ///

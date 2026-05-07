@@ -7,10 +7,6 @@
 use amira_core::{ReceiveMessageSegment, RichTextSegment, SendMessageSegment};
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
-// Segment Enum - The main message segment type
-// ============================================================================
-
 /// A OneBot v11 message segment.
 ///
 /// This enum represents all possible segment types in the `OneBot` v11 protocol.
@@ -151,27 +147,15 @@ impl SendMessageSegment for Segment {
     }
 }
 
-// ============================================================================
-// Segment Builder Methods
-// ============================================================================
-
 impl Segment {
     pub fn text(text: impl Into<String>) -> Self {
         Segment::Text(TextData { text: text.into() })
     }
 
-    // --------------------------------
-    // Face
-    // --------------------------------
-
     /// Creates a QQ face/emoji segment.
     pub fn face(id: impl Into<String>) -> Self {
         Segment::Face(FaceData { id: id.into() })
     }
-
-    // --------------------------------
-    // Image
-    // --------------------------------
 
     /// Creates an image segment from a file path or URL.
     pub fn image(file: impl Into<String>) -> Self {
@@ -197,10 +181,6 @@ impl Segment {
         })
     }
 
-    // --------------------------------
-    // Record
-    // --------------------------------
-
     /// Creates a voice/record segment.
     pub fn record(file: impl Into<String>) -> Self {
         Segment::Record(RecordData {
@@ -213,10 +193,6 @@ impl Segment {
         })
     }
 
-    // --------------------------------
-    // Video
-    // --------------------------------
-
     /// Creates a video segment.
     pub fn video(file: impl Into<String>) -> Self {
         Segment::Video(VideoData {
@@ -227,10 +203,6 @@ impl Segment {
             timeout: None,
         })
     }
-
-    // --------------------------------
-    // At
-    // --------------------------------
 
     /// Creates an @mention segment for a specific user.
     pub fn at(qq: i64) -> Self {
@@ -244,10 +216,6 @@ impl Segment {
         })
     }
 
-    // --------------------------------
-    // Magic Emojis
-    // --------------------------------
-
     /// Creates a rock-paper-scissors segment.
     pub fn rps() -> Self {
         Segment::Rps(RpsData {})
@@ -258,18 +226,10 @@ impl Segment {
         Segment::Dice(DiceData {})
     }
 
-    // --------------------------------
-    // Reply
-    // --------------------------------
-
     /// Creates a reply segment referencing another message.
     pub fn reply(id: impl Into<String>) -> Self {
         Segment::Reply(ReplyData { id: id.into() })
     }
-
-    // --------------------------------
-    // Forward
-    // --------------------------------
 
     /// Creates a forward reference segment (for receiving).
     pub fn forward(id: impl Into<String>) -> Self {
@@ -300,10 +260,6 @@ impl Segment {
         })
     }
 
-    // --------------------------------
-    // XML/JSON
-    // --------------------------------
-
     /// Creates an XML message segment.
     pub fn xml(data: impl Into<String>) -> Self {
         Segment::Xml(XmlData { data: data.into() })
@@ -314,10 +270,6 @@ impl Segment {
         Segment::Json(JsonData { data: data.into() })
     }
 }
-
-// ============================================================================
-// Segment Data Types
-// ============================================================================
 
 /// Plain text segment data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -554,10 +506,6 @@ pub struct JsonData {
     /// JSON content.
     pub data: String,
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

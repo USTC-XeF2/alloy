@@ -18,10 +18,6 @@ use crate::model::entity::{
 };
 use crate::model::message::OutgoingSegment;
 
-// =========================================================================
-// Account APIs
-// =========================================================================
-
 /// Gets login info (QQ number and nickname).
 #[derive(Debug, Serialize)]
 #[api_payload(bot = MilkyBot, response = LoginInfo)]
@@ -159,10 +155,6 @@ pub struct GetCookies {
 #[api_payload(bot = MilkyBot, response = String, field = "csrf_token")]
 pub struct GetCsrfToken {}
 
-// =========================================================================
-// Message APIs
-// =========================================================================
-
 /// Sends a private (friend) message.
 #[derive(Debug, Serialize)]
 #[api_payload(bot = MilkyBot, response = SendMessageResponse)]
@@ -245,10 +237,6 @@ pub struct MarkMessageAsRead {
     pub message_seq: i64,
 }
 
-// =========================================================================
-// Friend APIs
-// =========================================================================
-
 /// Sends a friend nudge (poke).
 #[derive(Debug, Serialize)]
 #[api_payload(bot = MilkyBot)]
@@ -309,10 +297,6 @@ pub struct RejectFriendRequest {
     #[api_param(default)]
     pub reason: Option<String>,
 }
-
-// =========================================================================
-// Group APIs
-// =========================================================================
 
 /// Sets group name.
 #[derive(Debug, Serialize)]
@@ -522,10 +506,6 @@ pub struct RejectGroupInvitation {
     pub group_id: i64,
     pub invitation_seq: i64,
 }
-
-// =========================================================================
-// File APIs
-// =========================================================================
 
 /// Uploads a private file.
 #[derive(Debug, Serialize)]

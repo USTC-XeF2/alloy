@@ -66,10 +66,6 @@ pub trait Dispatcher: Send + Sync + 'static {
         B: Bot;
 }
 
-// =============================================================================
-// Adapter Bridge
-// =============================================================================
-
 type BotEntry<B> = (Arc<B>, watch::Receiver<()>, watch::Sender<()>);
 
 /// Central bridge that wires together the runtime, the transport layer, and an adapter.
@@ -160,10 +156,6 @@ impl<A: Adapter, D: Dispatcher> BridgeRuntime for AdapterBridge<A, D> {
             .collect()
     }
 }
-
-// =============================================================================
-// ConnectionHandler impl — called by transport layer
-// =============================================================================
 
 #[async_trait]
 impl<A: Adapter, D: Dispatcher> ConnectionHandler for AdapterBridge<A, D> {

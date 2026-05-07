@@ -32,10 +32,6 @@ use super::config::{
 };
 use super::connection::{ConnectionInfo, HttpRequestFn, ListenerHandle, Sender};
 
-// =============================================================================
-// Connection Handler
-// =============================================================================
-
 /// Interface for handling connection lifecycle events from transport implementations.
 ///
 /// When a transport connection is established, data arrives, or a connection closes,
@@ -71,10 +67,6 @@ pub trait ConnectionHandler: Send + Sync {
     /// Register a join handle, keeping it alive for the adapter's lifetime.
     fn add_task(&self, task: JoinHandle<()>);
 }
-
-// =============================================================================
-// Capability Function Types
-// =============================================================================
 
 /// Synchronous bot-id resolver used by server transports.
 pub type ServerBotIdFn = Arc<dyn Fn(ConnectionInfo) -> Option<String> + Send + Sync>;
@@ -130,10 +122,6 @@ pub type SseClientFn = fn(
     String,
 ) -> BoxFuture<'static, TransportResult<String>>;
 
-// =============================================================================
-// Capability Registries (linkme distributed slices)
-// =============================================================================
-
 /// Registry of WebSocket server listen function pointers.
 /// Each crate that provides a ws-server capability contributes one entry.
 #[distributed_slice]
@@ -154,10 +142,6 @@ pub static HTTP_START_CLIENT_REGISTRY: [HttpStartClientFn];
 /// Registry of SSE client function pointers.
 #[distributed_slice]
 pub static SSE_CLIENT_REGISTRY: [SseClientFn];
-
-// =============================================================================
-// Transport Context
-// =============================================================================
 
 /// Context for adapter initialization.
 ///

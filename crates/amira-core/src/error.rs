@@ -5,10 +5,6 @@
 
 use thiserror::Error;
 
-// =============================================================================
-// Transport Errors
-// =============================================================================
-
 /// Errors that can occur in transport operations.
 #[derive(Debug, Clone, Error)]
 pub enum TransportError {
@@ -36,10 +32,6 @@ impl From<std::io::Error> for TransportError {
     }
 }
 
-// =============================================================================
-// Adapter Errors
-// =============================================================================
-
 /// Errors that can occur in adapter operations.
 #[derive(Debug, Clone, Error)]
 pub enum AdapterError {
@@ -58,10 +50,6 @@ pub enum AdapterError {
     #[error(transparent)]
     Transport(#[from] TransportError),
 }
-
-// =============================================================================
-// API Errors
-// =============================================================================
 
 /// Error type for API calls.
 #[derive(Debug, Clone, Error)]
@@ -91,10 +79,6 @@ impl<E: serde::ser::Error> From<E> for ApiError {
         Self::SerializationError(err.to_string())
     }
 }
-
-// =============================================================================
-// Result Type Aliases
-// =============================================================================
 
 /// Result type for transport operations.
 pub type TransportResult<T> = Result<T, TransportError>;

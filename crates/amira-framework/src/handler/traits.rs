@@ -34,10 +34,6 @@ use crate::context::HandlerContext;
 use crate::error::ExtractResult;
 use crate::extractor::FromContext;
 
-// ============================================================================
-// FromCtxFn Trait
-// ============================================================================
-
 /// A generic trait for async functions that extract parameters from the application context.
 ///
 /// This trait enables handlers to be implemented as ordinary async functions with
@@ -92,10 +88,6 @@ pub trait FromCtxFn<T>: Clone + Send + Sync + 'static {
         ctx: &HandlerContext,
     ) -> impl Future<Output = ExtractResult<Self::Response>> + Send;
 }
-
-// ============================================================================
-// Handler implementations for functions (Axum-style)
-// ============================================================================
 
 /// Macro to generate Handler implementations for functions with different arities.
 macro_rules! impl_handler {

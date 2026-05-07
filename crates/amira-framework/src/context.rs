@@ -24,7 +24,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use amira_core::{Bot, EventRoot};
 use parking_lot::{Mutex, RwLock};
-use serde_json::Value;
 
 use crate::error::{ExtractError, ExtractResult};
 
@@ -42,10 +41,6 @@ pub type ServiceArc = Arc<dyn Any + Send + Sync>;
 /// Used as the primary service registry since most queries happen by TypeId.
 /// The String ID is preserved for logging and debugging purposes.
 pub type ServiceMap = HashMap<TypeId, (String, ServiceArc)>;
-
-// =============================================================================
-// State — isolated state storage system
-// =============================================================================
 
 /// An isolated state storage container for both per-dispatch handler state
 /// and persistent per-plugin state.
@@ -112,10 +107,6 @@ pub(crate) struct CommandContext {
     pub help_provider: Mutex<HashMap<String, Arc<dyn crate::command::HelpProvider>>>,
 }
 
-// =============================================================================
-// EventContext — shared base, one per dispatch cycle
-// =============================================================================
-
 /// The shared base context for a single event dispatch cycle.
 ///
 /// One `EventContext` is created per incoming event and wrapped in an `Arc`
@@ -170,10 +161,6 @@ impl std::fmt::Debug for EventContext {
     }
 }
 
-// =============================================================================
-// PluginContext — per-plugin data, one per plugin per dispatch
-// =============================================================================
-
 /// Plugin-specific data carried alongside the shared [`EventContext`].
 ///
 /// Every plugin gets its own `PluginContext` for each event dispatch.
@@ -193,7 +180,7 @@ pub struct PluginContext {
     /// The name of the plugin.
     name: String,
     /// The plugin's config section from `amira.toml` (or an empty object).
-    config: Arc<Value>,
+    config: Arc<serde_json::Value>,
     /// Service IDs this plugin declared (via `provides` or `depends_on`).
     /// Used to check if a service lookup should be allowed.
     service_ids: HashSet<String>,
@@ -209,7 +196,7 @@ impl PluginContext {
     /// Creates a new `PluginContext` with the given plugin name, config, and service declarations.
     pub(crate) fn new(
         name: String,
-        config: Arc<Value>,
+        config: Arc<serde_json::Value>,
         service_ids: HashSet<String>,
         all_services: Arc<RwLock<ServiceMap>>,
     ) -> Self {
@@ -259,10 +246,6 @@ impl PluginContext {
         &self.state
     }
 }
-
-// =============================================================================
-// HandlerContext — full context, handed to handlers
-// =============================================================================
 
 /// The full context object passed to handlers during event processing.
 ///

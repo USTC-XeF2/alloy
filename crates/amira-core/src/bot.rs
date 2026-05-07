@@ -67,10 +67,6 @@ pub trait Bot: DowncastSync + 'static {
 
 impl_downcast!(sync Bot);
 
-// ----------------------------------------------------------------------------
-// API Interface
-// ----------------------------------------------------------------------------
-
 /// The `ApiExecutor` trait defines the capability to execute API requests.
 pub trait ApiExecutor {
     type Bot: Bot;
