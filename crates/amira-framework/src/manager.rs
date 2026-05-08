@@ -495,18 +495,14 @@ impl PluginManager {
         self.unload_plugin_unchecked(name).await
     }
 
-    fn active_plugins(&self) -> HashMap<&'static str, Arc<Plugin>> {
-        self.plugins
-            .read()
-            .iter()
-            .filter(|(_, entry)| entry.state == PluginLoadState::Active)
-            .map(|(name, entry)| (*name, entry.plugin.clone()))
-            .collect()
-    }
-
     /// Attempts to load all registered plugins in dependency order.
     pub async fn load_all(&self) {
-        let plugins_map = self.active_plugins();
+        let plugins_map = self
+            .plugins
+            .read()
+            .iter()
+            .map(|(name, entry)| (*name, entry.plugin.clone()))
+            .collect();
         let Some(layers) = topological_layers(&plugins_map) else {
             error!("Skipping plugin loading due to dependency cycle");
             return;
@@ -519,7 +515,13 @@ impl PluginManager {
 
     /// Unloads all **active** plugins in reverse dependency order.
     pub async fn unload_all(&self) {
-        let plugins_map = self.active_plugins();
+        let plugins_map = self
+            .plugins
+            .read()
+            .iter()
+            .filter(|(_, entry)| entry.state == PluginLoadState::Active)
+            .map(|(name, entry)| (*name, entry.plugin.clone()))
+            .collect();
         let Some(layers) = topological_layers(&plugins_map) else {
             error!("Skipping plugin unloading due to dependency cycle");
             return;
@@ -558,8 +560,7 @@ impl Dispatcher for PluginManager {
                     e.plugin
                         .handlers()
                         .iter()
-                        .cloned()
-                        .map(|svc| (svc, e.context.clone()))
+                        .map(|svc| (svc.clone(), e.context.clone()))
                 })
                 .collect()
         };
