@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
 use amira::framework::{context::HandlerContext, error::ExtractResult, extractor::FromContext};
 use derive_more::{AsRef, Deref};
@@ -15,15 +14,15 @@ use crate::service::StorageService;
 /// which directory to extract when using [`StorageDir<T>`] as a handler parameter.
 pub trait StorageDirSelector: Send + 'static {
     /// Extract the directory path from the given storage service.
-    fn select(service: Arc<dyn StorageService>) -> PathBuf;
+    fn select(service: &dyn StorageService) -> &Path;
 }
 
 /// Marker type for the data directory.
 pub struct Data;
 
 impl StorageDirSelector for Data {
-    fn select(service: Arc<dyn StorageService>) -> PathBuf {
-        service.data_dir().into()
+    fn select(service: &dyn StorageService) -> &Path {
+        service.data_dir()
     }
 }
 
@@ -31,8 +30,8 @@ impl StorageDirSelector for Data {
 pub struct Cache;
 
 impl StorageDirSelector for Cache {
-    fn select(service: Arc<dyn StorageService>) -> PathBuf {
-        service.cache_dir().into()
+    fn select(service: &dyn StorageService) -> &Path {
+        service.cache_dir()
     }
 }
 
@@ -40,8 +39,8 @@ impl StorageDirSelector for Cache {
 pub struct Config;
 
 impl StorageDirSelector for Config {
-    fn select(service: Arc<dyn StorageService>) -> PathBuf {
-        service.config_dir().into()
+    fn select(service: &dyn StorageService) -> &Path {
+        service.config_dir()
     }
 }
 
@@ -68,12 +67,17 @@ impl StorageDirSelector for Config {
 /// }
 /// ```
 #[derive(Deref, AsRef)]
-pub struct StorageDir<T: StorageDirSelector>(#[deref] pub PathBuf, PhantomData<T>);
+pub struct StorageDir<T: StorageDirSelector>(
+    #[deref]
+    #[as_ref(Path)]
+    pub PathBuf,
+    PhantomData<T>,
+);
 
 impl<T: StorageDirSelector> FromContext for StorageDir<T> {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;
-        Ok(StorageDir(T::select(storage), PhantomData))
+        Ok(Self(T::select(storage.as_ref()).into(), PhantomData))
     }
 }
 
@@ -82,12 +86,17 @@ impl<T: StorageDirSelector> FromContext for StorageDir<T> {
 /// This automatically appends the plugin name to the selected directory.
 /// For example, `PluginStorageDir<Data>` returns `<base>/data/<plugin_name>/`.
 #[derive(Deref, AsRef)]
-pub struct PluginStorageDir<T: StorageDirSelector>(#[deref] pub PathBuf, PhantomData<T>);
+pub struct PluginStorageDir<T: StorageDirSelector>(
+    #[deref]
+    #[as_ref(Path)]
+    pub PathBuf,
+    PhantomData<T>,
+);
 
 impl<T: StorageDirSelector + Send> FromContext for PluginStorageDir<T> {
     async fn from_context(ctx: &HandlerContext) -> ExtractResult<Self> {
         let storage = ctx.require_service::<dyn StorageService>()?;
-        let plugin_path = T::select(storage).join(ctx.plugin().name());
-        Ok(PluginStorageDir(plugin_path, PhantomData))
+        let plugin_path = T::select(storage.as_ref()).join(ctx.plugin().name());
+        Ok(Self(plugin_path, PhantomData))
     }
 }

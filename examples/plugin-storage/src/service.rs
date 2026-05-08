@@ -5,8 +5,6 @@ use amira::framework::{context::PluginContext, plugin::ServiceInit};
 use amira::macros::service_meta;
 use serde::{Deserialize, Serialize};
 
-// ─── StorageService trait ─────────────────────────────────────────────────────
-
 /// Service trait that provides access to the three conventional storage
 /// directories used by Amira bots.
 #[service_meta("storage")]
@@ -19,6 +17,19 @@ pub trait StorageService: Send + Sync {
 
     /// Returns the `<base>/config/` directory path.
     fn config_dir(&self) -> &Path;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AutoCreateConfig {
+    Enabled(bool),
+    Specific(Vec<String>),
+}
+
+impl Default for AutoCreateConfig {
+    fn default() -> Self {
+        AutoCreateConfig::Enabled(true)
+    }
 }
 
 /// Configuration for the storage plugin.
@@ -37,8 +48,8 @@ pub struct StorageConfig {
     pub config_dir: Option<PathBuf>,
 
     /// Create storage directories if they do not exist. Defaults to `true`.
-    #[serde(default = "default_auto_create")]
-    pub auto_create: bool,
+    #[serde(default)]
+    pub auto_create: AutoCreateConfig,
 }
 
 impl Default for StorageConfig {
@@ -48,7 +59,7 @@ impl Default for StorageConfig {
             cache_dir: None,
             data_dir: None,
             config_dir: None,
-            auto_create: default_auto_create(),
+            auto_create: AutoCreateConfig::default(),
         }
     }
 }
@@ -56,12 +67,6 @@ impl Default for StorageConfig {
 fn default_base_dir() -> PathBuf {
     PathBuf::from(".")
 }
-
-const fn default_auto_create() -> bool {
-    true
-}
-
-// ─── StorageServiceImpl ───────────────────────────────────────────────────────
 
 /// Concrete implementation of [`StorageService`], backed by the local filesystem.
 ///
@@ -105,19 +110,24 @@ impl ServiceInit for StorageServiceImpl {
             config_dir: cfg.config_dir.unwrap_or_else(|| base.join("config")),
         };
 
-        if cfg.auto_create {
-            for dir in [
-                service.cache_dir(),
-                service.data_dir(),
-                service.config_dir(),
-            ] {
-                if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-                    return Err(format!(
-                        "Failed to create storage directory '{}': {}",
-                        dir.display(),
-                        e
-                    ));
-                }
+        for (name, dir) in [
+            ("cache", service.cache_dir()),
+            ("data", service.data_dir()),
+            ("config", service.config_dir()),
+        ] {
+            let should_create = match &cfg.auto_create {
+                AutoCreateConfig::Enabled(enabled) => *enabled,
+                AutoCreateConfig::Specific(list) => list.iter().any(|s| s == name),
+            };
+            if !dir.exists()
+                && should_create
+                && let Err(e) = tokio::fs::create_dir_all(&dir).await
+            {
+                return Err(format!(
+                    "Failed to create storage directory '{}': {}",
+                    dir.display(),
+                    e
+                ));
             }
         }
 
