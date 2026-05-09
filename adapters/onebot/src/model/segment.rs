@@ -89,30 +89,6 @@ impl std::fmt::Display for Segment {
 }
 
 impl ReceiveMessageSegment for Segment {
-    fn segment_type(&self) -> &'static str {
-        match self {
-            Segment::Text(_) => "text",
-            Segment::Face(_) => "face",
-            Segment::Image(_) => "image",
-            Segment::Record(_) => "record",
-            Segment::Video(_) => "video",
-            Segment::At(_) => "at",
-            Segment::Rps(_) => "rps",
-            Segment::Dice(_) => "dice",
-            Segment::Shake(_) => "shake",
-            Segment::Poke(_) => "poke",
-            Segment::Share(_) => "share",
-            Segment::Contact(_) => "contact",
-            Segment::Location(_) => "location",
-            Segment::Music(_) => "music",
-            Segment::Reply(_) => "reply",
-            Segment::Forward(_) => "forward",
-            Segment::Node(_) => "node",
-            Segment::Xml(_) => "xml",
-            Segment::Json(_) => "json",
-        }
-    }
-
     fn as_text(&self) -> Option<&str> {
         match self {
             Segment::Text(data) => Some(&data.text),
@@ -547,13 +523,9 @@ mod tests {
     #[test]
     fn test_message_segment_trait() {
         let text = Segment::text("Hello");
-        assert_eq!(text.segment_type(), "text");
-        assert!(text.is_text());
         assert_eq!(text.as_text(), Some("Hello"));
 
         let image = Segment::image("test.jpg");
-        assert_eq!(image.segment_type(), "image");
-        assert!(!image.is_text());
         assert_eq!(image.as_text(), None);
     }
 }

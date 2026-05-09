@@ -19,3 +19,10 @@ pub struct FaceData {
     #[cfg(feature = "v1_1")]
     pub is_large: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageSubType {
+    Normal,
+    Sticker,
+}

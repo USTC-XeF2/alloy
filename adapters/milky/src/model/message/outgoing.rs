@@ -8,7 +8,8 @@ use std::borrow::Cow;
 use amira_core::{ReceiveMessageSegment, RichTextSegment, SendMessageSegment};
 use serde::Serialize;
 
-use super::common::{FaceData, MentionAllData, TextData};
+use super::common::{FaceData, ImageSubType, MentionAllData, TextData};
+use super::incoming::IncomingSegment;
 
 /// A Milky protocol message segment **sent** to the server.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -55,23 +56,31 @@ impl std::fmt::Display for OutgoingSegment {
     }
 }
 
-impl ReceiveMessageSegment for OutgoingSegment {
-    fn segment_type(&self) -> &'static str {
-        match self {
-            OutgoingSegment::Text(_) => "text",
-            OutgoingSegment::Mention(_) => "mention",
-            OutgoingSegment::MentionAll(_) => "mention_all",
-            OutgoingSegment::Face(_) => "face",
-            OutgoingSegment::Reply(_) => "reply",
-            OutgoingSegment::Image(_) => "image",
-            OutgoingSegment::Record(_) => "record",
-            OutgoingSegment::Video(_) => "video",
-            OutgoingSegment::Forward(_) => "forward",
+impl TryFrom<IncomingSegment> for OutgoingSegment {
+    type Error = ();
+
+    fn try_from(value: IncomingSegment) -> Result<Self, Self::Error> {
+        match value {
+            IncomingSegment::Text(d) => Ok(Self::Text(d)),
+            IncomingSegment::Mention(d) => Ok(Self::mention(d.user_id)),
+            IncomingSegment::MentionAll(_) => Ok(Self::mention_all()),
+            IncomingSegment::Face(d) => Ok(Self::Face(d)),
+            IncomingSegment::Reply(d) => Ok(Self::reply(d.message_seq)),
+            IncomingSegment::Image(d) => Ok(Self::Image(ImageData {
+                uri: d.temp_url.into(),
+                sub_type: d.sub_type,
+                summary: Some(d.summary),
+            })),
+            IncomingSegment::Record(d) => Ok(Self::record(d.temp_url)),
+            IncomingSegment::Video(d) => Ok(Self::video(d.temp_url)),
             #[cfg(feature = "v1_2")]
-            OutgoingSegment::LightApp(_) => "light_app",
+            IncomingSegment::LightApp(d) => Ok(Self::light_app(d.json_payload)),
+            _ => Err(()),
         }
     }
+}
 
+impl ReceiveMessageSegment for OutgoingSegment {
     fn as_text(&self) -> Option<&str> {
         match self {
             OutgoingSegment::Text(d) => Some(&d.text),
@@ -198,13 +207,6 @@ pub struct MentionData {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReplyData {
     pub message_seq: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ImageSubType {
-    Normal,
-    Sticker,
 }
 
 /// Outgoing image data.

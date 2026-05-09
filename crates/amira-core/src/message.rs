@@ -61,14 +61,6 @@ pub enum RichTextSegment {
 
 /// A trait for segments received from an adapter/protocol.
 pub trait ReceiveMessageSegment: Send + Sync + 'static {
-    /// Returns the type identifier of this segment (e.g., "text", "image", "at").
-    fn segment_type(&self) -> &'static str;
-
-    /// Returns true if this is a plain text segment.
-    fn is_text(&self) -> bool {
-        self.segment_type() == "text"
-    }
-
     /// Returns the text content if this is a text segment.
     fn as_text(&self) -> Option<&str>;
 
@@ -86,16 +78,6 @@ pub trait SendMessageSegment: ReceiveMessageSegment + Clone {
 }
 
 impl ReceiveMessageSegment for RichTextSegment {
-    fn segment_type(&self) -> &'static str {
-        match self {
-            RichTextSegment::Text(_) => "text",
-            RichTextSegment::Image(_) => "image",
-            RichTextSegment::At(_) => "at",
-            RichTextSegment::AtAll => "at_all",
-            RichTextSegment::Reply(_) => "reply",
-        }
-    }
-
     fn as_text(&self) -> Option<&str> {
         match self {
             RichTextSegment::Text(s) => Some(s),

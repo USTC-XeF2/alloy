@@ -6,7 +6,7 @@
 use amira_core::{ReceiveMessageSegment, RichTextSegment};
 use serde::Deserialize;
 
-use super::common::{FaceData, MentionAllData, TextData};
+use super::common::{FaceData, ImageSubType, MentionAllData, TextData};
 
 /// A Milky protocol message segment **received** from the server.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -67,24 +67,6 @@ impl std::fmt::Display for IncomingSegment {
 }
 
 impl ReceiveMessageSegment for IncomingSegment {
-    fn segment_type(&self) -> &'static str {
-        match self {
-            IncomingSegment::Text(_) => "text",
-            IncomingSegment::Mention(_) => "mention",
-            IncomingSegment::MentionAll(_) => "mention_all",
-            IncomingSegment::Face(_) => "face",
-            IncomingSegment::Reply(_) => "reply",
-            IncomingSegment::Image(_) => "image",
-            IncomingSegment::Record(_) => "record",
-            IncomingSegment::Video(_) => "video",
-            IncomingSegment::File(_) => "file",
-            IncomingSegment::Forward(_) => "forward",
-            IncomingSegment::MarketFace(_) => "market_face",
-            IncomingSegment::LightApp(_) => "light_app",
-            IncomingSegment::Xml(_) => "xml",
-        }
-    }
-
     fn as_text(&self) -> Option<&str> {
         match self {
             IncomingSegment::Text(d) => Some(&d.text),
@@ -138,8 +120,7 @@ pub struct ImageData {
     pub width: i32,
     pub height: i32,
     pub summary: String,
-    /// `"normal"` or `"sticker"`.
-    pub sub_type: String,
+    pub sub_type: ImageSubType,
 }
 
 /// Incoming record (voice) data.
