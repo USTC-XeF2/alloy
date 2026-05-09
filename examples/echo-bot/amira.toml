@@ -12,7 +12,7 @@
 # Default log level: trace, debug, info, warn, error
 level = "info"
 
-# Output format: compact, pretty, full, json (json requires json-log feature)
+# Output format: compact, pretty, full, json (json requires json-logging feature)
 format = "compact"
 
 # Output destination: stdout, stderr, file
@@ -75,7 +75,6 @@ type = "ws-server"
 host = "127.0.0.1"
 port = 8080
 path = "/onebot/v11/ws"
-access_token = ""
 
 # HTTP client mode: push to OneBot implementation
 # [[adapters.onebot.connections]]

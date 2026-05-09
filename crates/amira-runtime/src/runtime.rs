@@ -33,7 +33,6 @@ use tracing::{error, info, warn};
 use crate::config::{AmiraConfig, ConfigLoader};
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::handle::BotHandle;
-use crate::logging;
 
 /// The main Amira runtime that orchestrates adapters, transports, and plugins.
 ///
@@ -117,7 +116,8 @@ impl AmiraRuntime {
     /// ```
     pub fn from_config(config: AmiraConfig) -> Self {
         // Initialize logging from config (try_init won't panic if already initialized)
-        let _ = logging::try_init_from_config(&config.logging);
+        #[cfg(feature = "logging")]
+        let _ = crate::logging::try_init_from_config(&config.logging);
 
         // Create transport context by collecting all capabilities registered via
         // `#[register_capability(...)]` across linked crates.

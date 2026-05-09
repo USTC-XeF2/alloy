@@ -200,7 +200,6 @@ impl ConfigLoader {
 
         debug!(
             profile = %profile,
-            logging_level = %config.logging.level,
             "Configuration loaded successfully"
         );
 
@@ -230,7 +229,7 @@ impl ConfigLoader {
                     }
                 }
             } else {
-                return Err(ConfigError::FileNotFound(path.clone()));
+                return Err(ConfigError::FileNotFound(path));
             }
         } else {
             // Search for config files

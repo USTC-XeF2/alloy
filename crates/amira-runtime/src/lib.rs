@@ -62,12 +62,11 @@
 pub mod config;
 pub mod error;
 pub mod handle;
-pub mod logging;
 pub mod runtime;
 
-pub use config::{
-    AmiraConfig, ConfigLoader, LogFormat, LogLevel, LogOutput, LoggingConfig, SpanEventConfig,
-};
-pub use error::{ConfigError, ConfigResult, RuntimeError, RuntimeResult};
+pub use config::{AmiraConfig, ConfigLoader};
 pub use handle::BotHandle;
 pub use runtime::AmiraRuntime;
+
+#[cfg(feature = "logging")]
+pub mod logging;

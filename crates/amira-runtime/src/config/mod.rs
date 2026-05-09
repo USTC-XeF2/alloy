@@ -20,4 +20,4 @@ pub mod loader;
 pub mod schema;
 
 pub use loader::{ConfigLoader, Profile};
-pub use schema::{AmiraConfig, LogFormat, LogLevel, LogOutput, LoggingConfig, SpanEventConfig};
+pub use schema::AmiraConfig;

@@ -20,7 +20,9 @@ yaml-config = ["figment/yaml"]
 dotenv-config = ["dep:dotenvy"]
 
 # Logging features
-json-log = ["tracing-subscriber/json"]
+logging = ["dep:tracing-subscriber"]
+json-logging = ["logging", "tracing-subscriber/json"]
+file-logging = ["logging", "dep:tracing-appender"]
 
 [dependencies]
 amira-core = { workspace = true }
@@ -34,5 +36,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
-tracing-appender = "0.2.5"
-tracing-subscriber = "0.3.23"
+tracing-appender = { version = "0.2.5", optional = true }
+tracing-subscriber = { version = "0.3.23", optional = true }

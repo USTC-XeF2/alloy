@@ -16,7 +16,7 @@ amira-runtime = { workspace = true, optional = true }
 amira-transport = { workspace = true }
 
 [features]
-default = ["command", "runtime", "toml-config", "dotenv-config"]
+default = ["command", "runtime", "toml-config", "dotenv-config", "logging"]
 
 # Structured command support
 command = ["amira-framework/command", "amira-runtime?/command"]
@@ -30,7 +30,9 @@ yaml-config = ["amira-runtime/yaml-config"]
 dotenv-config = ["amira-runtime/dotenv-config"]
 
 # Logging features
-json-log = ["amira-runtime/json-log"]
+logging = ["amira-runtime/logging"]
+json-logging = ["amira-runtime/json-logging"]
+file-logging = ["amira-runtime/file-logging"]
 
 # Transport features
 ws-client = ["amira-transport/ws-client"]

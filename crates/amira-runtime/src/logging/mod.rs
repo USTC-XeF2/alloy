@@ -4,16 +4,14 @@
 //! It supports configuration-driven initialization and Span Events for observing
 //! Service lifecycles in Tower middleware.
 
-use std::ffi::OsStr;
-use std::path::Path;
-
-use tracing::warn;
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::util::TryInitError;
 
-use crate::config::{LogFormat, LogOutput, LoggingConfig};
+mod config;
+
+pub use config::{LogFormat, LogLevel, LogOutput, LoggingConfig, SpanEventConfig};
 
 /// Try to initialize logging from a `LoggingConfig`.
 ///
@@ -56,7 +54,7 @@ pub fn try_init_from_config(config: &LoggingConfig) -> Result<(), TryInitError> 
     macro_rules! init_with_writer {
         ($writer:expr) => {
             match &config.format {
-                #[cfg(feature = "json-log")]
+                #[cfg(feature = "json-logging")]
                 LogFormat::Json => {
                     let layer = fmt::layer()
                         .json()
@@ -96,15 +94,19 @@ pub fn try_init_from_config(config: &LoggingConfig) -> Result<(), TryInitError> 
     match &config.output {
         LogOutput::Stdout => init_with_writer!(std::io::stdout),
         LogOutput::Stderr => init_with_writer!(std::io::stderr),
+        #[cfg(feature = "file-logging")]
         LogOutput::File => {
             if let Some(path) = &config.file_path {
                 let file_appender = tracing_appender::rolling::never(
-                    path.parent().unwrap_or_else(|| Path::new(".")),
-                    path.file_name().unwrap_or_else(|| OsStr::new("amira.log")),
+                    path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+                    path.file_name()
+                        .unwrap_or_else(|| std::ffi::OsStr::new("amira.log")),
                 );
                 init_with_writer!(file_appender)
             } else {
-                warn!("File output requested but no file path configured, falling back to stdout");
+                tracing::warn!(
+                    "File output requested but no file path configured, falling back to stdout"
+                );
                 init_with_writer!(std::io::stdout)
             }
         }
