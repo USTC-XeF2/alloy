@@ -12,9 +12,10 @@ use amira_core::{Message, ReceiveMessageSegment, Sendable};
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use tower::{BoxError, Service};
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::context::HandlerContext;
+use crate::error::EventSkipped;
 
 use super::traits::FromCtxFn;
 
@@ -37,10 +38,10 @@ async fn send_message(ctx: &HandlerContext, message: &dyn Sendable) {
     let event = ctx.event();
     if let Some(scene) = event.scene() {
         if let Err(e) = bot.send(&scene, message).await {
-            error!("Failed to send message: {e}");
+            warn!("Failed to send message: {e}");
         }
     } else {
-        error!("Event has no scene, cannot send message");
+        warn!("Event has no scene, cannot send message");
     }
 }
 
@@ -137,7 +138,7 @@ where
 {
     type Response = ();
     type Error = BoxError;
-    type Future = BoxFuture<'static, Result<(), Self::Error>>;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -146,9 +147,8 @@ where
     fn call(&mut self, ctx: HandlerContext) -> Self::Future {
         let handler = self.handler.clone();
         async move {
-            if let Ok(r) = handler.call(&ctx).await {
-                r.process_response(&ctx).await;
-            }
+            let resp = handler.call(&ctx).await.map_err(EventSkipped::Extract)?;
+            resp.process_response(&ctx).await;
             Ok(())
         }
         .boxed()

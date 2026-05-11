@@ -41,7 +41,7 @@ use amira_core::{Bot, EventRoot};
 use futures::{FutureExt, future};
 use parking_lot::RwLock;
 use tower::ServiceExt;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::context::{EventContext, HandlerContext, PluginContext, ServiceMap};
 use crate::error::EventSkipped;
@@ -577,8 +577,12 @@ impl Dispatcher for PluginManager {
                 .catch_unwind()
                 .await
             {
-                Ok(Err(e)) if !e.is::<EventSkipped>() => {
-                    error!(plugin = plugin_ctx.name(), error = %e, "Handler returned an error");
+                Ok(Err(e)) => {
+                    if let Some(skip) = e.downcast_ref::<EventSkipped>() {
+                        debug!(plugin = plugin_ctx.name(), reason = ?skip, "Handler skipped the event");
+                    } else {
+                        error!(plugin = plugin_ctx.name(), error = %e, "Handler returned an error");
+                    }
                 }
                 Err(_) => {
                     error!(plugin = plugin_ctx.name(), "Handler panicked");

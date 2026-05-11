@@ -202,7 +202,7 @@ pub struct CommandService<T, S> {
 }
 
 fn skip_event() -> BoxFuture<'static, Result<(), BoxError>> {
-    future::ready(Err(Box::new(EventSkipped) as BoxError)).boxed()
+    future::ready(Err(EventSkipped::Filter.into())).boxed()
 }
 
 impl<T, S> Service<HandlerContext> for CommandService<T, S>

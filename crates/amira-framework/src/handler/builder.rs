@@ -88,7 +88,7 @@ impl Predicate<HandlerContext> for EventPredicate {
         if (self.0)(&request) {
             Ok(request)
         } else {
-            Err(Box::new(EventSkipped))
+            Err(EventSkipped::Filter.into())
         }
     }
 }
@@ -119,7 +119,7 @@ impl AsyncPredicate<HandlerContext> for AsyncEventPredicate {
             if f(request.clone()).await {
                 Ok(request)
             } else {
-                Err(EventSkipped.into())
+                Err(EventSkipped::Filter.into())
             }
         }
         .boxed()
